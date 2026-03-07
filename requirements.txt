@@ -2,11 +2,13 @@
 langchain
 langchain-core
 langchain-community
+langchain-chroma>=0.1.0
 langgraph
 pydantic
 pydantic-settings
 python-dotenv
-
+pyPDF2
+PyCryptodome
 # Qwen model integration
 dashscope
 

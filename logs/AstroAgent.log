@@ -1,0 +1,307 @@
+2026-03-07 16:47:26 - AstroAgent - INFO - ✅ DashScope API Key配置成功
+2026-03-07 16:47:26 - AstroAgent - INFO - ✅ 短期记忆系统初始化成功
+2026-03-07 16:47:26 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 16:47:26 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 16:47:26 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 16:47:26 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 16:47:26 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 16:47:26 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 16:47:27 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-07 16:47:27 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 16:47:27 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 16:47:27 - AstroAgent - INFO - ✅ RAG系统初始化成功（已自动加载data文件夹文档）
+2026-03-07 16:47:27 - AstroAgent - INFO - 
+=== 处理用户查询：银河系的结构是什么样的？ ===
+2026-03-07 16:47:27 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 16:47:27 - AstroAgent - INFO - 📄 RAG检索到上下文长度：995 字符
+2026-03-07 16:47:27 - AstroAgent - INFO - 🧠 加载对话历史条数：0
+2026-03-07 16:47:27 - AstroAgent - INFO - ✅ 消息列表构建完成，准备调用大模型
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：422 字符
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ DashScope API Key配置成功
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ 短期记忆系统初始化成功
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 16:47:37 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 16:47:37 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 16:47:37 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 16:47:37 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-07 16:47:37 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 16:47:37 - AstroAgent - INFO - ✅ RAG系统初始化成功（已自动加载data文件夹文档）
+2026-03-07 16:47:37 - AstroAgent - INFO - 
+=== 处理用户查询：什么是黑洞？ ===
+2026-03-07 16:47:38 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 16:47:38 - AstroAgent - INFO - 📄 RAG检索到上下文长度：995 字符
+2026-03-07 16:47:38 - AstroAgent - INFO - 🧠 加载对话历史条数：0
+2026-03-07 16:47:38 - AstroAgent - INFO - ✅ 消息列表构建完成，准备调用大模型
+2026-03-07 16:47:59 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：554 字符
+2026-03-07 16:47:59 - AstroAgent - INFO - ✅ DashScope API Key配置成功
+2026-03-07 16:47:59 - AstroAgent - INFO - ✅ 短期记忆系统初始化成功
+2026-03-07 16:47:59 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 16:47:59 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 16:47:59 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 16:47:59 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 16:47:59 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 16:47:59 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 16:48:00 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-07 16:48:00 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 16:48:00 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 16:48:00 - AstroAgent - INFO - ✅ RAG系统初始化成功（已自动加载data文件夹文档）
+2026-03-07 16:48:00 - AstroAgent - INFO - 
+=== 处理用户查询：太阳系有哪些行星？ ===
+2026-03-07 16:48:00 - AstroAgent - INFO - 📄 检索到上下文长度：1186 字符
+2026-03-07 16:48:00 - AstroAgent - INFO - 📄 RAG检索到上下文长度：1186 字符
+2026-03-07 16:48:00 - AstroAgent - INFO - 🧠 加载对话历史条数：0
+2026-03-07 16:48:00 - AstroAgent - INFO - ✅ 消息列表构建完成，准备调用大模型
+2026-03-07 16:48:08 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：335 字符
+2026-03-07 16:48:10 - AstroAgent - INFO - 
+=== 处理用户查询：最大的那个行星有多大？ ===
+2026-03-07 16:48:10 - AstroAgent - INFO - 📄 检索到上下文长度：1121 字符
+2026-03-07 16:48:10 - AstroAgent - INFO - 📄 RAG检索到上下文长度：1121 字符
+2026-03-07 16:48:10 - AstroAgent - INFO - 🧠 加载对话历史条数：2
+2026-03-07 16:48:10 - AstroAgent - INFO - ✅ 消息列表构建完成，准备调用大模型
+2026-03-07 16:48:21 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：255 字符
+2026-03-07 16:56:12 - AstroAgent - INFO - 这是一条INFO级别的日志
+2026-03-07 16:56:12 - AstroAgent - INFO - INFO日志通常用于记录正常的操作信息
+2026-03-07 16:56:12 - AstroAgent - INFO - 例如：系统初始化成功、用户操作完成等
+2026-03-07 16:56:12 - AstroAgent - WARNING - 这是一条WARNING级别的日志
+2026-03-07 16:56:12 - AstroAgent - WARNING - WARNING日志通常用于记录警告信息
+2026-03-07 16:56:12 - AstroAgent - WARNING - 例如：文档已存在、参数值异常等
+2026-03-07 16:56:12 - AstroAgent - ERROR - 这是一条ERROR级别的日志
+2026-03-07 16:56:12 - AstroAgent - ERROR - ERROR日志通常用于记录错误信息
+2026-03-07 16:56:12 - AstroAgent - ERROR - 例如：API调用失败、文件读取错误等
+2026-03-07 16:56:12 - AstroAgent - DEBUG - 这是一条DEBUG级别的日志
+2026-03-07 16:56:12 - AstroAgent - DEBUG - DEBUG日志通常用于记录调试信息
+2026-03-07 16:56:12 - AstroAgent - DEBUG - 例如：变量值、函数调用参数等
+2026-03-07 16:56:12 - AstroAgent - ERROR - 捕获到异常：division by zero
+2026-03-07 16:56:12 - AstroAgent - INFO - 用户 Alice，年龄 30，登录成功
+2026-03-07 16:56:12 - AstroAgent - INFO - 购物车中有 3 个商品：['苹果', '香蕉', '橙子']
+2026-03-07 17:18:33 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:18:33 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:18:33 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:18:33 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:18:33 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:18:33 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:18:33 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:18:33 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:18:33 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:18:33 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:18:33 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:18:33 - AstroAgent - INFO - 
+=== 处理用户查询：银河系的结构是什么样的？ ===
+2026-03-07 17:18:34 - AstroAgent - ERROR - ❌ 生成响应失败：string indices must be integers, not 'str'
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:18:34 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:18:34 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:18:34 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:18:34 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:18:34 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:18:34 - AstroAgent - INFO - 
+=== 处理用户查询：什么是黑洞？ ===
+2026-03-07 17:18:34 - AstroAgent - ERROR - ❌ 生成响应失败：string indices must be integers, not 'str'
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:18:34 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:18:34 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:18:34 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:18:34 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:18:34 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:18:34 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:18:34 - AstroAgent - INFO - 
+=== 处理用户查询：太阳系有哪些行星？ ===
+2026-03-07 17:18:34 - AstroAgent - ERROR - ❌ 生成响应失败：string indices must be integers, not 'str'
+2026-03-07 17:18:36 - AstroAgent - INFO - 
+=== 处理用户查询：最大的那个行星有多大？ ===
+2026-03-07 17:18:36 - AstroAgent - ERROR - ❌ 生成响应失败：string indices must be integers, not 'str'
+2026-03-07 17:19:07 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:19:07 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:19:07 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:19:07 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:19:07 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:19:07 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:19:07 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:19:07 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:19:07 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:19:07 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:19:07 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:19:07 - AstroAgent - INFO - 
+=== 处理用户查询：银河系的结构是什么样的？ ===
+2026-03-07 17:19:07 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 17:19:28 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：489 字符
+2026-03-07 17:19:28 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:19:28 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:19:28 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:19:28 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:19:28 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:19:28 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:19:28 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:19:28 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:19:28 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:19:28 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:19:28 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:19:28 - AstroAgent - INFO - 
+=== 处理用户查询：什么是黑洞？ ===
+2026-03-07 17:19:28 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 17:19:54 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：598 字符
+2026-03-07 17:19:54 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:19:54 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:19:54 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:19:54 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:19:54 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:19:54 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:19:54 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:19:54 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:19:54 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:19:54 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:19:54 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:19:54 - AstroAgent - INFO - 
+=== 处理用户查询：太阳系有哪些行星？ ===
+2026-03-07 17:19:54 - AstroAgent - INFO - 📄 检索到上下文长度：1186 字符
+2026-03-07 17:20:09 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：393 字符
+2026-03-07 17:20:11 - AstroAgent - INFO - 
+=== 处理用户查询：最大的那个行星有多大？ ===
+2026-03-07 17:20:11 - AstroAgent - INFO - 📄 检索到上下文长度：1121 字符
+2026-03-07 17:20:21 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：247 字符
+2026-03-07 17:22:14 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:22:14 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:22:14 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:22:15 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:22:15 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:22:15 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:22:15 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:22:15 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:22:15 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:22:15 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:22:15 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:22:15 - AstroAgent - INFO - 
+=== 处理用户查询：银河系的结构是什么样的？ ===
+2026-03-07 17:22:15 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 17:22:27 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：423 字符
+2026-03-07 17:22:27 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:22:27 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:22:27 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:22:27 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:22:27 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:22:27 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:22:27 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:22:27 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:22:27 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:22:27 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:22:27 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:22:27 - AstroAgent - INFO - 
+=== 处理用户查询：什么是黑洞？ ===
+2026-03-07 17:22:27 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 17:22:44 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：501 字符
+2026-03-07 17:22:44 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 17:22:44 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 17:22:44 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 17:22:44 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 17:22:44 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 17:22:44 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 17:22:44 - AstroAgent - ERROR - ❌ 读取文档 BNA.pdf 失败：`pypdf` package not found, please install it with `pip install pypdf`
+2026-03-07 17:22:44 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 17:22:44 - AstroAgent - INFO - ✅ 保存了 3 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 17:22:44 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 17:22:44 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 17:22:44 - AstroAgent - INFO - 
+=== 处理用户查询：太阳系有哪些行星？ ===
+2026-03-07 17:22:44 - AstroAgent - INFO - 📄 检索到上下文长度：1186 字符
+2026-03-07 17:22:54 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：386 字符
+2026-03-07 17:22:56 - AstroAgent - INFO - 
+=== 处理用户查询：最大的那个行星有多大？ ===
+2026-03-07 17:22:56 - AstroAgent - INFO - 📄 检索到上下文长度：1121 字符
+2026-03-07 17:23:05 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：185 字符
+2026-03-07 21:47:19 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 21:47:19 - AstroAgent - INFO - ✅ 加载了 3 个已添加文档的哈希值
+2026-03-07 21:47:19 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 21:47:19 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 21:47:19 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 21:47:19 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 21:47:20 - AstroAgent - INFO - ✅ 读取.PDF文档：BNA.pdf（页数：23）
+2026-03-07 21:47:20 - AstroAgent - INFO - === 开始分割文档：共 23 个文档 ===
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 1 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 0 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 1 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 2 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 1 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 0 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 0 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 1 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 2 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 5 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 2 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 2 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 4 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 3 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 4 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 1 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 3 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 3 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 4 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 5 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 2 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 4 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - 文档分割为 5 个片段
+2026-03-07 21:47:20 - AstroAgent - INFO - === 开始向向量库添加 55 个文本片段 ===
+2026-03-07 21:47:20 - AstroAgent - INFO - ✅ 安全添加：第 1 批（5 个片段）
+2026-03-07 21:47:21 - AstroAgent - INFO - ✅ 安全添加：第 2 批（5 个片段）
+2026-03-07 21:47:21 - AstroAgent - INFO - ✅ 安全添加：第 3 批（5 个片段）
+2026-03-07 21:47:21 - AstroAgent - INFO - ✅ 安全添加：第 4 批（5 个片段）
+2026-03-07 21:47:21 - AstroAgent - INFO - ✅ 安全添加：第 5 批（5 个片段）
+2026-03-07 21:47:22 - AstroAgent - INFO - ✅ 安全添加：第 6 批（5 个片段）
+2026-03-07 21:47:22 - AstroAgent - INFO - ✅ 安全添加：第 7 批（5 个片段）
+2026-03-07 21:47:22 - AstroAgent - INFO - ✅ 安全添加：第 8 批（5 个片段）
+2026-03-07 21:47:23 - AstroAgent - INFO - ✅ 安全添加：第 9 批（5 个片段）
+2026-03-07 21:47:23 - AstroAgent - INFO - ✅ 安全添加：第 10 批（5 个片段）
+2026-03-07 21:47:23 - AstroAgent - INFO - ✅ 安全添加：第 11 批（5 个片段）
+2026-03-07 21:47:23 - AstroAgent - INFO - ✅ 所有文本片段添加完成（共 55 个）
+2026-03-07 21:47:23 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 21:47:23 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 21:47:23 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 21:47:23 - AstroAgent - INFO - 
+=== 处理用户查询：银河系的结构是什么样的？ ===
+2026-03-07 21:47:24 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 21:47:44 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：478 字符
+2026-03-07 21:47:44 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 21:47:44 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-07 21:47:44 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 21:47:44 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 21:47:44 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 21:47:44 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 21:47:45 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-07 21:47:45 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 21:47:45 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 21:47:45 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 21:47:45 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 21:47:45 - AstroAgent - INFO - 
+=== 处理用户查询：什么是黑洞？ ===
+2026-03-07 21:47:45 - AstroAgent - INFO - 📄 检索到上下文长度：995 字符
+2026-03-07 21:48:03 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：492 字符
+2026-03-07 21:48:03 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-07 21:48:03 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-07 21:48:03 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-07 21:48:03 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-07 21:48:03 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-07 21:48:03 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-07 21:48:04 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-07 21:48:04 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-07 21:48:04 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-07 21:48:04 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-07 21:48:04 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架
+2026-03-07 21:48:04 - AstroAgent - INFO - 
+=== 处理用户查询：太阳系有哪些行星？ ===
+2026-03-07 21:48:04 - AstroAgent - INFO - 📄 检索到上下文长度：1462 字符
+2026-03-07 21:48:19 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：453 字符
+2026-03-07 21:48:21 - AstroAgent - INFO - 
+=== 处理用户查询：最大的那个行星有多大？ ===
+2026-03-07 21:48:21 - AstroAgent - INFO - 📄 检索到上下文长度：1345 字符
+2026-03-07 21:48:38 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：314 字符
