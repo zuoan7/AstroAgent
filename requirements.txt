@@ -1,0 +1,23 @@
+# Basic dependencies
+langchain
+langchain-core
+langchain-community
+langgraph
+pydantic
+pydantic-settings
+python-dotenv
+
+# Qwen model integration
+dashscope
+
+# RAG related
+chromadb
+langchain-text-splitters
+
+# Streaming output and API
+fastapi
+uvicorn
+websockets
+
+# Tools
+rich
