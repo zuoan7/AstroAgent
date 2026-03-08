@@ -177,7 +177,7 @@ class RAGSystem:
             logger.info(f"=== 开始向向量库添加 {len(texts)} 个文本片段 ===")
             
             # 分批次添加
-            batch_size = 5
+            batch_size = 50
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i:i+batch_size]
                 batch_metadatas = metadatas[i:i+batch_size]

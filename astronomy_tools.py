@@ -4,6 +4,9 @@ from skyfield.api import load, wgs84
 from astropy.coordinates import ICRS, FK5, SkyCoord, EarthLocation
 from astropy.time import Time
 import ephem
+from astroquery.simbad import Simbad
+from astroquery.ned import Ned
+import requests
 
 class AstronomyTools:
     def __init__(self):
@@ -192,3 +195,127 @@ class AstronomyTools:
             sky_objects['moon'] = {'error': str(e)}
         
         return sky_objects
+    
+    def get_astrophysical_object_info(self, object_name):
+        """
+        查询天体基本信息
+        :param object_name: 天体名称
+        :return: 天体基本信息
+        """
+        try:
+            # 使用SIMBAD查询天体信息
+            result = Simbad.query_object(object_name)
+            if result is None:
+                return {'error': '未找到该天体'}
+            
+            # 提取关键信息
+            info = {
+                'name': object_name,
+                'ra': result['RA'][0] if 'RA' in result.colnames else None,
+                'dec': result['DEC'][0] if 'DEC' in result.colnames else None,
+                'main_id': result['MAIN_ID'][0] if 'MAIN_ID' in result.colnames else None,
+                'otype': result['OTYPE'][0] if 'OTYPE' in result.colnames else None
+            }
+            
+            return info
+        except Exception as e:
+            return {'error': f'查询天体信息时出错: {e}'}
+    
+    def get_galaxy_data(self, galaxy_name):
+        """
+        星系数据查询
+        :param galaxy_name: 星系名称
+        :return: 星系数据
+        """
+        try:
+            # 使用NED查询星系数据
+            result = Ned.query_object(galaxy_name)
+            if result is None:
+                return {'error': '未找到该星系'}
+            
+            # 提取关键信息
+            info = {
+                'name': galaxy_name,
+                'ra': result['RA(deg)'][0] if 'RA(deg)' in result.colnames else None,
+                'dec': result['DEC(deg)'][0] if 'DEC(deg)' in result.colnames else None,
+                'redshift': result['Redshift'][0] if 'Redshift' in result.colnames else None,
+                'magnitude': result['Magnitude'][0] if 'Magnitude' in result.colnames else None,
+                'type': result['Type'][0] if 'Type' in result.colnames else None
+            }
+            
+            return info
+        except Exception as e:
+            return {'error': f'查询星系数据时出错: {e}'}
+    
+    def get_nasa_apod(self, date=None, hd=False):
+        """
+        获取NASA每日天文图
+        :param date: 日期，格式为YYYY-MM-DD，默认为当前日期
+        :param hd: 是否获取高清图像
+        :return: APOD信息
+        """
+        try:
+            # NASA APOD API URL
+            url = "https://api.nasa.gov/planetary/apod"
+            
+            # API密钥
+            api_key = "WAKNyJSTmnhaML2WFuIHLVvKK9HkWp6dGoj2gqCk"
+            
+            # 参数
+            params = {
+                "api_key": api_key,
+                "hd": str(hd).lower()
+            }
+            
+            # 如果指定了日期
+            if date:
+                params["date"] = date
+            
+            # 发送请求
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            
+            # 解析响应
+            data = response.json()
+            
+            return data
+        except Exception as e:
+            return {'error': f'获取NASA每日天文图时出错: {e}'}
+    
+    def get_neo_data(self, start_date=None, end_date=None, limit=20):
+        """
+        获取近地天体数据
+        :param start_date: 开始日期，格式为YYYY-MM-DD，默认为今天
+        :param end_date: 结束日期，格式为YYYY-MM-DD，默认为开始日期+7天
+        :param limit: 返回结果数量限制
+        :return: 近地天体数据
+        """
+        try:
+            # NASA NEO API URL
+            url = "https://api.nasa.gov/neo/rest/v1/feed"
+            
+            # API密钥
+            api_key = "WAKNyJSTmnhaML2WFuIHLVvKK9HkWp6dGoj2gqCk"
+            
+            # 参数
+            params = {
+                "api_key": api_key,
+                "limit": limit
+            }
+            
+            # 如果指定了日期
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            
+            # 发送请求
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            
+            # 解析响应
+            data = response.json()
+            
+            return data
+        except Exception as e:
+            return {'error': f'获取近地天体数据时出错: {e}'}
