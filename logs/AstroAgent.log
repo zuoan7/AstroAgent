@@ -1246,3 +1246,956 @@ For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/erro
 2026-03-09 11:43:24 - AstroAgent - INFO - 
 === 处理用户查询：火星现在的位置 ===
 2026-03-09 11:43:40 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：120 字符
+2026-03-09 12:20:24 - AstroAgent - ERROR - ❌ MCP客户端初始化失败：not enough values to unpack (expected 2, got 1)
+2026-03-09 12:22:32 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 12:22:32 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 12:22:32 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 12:22:32 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 12:22:32 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 12:22:32 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 12:22:34 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 12:22:34 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 12:22:34 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 12:22:34 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 12:22:34 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 12:22:34 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 12:22:34 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 12:22:34 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 12:22:34 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 12:22:46 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：150 字符
+2026-03-09 12:22:46 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 12:22:58 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：175 字符
+2026-03-09 18:52:44 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 18:52:44 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 18:52:44 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 18:52:45 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 18:52:45 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 18:52:45 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 18:52:46 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 18:52:46 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 18:52:46 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 18:52:46 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 18:52:46 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 18:52:46 - AstroAgent - INFO - ✅ 获取到session ID: e372a1eb408646e98d18dc9e67e80925
+2026-03-09 18:52:46 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 18:52:46 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 18:52:46 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 18:52:46 - AstroAgent - ERROR - ❌ MCP会话初始化失败: Expecting value: line 1 column 1 (char 0)
+2026-03-09 18:52:46 - AstroAgent - WARNING - ⚠️ 将使用本地工具（如果有）
+2026-03-09 18:52:46 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 18:52:46 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 18:52:46 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 18:52:46 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 18:52:46 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 18:52:48 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 18:52:53 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：144 字符
+2026-03-09 18:52:53 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 18:52:56 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 18:57:57 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 18:57:57 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 18:57:57 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 18:57:57 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 18:57:57 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 18:57:57 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 18:57:58 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 18:57:58 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 18:57:58 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ 获取到session ID: 13e0bc322e32434f8c051492c4f6d587
+2026-03-09 18:57:58 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 18:57:58 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 18:57:58 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 13e0bc322e32434f8c051492c4f6d587
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 18:57:58 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 18:57:58 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 18:58:03 - AstroAgent - ERROR - ❌ 调用工具 get_tonight_best 失败: Request URL is missing an 'http://' or 'https://' protocol.
+2026-03-09 18:58:15 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来在尝试获取今晚最佳观测目标时遇到了网络问题。这可能是因为当前的网络环境不支持或暂时出现了故障。不过，不用担心！我可以根据一般情况给你一些建议。
+
+通常来说，在晴朗的夜晚，月亮、金星、木星以及一些明亮的恒星都是很好的观测对象。如果你想要寻找特别的目标，比如行星或其他深空天体，最好提前查看一下天文预报或者使用天文软件来定位它们的位置。此外，夏季银河也是一个非常壮观的景象，如果是在远离城市光污染的地方观测的话。
+
+希望这些信息对你有所帮助！如果有具体的地点或者其他条件，我也很乐意提供更详细的建议哦。
+  
+**注：** 正常情况下，我会直接调用`GetTonightBest`工具来为你提供最准确的信息。但由于刚才遇到了技术上的小障碍，请谅解这次未能直接给出特定推荐。下次有机会时，希望能更好地帮助到你！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 18:58:15 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 18:58:19 - AstroAgent - ERROR - ❌ 调用工具 get_weekly_events 失败: Request URL is missing an 'http://' or 'https://' protocol.
+2026-03-09 18:58:31 - AstroAgent - INFO - 📄 检索到上下文长度：1472 字符
+2026-03-09 18:58:50 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来在尝试获取未来一周天象信息时遇到了网络问题，同时从知识库中检索到的信息并不直接相关。不过，我可以基于一般天文现象来给你一些建议。
+
+通常，在任何给定的一周内，我们可能会观察到一些常见的天文现象，比如月亮的不同相位、行星的可见性变化等。此外，特定季节还可能有流星雨或其他特别的天文事件。由于我暂时无法直接获取最新数据，请允许我分享一些常见的观测建议：
+
+1. **月亮**：留意月亮的变化，无论是新月、上弦月还是满月，都是夜空中非常美丽的景象。
+2. **行星**：金星和木星是夜空中最亮的星星之一（除了月亮），它们很容易被肉眼看到。火星和土星也经常能在夜晚见到，但亮度较低。
+3. **流星雨**：如果你所在的地区最近有流星雨活动的话，这将是一个不容错过的壮观景象。通常，每年有几个主要的流星雨期，如英仙座流星雨或双子座流星雨。
+
+为了获得更准确的信息，你可以查看当地的天文预报或者使用天文应用程序来跟踪即将到来的天文事件。希望这些提示对你有所帮助！
+
+如果你需要关于某个具体天体或现象的更多信息，随时告诉我，我很乐意进一步帮助你！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 18:58:50 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 18:58:55 - AstroAgent - ERROR - ❌ 调用工具 get_monthly_events 失败: Request URL is missing an 'http://' or 'https://' protocol.
+2026-03-09 18:58:58 - AstroAgent - ERROR - ❌ 调用工具 get_monthly_events 失败: Request URL is missing an 'http://' or 'https://' protocol.
+2026-03-09 18:59:18 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来我们遇到了一些网络连接问题，暂时无法直接获取本月的天象预报信息。不过不用担心，我可以基于已知的信息给你一些建议。
+
+对于每个月来说，通常会有几个常见的天文现象值得一看：
+
+1. **月相变化**：每个月都会经历从新月到满月再到新月的变化过程，这期间月亮的不同形状是非常迷人的。
+2. **行星观测**：某些月份里，金星、火星、木星等明亮的行星会出现在夜空中，通过肉眼或小型望远镜就能看到它们。
+3. **流星雨**：一年中有多次流星雨活动，比如英仙座流星雨、狮子座流星雨等，具体取决于哪个月份。如果你对特定的流星雨感兴趣，请告诉我月份，我可以提供更准确的信息。
+4. **星座与亮星**：不同的季节可以看到不同的星座，每个季节都有其标志性的星星和星座故事。
+
+如果你能告诉我具体的月份或者是有兴趣了解某一种特别的现象，我会尽力为你提供更多详细的信息！希望这些信息对你有所帮助，也祝你观星愉快！
+
+（注：由于技术限制，目前无法立即获取最新的在线数据，但上述建议基于一般情况下的天文现象。）`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 18:59:18 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 18:59:23 - AstroAgent - ERROR - ❌ 调用工具 get_monthly_events 失败: Request URL is missing an 'http://' or 'https://' protocol.
+2026-03-09 18:59:33 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：189 字符
+2026-03-09 18:59:33 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 19:04:41 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 19:04:41 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 19:04:41 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 19:04:42 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 19:04:42 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 19:04:42 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 19:04:43 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 19:04:43 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 19:04:43 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ 获取到session ID: 72e6687fd3d845638ac7081e6f22b8a7
+2026-03-09 19:04:43 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 19:04:43 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 19:04:43 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 72e6687fd3d845638ac7081e6f22b8a7
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 19:04:43 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 19:04:43 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 19:04:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：114 字符
+2026-03-09 19:04:50 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 19:05:22 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：149 字符
+2026-03-09 19:05:22 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 19:05:38 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：230 字符
+2026-03-09 19:05:38 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 19:06:14 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：260 字符
+2026-03-09 19:06:15 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 19:13:51 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 19:13:51 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 19:13:51 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 19:13:51 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 19:13:51 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 19:13:51 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 19:13:53 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 19:13:53 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 19:13:53 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ 获取到session ID: c04f7850017c4a94b1ed057da45bf496
+2026-03-09 19:13:53 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 19:13:53 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 19:13:53 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: c04f7850017c4a94b1ed057da45bf496
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 19:13:53 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 19:13:53 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 19:14:01 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：142 字符
+2026-03-09 19:14:01 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 19:14:40 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：114 字符
+2026-03-09 19:14:40 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 19:14:46 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 19:22:30 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 19:22:30 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 19:22:30 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 19:22:30 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 19:22:30 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 19:22:30 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 19:22:31 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 19:22:31 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 19:22:31 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 19:22:31 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 19:22:32 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 19:22:32 - AstroAgent - INFO - ✅ 获取到session ID: a9fce6dd300043169c5f27f6bc308f64
+2026-03-09 19:22:32 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 19:22:32 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 19:22:32 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 19:22:32 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: a9fce6dd300043169c5f27f6bc308f64
+2026-03-09 19:22:32 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 19:22:32 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 19:22:32 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 19:22:32 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 19:22:32 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 19:22:41 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：147 字符
+2026-03-09 19:22:41 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 19:23:06 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看来我们遇到了一些技术问题，暂时无法直接获取未来一周的具体天象预报。不过别担心，根据通常的天文规律，我可以为你概述一下这段时间内可能会发生的有趣天象事件。
+
+- **月亮相位变化**：观察月亮每天的变化是很有趣的活动。从新月到上弦月、满月再到下弦月，每晚你都可以看到不同的月亮面貌。
+- **行星观测**：金星和火星等行星在夜空中非常显眼，特别是当它们接近地球时。你可以尝试在黄昏或黎明时分寻找这些明亮的“星星”。
+- **流星雨**：虽然特定的流星雨可能需要等待一段时间才能遇到，但偶尔也会有零星的流星划过夜空，带来意外惊喜。
+
+如果你对某个具体的天象感兴趣，比如想知道最近是否有流星雨，或者想了解某颗行星的最佳观测时间，请告诉我，我会尽力提供帮助。此外，也可以关注当地天文社团或网站发布的最新消息哦！
+
+对于具体日期和时间的天象预报，建议可以查看可靠的天文网站或是使用专业的天文软件来获得最准确的信息。希望这些建议对你有所帮助！如果还有其他问题，随时欢迎询问。`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 19:23:06 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 19:23:15 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 19:27:39 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 19:27:39 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 19:27:39 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 19:27:39 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 19:27:39 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 19:27:39 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 19:27:40 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 19:27:40 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 19:27:40 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ 获取到session ID: 95ff074e2a344b5c9ee0c7ec6a53d88b
+2026-03-09 19:27:40 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 19:27:40 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 19:27:40 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 95ff074e2a344b5c9ee0c7ec6a53d88b
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 19:27:40 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 19:27:40 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 19:27:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：136 字符
+2026-03-09 19:27:50 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 19:27:59 - AstroAgent - INFO - 📄 检索到上下文长度：1450 字符
+2026-03-09 19:28:15 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 19:44:09 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 19:44:09 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 19:44:09 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 19:44:10 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 19:44:10 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 19:44:10 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 19:44:11 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 19:44:11 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 19:44:11 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ 获取到session ID: feaeba86d14149afb5dc5a05fcc44b5a
+2026-03-09 19:44:11 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 19:44:11 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 19:44:11 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: feaeba86d14149afb5dc5a05fcc44b5a
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 19:44:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 19:44:11 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 19:44:13 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773056653947,"result":{"content":[{"type":"text","text":"🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:14\n  • 日出：22:34\n"}],"isError":false}}
+
+
+2026-03-09 19:44:22 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：152 字符
+2026-03-09 19:44:22 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 19:44:25 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773056665058,"result":{"content":[{"type":"text","text":"错误：can only concatenate str (not \"datetime.timedelta\") to str"}],"isError":false}}
+
+
+2026-03-09 19:44:30 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773056670803,"result":{"content":[{"type":"text","text":"错误：can only concatenate str (not \"datetime.timedelta\") to str"}],"isError":false}}
+
+
+2026-03-09 19:44:47 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来我们的系统在尝试获取未来一周天象信息时遇到了重复的技术问题。这可能是因为网络连接或数据处理方面出现了暂时性的故障。虽然我们暂时无法通过常规方法获取到这些信息，但我可以基于已知的天文知识给你一些一般性的建议和可能发生的事件类型。
+
+对于未来一周内可能会出现的一些常见天象包括但不限于：
+- 行星（如金星、火星、木星等）与月亮的接近。
+- 某些明亮行星的最佳观测时间。
+- 可能会有一些流星雨活动，尽管具体日期需要查看最新预报来确定。
+- 月相的变化，从新月到满月之间不同的阶段。
+
+如果你对特定类型的天象特别感兴趣，比如流星雨或是某颗行星的观赏时机，请告诉我，我会尽力提供更详细的指导。另外，也可以考虑下载一些天文观测应用，它们通常能够提供实时更新的信息哦！
+
+如果想要了解更准确的天象预告，建议稍后再试一次，或者访问可靠的天文网站查看最新的预报信息。希望我的回答对你有所帮助！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 19:44:47 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 19:44:51 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773056691591,"result":{"content":[{"type":"text","text":"🔭 **{}年4月天象预报**\n\n{}年4月没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见（月末接近合日）\n"}],"isError":false}}
+
+
+2026-03-09 19:45:02 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：291 字符
+2026-03-09 19:45:02 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 19:45:06 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773056706211,"result":{"content":[{"type":"text","text":"🔭 **{\"year\": 2026, \"month\": 8}年4月天象预报**\n\n{\"year\": 2026, \"month\": 8}年4月没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见（月末接近合日）\n"}],"isError":false}}
+
+
+2026-03-09 19:45:11 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773056711397,"result":{"content":[{"type":"text","text":"🔭 **{\"year\": 2026, \"month\": 8}年4月天象预报**\n\n{\"year\": 2026, \"month\": 8}年4月没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见（月末接近合日）\n"}],"isError":false}}
+
+
+2026-03-09 19:45:30 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：340 字符
+2026-03-09 19:45:30 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 20:06:49 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 20:06:49 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 20:06:49 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 20:06:49 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 20:06:49 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 20:06:49 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 20:06:50 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 20:06:50 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 20:06:50 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ 获取到session ID: cd65d3d4212642ddbb0020f497c553b1
+2026-03-09 20:06:50 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 20:06:50 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 20:06:50 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: cd65d3d4212642ddbb0020f497c553b1
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 20:06:50 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 20:06:50 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 20:06:56 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058016471,"result":{"content":[{"type":"text","text":"🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:14\n  • 日出：22:34\n"}],"isError":false}}
+
+
+2026-03-09 20:07:01 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：98 字符
+2026-03-09 20:07:01 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 20:07:04 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058024155,"result":{"content":[{"type":"text","text":"错误：can only concatenate str (not \"datetime.timedelta\") to str"}],"isError":false}}
+
+
+2026-03-09 20:07:06 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058026941,"result":{"content":[{"type":"text","text":"错误：can only concatenate str (not \"datetime.timedelta\") to str"}],"isError":false}}
+
+
+2026-03-09 20:07:23 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来在尝试获取未来一周天象信息时遇到了技术性问题。这可能是由于系统内部的一个小故障导致的。尽管如此，我依然可以为你提供一些基于当前知识库的信息，并且我会建议你稍后再试一次或查看其他可靠的天文预报网站。
+
+鉴于直接调用工具遇到的问题，让我先根据最近的天文学活动来大致预测一下未来一周内可能发生的有趣现象吧！通常来说，这样的活动包括但不限于行星合月、流星雨高峰期或是某些明亮行星的最佳观测时间等。不过，请记得检查最新的天文预报以获得最准确的信息哦！
+
+- 通常每个月都会有至少一次满月或者新月。
+- 如果恰好赶上某个著名流星雨（如英仙座流星雨或双子座流星雨）的活跃期，那么夜间远离城市光污染的地方将是一个绝佳的观赏地点。
+- 金星和木星作为夜空中最亮的两颗行星之一，在傍晚或黎明时分经常可见，它们与其他天体之间的相对位置变化也是值得一看的景象。
+
+希望这些信息对你有所帮助！如果你对特定类型的天文事件感兴趣，也欢迎告诉我，这样我可以提供更加具体的建议。同时，一旦系统恢复正常，你可以再次询问来获取更精确的数据。`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 20:07:23 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 20:07:30 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058050906,"result":{"content":[{"type":"text","text":"🔭 **{}年4月天象预报**\n\n{}年4月没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见（月末接近合日）\n"}],"isError":false}}
+
+
+2026-03-09 20:07:37 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 20:13:56 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 20:13:56 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 20:13:56 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 20:13:56 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 20:13:56 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 20:13:56 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 20:13:57 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 20:13:57 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 20:13:57 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 20:13:57 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 20:13:58 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 20:13:58 - AstroAgent - INFO - ✅ 获取到session ID: fa708063fda0458389b5aba3e7167855
+2026-03-09 20:13:58 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 20:13:58 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 20:13:58 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 20:13:58 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: fa708063fda0458389b5aba3e7167855
+2026-03-09 20:13:58 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 20:13:58 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 20:13:58 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 20:13:58 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 20:13:58 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 20:14:04 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058444276,"result":{"content":[{"type":"text","text":"🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:14\n  • 日出：22:34\n"}],"isError":false}}
+
+
+2026-03-09 20:14:11 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：99 字符
+2026-03-09 20:14:11 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 20:14:14 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058454355,"result":{"content":[{"type":"text","text":"错误：can only concatenate str (not \"datetime.timedelta\") to str"}],"isError":false}}
+
+
+2026-03-09 20:14:20 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058460829,"result":{"content":[{"type":"text","text":"错误：can only concatenate str (not \"datetime.timedelta\") to str"}],"isError":false}}
+
+
+2026-03-09 20:14:53 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：366 字符
+2026-03-09 20:14:53 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 20:14:55 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058495604,"result":{"content":[{"type":"text","text":"🔭 **{}年4月天象预报**\n\n{}年4月没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见（月末接近合日）\n"}],"isError":false}}
+
+
+2026-03-09 20:15:04 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：165 字符
+2026-03-09 20:15:04 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 20:15:09 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058509615,"result":{"content":[{"type":"text","text":"🔭 **{\"year\": 2026, \"month\": 8}年4月天象预报**\n\n{\"year\": 2026, \"month\": 8}年4月没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见（月末接近合日）\n"}],"isError":false}}
+
+
+2026-03-09 20:15:14 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058514557,"result":{"content":[{"type":"text","text":"🔭 **{\"year\": 2026, \"month\": 8}年4月天象预报**\n\n{\"year\": 2026, \"month\": 8}年4月没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见（月末接近合日）\n"}],"isError":false}}
+
+
+2026-03-09 20:15:33 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：367 字符
+2026-03-09 20:15:33 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 20:20:25 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 20:20:25 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 20:20:25 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 20:20:25 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 20:20:25 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 20:20:25 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 20:20:26 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 20:20:26 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 20:20:26 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ 获取到session ID: be5be83b78bb47198fd248d2e1bc8ca9
+2026-03-09 20:20:26 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 20:20:26 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 20:20:26 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: be5be83b78bb47198fd248d2e1bc8ca9
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用MCP HTTP调用）
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 20:20:26 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 20:20:26 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 20:20:30 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058830180,"result":{"content":[{"type":"text","text":"🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:14\n  • 日出：22:34\n"}],"isError":false}}
+
+
+2026-03-09 20:20:36 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：121 字符
+2026-03-09 20:20:36 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 20:20:40 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058840230,"result":{"content":[{"type":"text","text":"None"}],"isError":false}}
+
+
+2026-03-09 20:20:54 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：115 字符
+2026-03-09 20:20:54 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 20:20:58 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058858179,"result":{"content":[{"type":"text","text":"🔭 **2026年3月天象预报**\n\n✨ **本月特殊天象**\n• **2026-03-03** 月全食\n  已发生，亚洲、欧洲可见\n• **2026-03-09** 金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n• **2026-03-20** 春分\n  22:45:58，太阳直射赤道，昼夜等长\n🪐 **本月行星可见性**\n• 木星：傍晚可见\n• 土星：后半夜可见\n• 金星：早晨东方低空可见\n"}],"isError":false}}
+
+
+2026-03-09 20:21:08 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：287 字符
+2026-03-09 20:21:08 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 20:21:13 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058873048,"result":{"content":[{"type":"text","text":"🔭 **2026年3月天象预报**\n\n✨ **本月特殊天象**\n• **2026-03-03** 月全食\n  已发生，亚洲、欧洲可见\n• **2026-03-09** 金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n• **2026-03-20** 春分\n  22:45:58，太阳直射赤道，昼夜等长\n🪐 **本月行星可见性**\n• 木星：傍晚可见\n• 土星：后半夜可见\n• 金星：早晨东方低空可见\n"}],"isError":false}}
+
+
+2026-03-09 20:21:16 - AstroAgent - DEBUG - 原始响应: event: message
+data: {"jsonrpc":"2.0","id":1773058876741,"result":{"content":[{"type":"text","text":"🔭 **2026年3月天象预报**\n\n✨ **本月特殊天象**\n• **2026-03-03** 月全食\n  已发生，亚洲、欧洲可见\n• **2026-03-09** 金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n• **2026-03-20** 春分\n  22:45:58，太阳直射赤道，昼夜等长\n🪐 **本月行星可见性**\n• 木星：傍晚可见\n• 土星：后半夜可见\n• 金星：早晨东方低空可见\n"}],"isError":false}}
+
+
+2026-03-09 20:21:40 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：321 字符
+2026-03-09 20:21:40 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 21:06:42 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 21:06:42 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 21:06:42 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 21:06:42 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 21:06:42 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 21:06:42 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 21:06:43 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 21:06:43 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 21:06:43 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 21:06:43 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 21:06:43 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 21:06:43 - AstroAgent - INFO - ✅ 获取到session ID: 773eecae1c5c449dad24363e627c84db
+2026-03-09 21:06:43 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 21:06:43 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 21:06:43 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 21:06:43 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 21:06:44 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 21:06:44 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 773eecae1c5c449dad24363e627c84db
+2026-03-09 21:06:44 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 21:06:44 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 21:06:44 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 21:06:44 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 21:06:44 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 21:06:47 - AstroAgent - DEBUG - 调用工具 get_tonight_best，参数: {}
+2026-03-09 21:06:47 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773061607240, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 21:06:57 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：132 字符
+2026-03-09 21:06:57 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 21:07:01 - AstroAgent - DEBUG - 调用工具 get_weekly_events，参数: {'start_date': '{}'}
+2026-03-09 21:07:01 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773061621094, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 21:07:08 - AstroAgent - DEBUG - 调用工具 get_weekly_events，参数: {'start_date': '{}'}
+2026-03-09 21:07:08 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773061628044, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 21:07:39 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：406 字符
+2026-03-09 21:07:39 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 21:07:43 - AstroAgent - DEBUG - 调用工具 get_monthly_events，参数: {'year': '{"year": 2023, "month": 10}', 'month': None}
+2026-03-09 21:07:43 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773061663474, "result": {"content": [{"type": "text", "text": "2 validation errors for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse stri
+2026-03-09 21:07:47 - AstroAgent - DEBUG - 调用工具 get_monthly_events，参数: {'year': '{"year": 2023, "month": 10}', 'month': None}
+2026-03-09 21:07:47 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773061667311, "result": {"content": [{"type": "text", "text": "2 validation errors for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse stri
+2026-03-09 21:07:54 - AstroAgent - INFO - 📄 检索到上下文长度：1449 字符
+2026-03-09 21:08:18 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：322 字符
+2026-03-09 21:08:18 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 21:08:21 - AstroAgent - DEBUG - 调用工具 get_monthly_events，参数: {'year': '{"year": 2026, "month": 8}', 'month': None}
+2026-03-09 21:08:21 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773061701800, "result": {"content": [{"type": "text", "text": "2 validation errors for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse stri
+2026-03-09 21:08:29 - AstroAgent - DEBUG - 调用工具 get_monthly_events，参数: {'year': '{"year": 2026, "month": 8}', 'month': None}
+2026-03-09 21:08:29 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773061709820, "result": {"content": [{"type": "text", "text": "2 validation errors for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse stri
+2026-03-09 21:09:12 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：368 字符
+2026-03-09 21:09:12 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 21:28:35 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 21:28:35 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 21:28:35 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 21:28:35 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 21:28:35 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 21:28:35 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 21:28:36 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 21:28:36 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 21:28:36 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ 获取到session ID: f4c47900b86042db8cac888464b1d3f4
+2026-03-09 21:28:36 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 21:28:36 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 21:28:36 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 21:28:36 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: f4c47900b86042db8cac888464b1d3f4
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 21:28:36 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 21:28:36 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 21:28:40 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-09 21:28:40 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062920243, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 21:28:46 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：128 字符
+2026-03-09 21:28:46 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 21:28:48 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 21:28:48 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062928239, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 21:28:51 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{"start_date": null}'}
+2026-03-09 21:28:51 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062931978, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 21:28:56 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 21:28:56 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062936146, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 21:29:16 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：128 字符
+2026-03-09 21:29:16 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 21:29:19 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": null, "month": null}'}
+2026-03-09 21:29:19 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062959367, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:29:22 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{}'}
+2026-03-09 21:29:22 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062962838, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:29:26 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2023, "month": 10}  # 假设当前是2023年10月，根据实际情况调整'}
+2026-03-09 21:29:26 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062966294, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:29:41 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2023, "month": 10}  # 假设当前时间为2023年10月'}
+2026-03-09 21:29:41 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773062981509, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:30:00 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：130 字符
+2026-03-09 21:30:00 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 21:30:03 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 21:30:03 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063003666, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:30:08 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}\n（注意：这里的实际操作应该是基于正确的参数格式进行调整，但根据当前情况，我们将假设此步骤已经完成并继续）\n'}
+2026-03-09 21:30:08 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063008128, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:30:24 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 21:30:24 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063024675, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:31:04 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：230 字符
+2026-03-09 21:31:05 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 21:36:19 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 21:36:19 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 21:36:19 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 21:36:19 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 21:36:19 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 21:36:19 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 21:36:20 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 21:36:20 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 21:36:20 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 21:36:20 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 21:36:21 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 21:36:21 - AstroAgent - INFO - ✅ 获取到session ID: 50eef5f99bb340c382891e3b149402cb
+2026-03-09 21:36:21 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 21:36:21 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 21:36:21 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 21:36:21 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 21:36:21 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 21:36:21 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 50eef5f99bb340c382891e3b149402cb
+2026-03-09 21:36:21 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 21:36:21 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 21:36:21 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 21:36:21 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 21:36:21 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 21:36:23 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-09 21:36:23 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063383235, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 21:36:30 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：110 字符
+2026-03-09 21:36:30 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 21:36:33 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 21:36:33 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063393447, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 21:36:36 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 21:36:36 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063396662, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 21:37:13 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：166 字符
+2026-03-09 21:37:13 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 21:37:16 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": null, "month": null}  # 使用null表示采用当前年月作为默认值'}
+2026-03-09 21:37:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063436155, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:37:21 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{}  # 空字典表示使用默认值（即当前年月）'}
+2026-03-09 21:37:21 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063441211, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:37:24 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2023, "month": 10}  # 假设当前是2023年10月'}
+2026-03-09 21:37:25 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063444947, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:37:35 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：298 字符
+2026-03-09 21:37:35 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 21:37:38 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 21:37:38 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063458300, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:37:43 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 21:37:43 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773063463123, "result": {"content": [{"type": "text", "text": "1 validation error for call[get_monthly_events]\nyear\n  Input should be a valid integer, unable to parse strin
+2026-03-09 21:37:46 - AstroAgent - INFO - 📄 检索到上下文长度：1403 字符
+2026-03-09 21:38:19 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：458 字符
+2026-03-09 21:38:19 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 22:04:34 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:04:34 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:04:34 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:04:35 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:04:35 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:04:35 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:04:36 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:04:36 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:04:36 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ 获取到session ID: 18ec9656f68b4a8fbffa36eb760361e9
+2026-03-09 22:04:36 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 22:04:36 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 22:04:36 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 22:04:36 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 18ec9656f68b4a8fbffa36eb760361e9
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:04:36 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:04:36 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:04:38 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-09 22:04:38 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065078772, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 22:04:46 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：126 字符
+2026-03-09 22:04:46 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 22:04:50 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 22:04:50 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065090051, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 22:04:54 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{"start_date": null}'}
+2026-03-09 22:04:55 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065094998, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 22:05:00 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 22:05:00 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065100876, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 22:05:12 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：210 字符
+2026-03-09 22:05:12 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 22:05:16 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": null, "month": null}'}
+2026-03-09 22:05:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065116528, "result": {"content": [{"type": "text", "text": "🔭 **2026年4月天象预报**\n\n✨ **本月特殊天象**\n• **2026-04-22** 天琴座流星雨极大\n  每小时约18颗，无月光干扰\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测
+2026-03-09 22:05:24 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：184 字符
+2026-03-09 22:05:24 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 22:05:29 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 22:05:29 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065129545, "result": {"content": [{"type": "text", "text": "🔭 **2026年8月天象预报**\n\n✨ **本月特殊天象**\n• **2026-08-12** 英仙座流星雨极大\n  每小时约100颗，年度最佳流星雨！\n• **2026-08-12** 日偏食\n  北京时间
+2026-03-09 22:05:40 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：347 字符
+2026-03-09 22:05:40 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 22:13:13 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:13:13 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:13:13 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:13:13 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:13:13 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:13:13 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:13:14 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:13:14 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:13:14 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ 获取到session ID: 59602a05cbb0439993b26700c8fb500c
+2026-03-09 22:13:14 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 22:13:14 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 22:13:14 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 22:13:14 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 59602a05cbb0439993b26700c8fb500c
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:13:14 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:13:14 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:13:18 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-09 22:13:18 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065598216, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 22:13:26 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：131 字符
+2026-03-09 22:13:26 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 22:13:28 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 22:13:28 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065608424, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 22:13:33 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 22:13:33 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065613945, "result": {"content": [{"type": "text", "text": "Output validation error: None is not of type 'string'"}], "isError": true}}
+2026-03-09 22:14:11 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：354 字符
+2026-03-09 22:14:11 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 22:14:18 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": null, "month": null}  # 使用null表示取当前年月'}
+2026-03-09 22:14:18 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065658702, "result": {"content": [{"type": "text", "text": "🔭 **2026年4月天象预报**\n\n✨ **本月特殊天象**\n• **2026-04-22** 天琴座流星雨极大\n  每小时约18颗，无月光干扰\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测
+2026-03-09 22:14:25 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：184 字符
+2026-03-09 22:14:25 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 22:14:28 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 22:14:28 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773065668766, "result": {"content": [{"type": "text", "text": "🔭 **2026年8月天象预报**\n\n✨ **本月特殊天象**\n• **2026-08-12** 英仙座流星雨极大\n  每小时约100颗，年度最佳流星雨！\n• **2026-08-12** 日偏食\n  北京时间
+2026-03-09 22:14:41 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：325 字符
+2026-03-09 22:14:41 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 22:17:59 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:17:59 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:17:59 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:17:59 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:17:59 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:17:59 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:18:01 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:18:01 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:18:01 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:18:01 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:18:01 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:18:01 - AstroAgent - ERROR - ❌ MCP会话初始化失败: [Errno 111] Connection refused
+2026-03-09 22:18:01 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:18:01 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:18:01 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:18:01 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:18:01 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:18:03 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:18:21 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:18:33 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:18:52 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:19:37 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:19:55 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:20:15 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:20:15 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：51 字符
+2026-03-09 22:20:15 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 22:20:18 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:20:30 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:20:56 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:21:23 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：565 字符
+2026-03-09 22:21:23 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 22:21:25 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:21:41 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：121 字符
+2026-03-09 22:21:41 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 22:21:43 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:21:55 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：212 字符
+2026-03-09 22:22:41 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:22:41 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:22:41 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:22:41 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:22:41 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:22:41 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:22:42 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:22:42 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:22:42 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ 获取到session ID: 5f54f440ed8f4604a4cf3399f3b115af
+2026-03-09 22:22:42 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 22:22:42 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 22:22:42 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 22:22:42 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 5f54f440ed8f4604a4cf3399f3b115af
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:22:42 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:22:42 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:22:44 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-09 22:22:44 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066164442, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 22:22:49 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：133 字符
+2026-03-09 22:22:49 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 22:22:51 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 22:22:51 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066171098, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-09 至 2026-03-15 一周天象预报**\n\n✨ **本周特殊天象**\n• **2026-03-09** 金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n🌙 **本周月
+2026-03-09 22:23:00 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：223 字符
+2026-03-09 22:23:00 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 22:23:02 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": null, "month": null}  # 使用null让函数自动选取当前年份和月份'}
+2026-03-09 22:23:02 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066182964, "result": {"content": [{"type": "text", "text": "🔭 **2026年4月天象预报**\n\n✨ **本月特殊天象**\n• **2026-04-22** 天琴座流星雨极大\n  每小时约18颗，无月光干扰\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测
+2026-03-09 22:23:11 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：237 字符
+2026-03-09 22:23:11 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 22:23:14 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 22:23:14 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066194681, "result": {"content": [{"type": "text", "text": "🔭 **2026年8月天象预报**\n\n✨ **本月特殊天象**\n• **2026-08-12** 英仙座流星雨极大\n  每小时约100颗，年度最佳流星雨！\n• **2026-08-12** 日偏食\n  北京时间
+2026-03-09 22:23:30 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：297 字符
+2026-03-09 22:23:31 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 22:26:23 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:26:23 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:26:23 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:26:23 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:26:23 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:26:23 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:26:24 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:26:24 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:26:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ 获取到session ID: bb374b60677746e88a4bb68affe9dc08
+2026-03-09 22:26:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 22:26:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 22:26:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 22:26:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: bb374b60677746e88a4bb68affe9dc08
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:26:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:26:24 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:26:26 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-09 22:26:26 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066386607, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 22:26:30 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：112 字符
+2026-03-09 22:26:30 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 22:26:32 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 22:26:32 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066392588, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-09 至 2026-03-15 一周天象预报**\n\n✨ **本周特殊天象**\n• **2026-03-09** 金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n🌙 **本周月
+2026-03-09 22:26:46 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：326 字符
+2026-03-09 22:26:46 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 22:26:49 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": null, "month": null}  # 使用null表示采用当前年月作为默认值'}
+2026-03-09 22:26:49 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066409904, "result": {"content": [{"type": "text", "text": "🔭 **2026年4月天象预报**\n\n✨ **本月特殊天象**\n• **2026-04-22** 天琴座流星雨极大\n  每小时约18颗，无月光干扰\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测
+2026-03-09 22:26:58 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：241 字符
+2026-03-09 22:26:58 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 22:27:00 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 22:27:00 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773066420603, "result": {"content": [{"type": "text", "text": "🔭 **2026年8月天象预报**\n\n✨ **本月特殊天象**\n• **2026-08-12** 英仙座流星雨极大\n  每小时约100颗，年度最佳流星雨！\n• **2026-08-12** 日偏食\n  北京时间
+2026-03-09 22:27:13 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：335 字符
+2026-03-09 22:27:13 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-09 22:34:19 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:34:19 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:34:19 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:34:19 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:34:19 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:34:19 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:34:20 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:34:20 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:34:20 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:34:20 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:34:20 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:34:20 - AstroAgent - ERROR - ❌ MCP会话初始化失败: [Errno 111] Connection refused
+2026-03-09 22:34:20 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:34:20 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:34:20 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:34:20 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:34:20 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:34:25 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:34:33 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：141 字符
+2026-03-09 22:34:33 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 22:34:35 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:34:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：117 字符
+2026-03-09 22:34:50 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 22:34:54 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:35:13 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：158 字符
+2026-03-09 22:35:13 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 22:35:16 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:35:19 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:35:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：422 字符
+2026-03-09 22:40:47 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:40:47 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:40:47 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:40:47 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:40:47 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:40:47 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:40:48 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:40:48 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:40:48 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:40:48 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:40:48 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:40:48 - AstroAgent - ERROR - ❌ MCP会话初始化失败: [Errno 111] Connection refused
+2026-03-09 22:40:48 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:40:48 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:40:48 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:40:48 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:40:48 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:40:51 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:41:12 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:41:24 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:41:40 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:41:58 - AstroAgent - ERROR - ❌ MCP会话未初始化
+2026-03-09 22:43:24 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 22:43:24 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 22:43:24 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 22:43:24 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 22:43:24 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 22:43:24 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 22:43:25 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 22:43:25 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 22:43:25 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 22:43:25 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 22:43:26 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-09 22:43:26 - AstroAgent - INFO - ✅ 获取到session ID: c60deacf6fe741a9b46822a862180550
+2026-03-09 22:43:26 - AstroAgent - INFO - 发送初始化请求...
+2026-03-09 22:43:26 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-09 22:43:26 - AstroAgent - INFO - 发送initialized通知...
+2026-03-09 22:43:26 - AstroAgent - INFO - 获取工具列表...
+2026-03-09 22:43:26 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-09 22:43:26 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: c60deacf6fe741a9b46822a862180550
+2026-03-09 22:43:26 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 22:43:26 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 22:43:26 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 22:43:26 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-09 22:43:26 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-09 22:43:28 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-09 22:43:28 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773067408259, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-09）观测指南**\n\n✨ **特别推荐**：金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n\n【月相】🌖 亏凸月\n  前半夜可见\n\n【可见行星】今晚无明显可见行星
+2026-03-09 22:43:35 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：144 字符
+2026-03-09 22:43:35 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-09 22:43:46 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-09 22:43:46 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773067426671, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-09 至 2026-03-15 一周天象预报**\n\n✨ **本周特殊天象**\n• **2026-03-09** 金星合土星\n  日落后西方低空，两者相距约1.5度，肉眼可见\n🌙 **本周月
+2026-03-09 22:43:58 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：298 字符
+2026-03-09 22:43:58 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-09 22:44:03 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{}'}
+2026-03-09 22:44:03 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773067443051, "result": {"content": [{"type": "text", "text": "🔭 **2026年4月天象预报**\n\n✨ **本月特殊天象**\n• **2026-04-22** 天琴座流星雨极大\n  每小时约18颗，无月光干扰\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测
+2026-03-09 22:44:12 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：179 字符
+2026-03-09 22:44:12 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-09 22:44:19 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-09 22:44:19 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773067459022, "result": {"content": [{"type": "text", "text": "🔭 **2026年8月天象预报**\n\n✨ **本月特殊天象**\n• **2026-08-12** 英仙座流星雨极大\n  每小时约100颗，年度最佳流星雨！\n• **2026-08-12** 日偏食\n  北京时间
+2026-03-09 22:44:48 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：333 字符
+2026-03-09 22:44:48 - AstroAgent - INFO - ✅ HTTP客户端已关闭

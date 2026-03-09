@@ -423,6 +423,7 @@ class AstronomyTools:
             return {'error': f'获取近地天体数据时出错: {e}'}
 
 
+
 class AstronomyEventsPredictor:
     """天象预测工具类"""
     
@@ -447,8 +448,6 @@ class AstronomyEventsPredictor:
         
         # 预置2026年主要天象数据
         self.special_events_2026 = self._load_special_events()
-        
-        # print(f"✅ 天象预测器初始化完成，观测地：北纬{self.lat}° 东经{self.lon}°")
     
     def _load_special_events(self):
         """
@@ -626,7 +625,6 @@ class AstronomyEventsPredictor:
         ]
         
         visible = []
-        earth = self.planets['earth']
         
         for p in planets_info:
             # 计算行星位置（从观测点观测）
@@ -655,213 +653,239 @@ class AstronomyEventsPredictor:
     def get_weekly_events(self, start_date=None):
         """
         获取未来一周的天象
-        :param start_date: 起始日期，默认今天
-        :return: 格式化的天象信息
         """
-        if start_date is None:
-            start_date = datetime.now().replace(tzinfo=None)
-        else:
-            # 确保是naive datetime
-            if hasattr(start_date, 'tzinfo') and start_date.tzinfo:
-                start_date = start_date.replace(tzinfo=None)
-        
-        end_date = start_date + timedelta(days=7)
-        
-        # 收集天象
-        daily_events = []
-        special_events = []
-        
-        # 遍历每一天
-        current = start_date
-        while current <= end_date:
-            day_str = current.strftime("%Y-%m-%d")
+        try:
+            from datetime import datetime, timedelta
             
-            # 计算月相
-            moon_phase, moon_desc = self.get_moon_phase(current)
+            print(f"🔍 get_weekly_events 被调用，参数: {start_date}, 类型: {type(start_date)}")
             
-            # 计算可见行星
-            planets = self.get_visible_planets(current)
+            now = datetime.now()
+            print(f"当前时间: {now}")
             
-            # 计算日出日落
-            sunrise, sunset = self.get_sunrise_sunset(current)
+            # 处理各种可能的参数类型
+            if start_date is None:
+                current_date = now
+                print("情况1: 参数为None")
+            elif isinstance(start_date, str):
+                try:
+                    current_date = datetime.strptime(start_date, "%Y-%m-%d")
+                    print(f"情况2: 字符串解析成功 -> {current_date}")
+                except ValueError:
+                    current_date = now
+                    print("情况2: 字符串解析失败，使用当前时间")
+            elif isinstance(start_date, datetime):
+                current_date = start_date
+                print(f"情况3: 直接使用datetime对象 -> {current_date}")
+            elif isinstance(start_date, dict):
+                print(f"情况4: 收到字典参数: {start_date}")
+                if 'start_date' in start_date:
+                    print(f"字典中有start_date键，值: {start_date['start_date']}")
+                    return self.get_weekly_events(start_date['start_date'])
+                else:
+                    current_date = now
+                    print("字典中没有start_date键，使用当前时间")
+            else:
+                try:
+                    date_str = str(start_date)
+                    current_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    print(f"情况5: 从其他类型转换 -> {current_date}")
+                except:
+                    current_date = now
+                    print("情况5: 转换失败，使用当前时间")
             
-            daily = {
-                "date": day_str,
-                "weekday": self._get_weekday(current.weekday()),
-                "moon_phase": moon_phase,
-                "moon_desc": moon_desc,
-                "planets": planets,
-                "sunrise": sunrise.strftime("%H:%M") if sunrise else "未知",
-                "sunset": sunset.strftime("%H:%M") if sunset else "未知",
-            }
-            daily_events.append(daily)
+            print(f"最终 current_date: {current_date}, 类型: {type(current_date)}")
             
-            # 检查特殊天象
+            # 计算一周后的日期
+            end_date = current_date + timedelta(days=7)
+            print(f"end_date: {end_date}")
+            
+            # 筛选一周内的特殊天象
+            weekly_events = []
             for event in self.special_events_2026:
-                if event["date"] == day_str:
-                    special_events.append(event)
+                event_date = datetime.strptime(event['date'], "%Y-%m-%d")
+                if current_date.date() <= event_date.date() < end_date.date():
+                    weekly_events.append(event)
             
-            current += timedelta(days=1)
-        
-        return self._format_weekly_response(daily_events, special_events)
+            # 生成预报
+            start_str = current_date.strftime("%Y-%m-%d")
+            end_str = (end_date - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            forecast = f"🌌 **{start_str} 至 {end_str} 一周天象预报**\n\n"
+            
+            if weekly_events:
+                forecast += "✨ **本周特殊天象**\n"
+                for event in weekly_events:
+                    forecast += f"• **{event['date']}** {event['event']}\n"
+                    forecast += f"  {event['description']}\n"
+            else:
+                forecast += "本周没有特殊天象。\n"
+                forecast += "但你可以关注日常可见的行星和月相变化。\n\n"
+            
+            # 生成每日月相信息
+            forecast += "🌙 **本周月相变化**\n"
+            for i in range(7):
+                forecast_date = current_date + timedelta(days=i)
+                moon_phase, moon_desc = self.get_moon_phase(forecast_date)
+                forecast += f"• {forecast_date.strftime('%Y-%m-%d')}: {moon_phase}\n"
+            
+            # 行星可见性信息
+            forecast += "\n🪐 **本周行星可见性**\n"
+            
+            # 根据当前季节生成行星可见性
+            month = current_date.month
+            if month in [3, 4, 5]:
+                forecast += "• 土星：整夜可见，是本周最佳观测目标\n"
+                forecast += "• 金星：早晨东方低空可见\n"
+                forecast += "• 木星：傍晚西方低空可见\n"
+            elif month in [6, 7, 8]:
+                forecast += "• 土星：整夜可见，是本周最佳观测目标\n"
+                forecast += "• 火星：前半夜可见\n"
+                forecast += "• 木星：早晨东方低空可见\n"
+            elif month in [9, 10, 11]:
+                forecast += "• 木星：整夜可见，是本周最佳观测目标\n"
+                forecast += "• 土星：傍晚可见\n"
+                forecast += "• 火星：前半夜可见\n"
+            else:  # 12-2月
+                forecast += "• 木星：傍晚可见\n"
+                forecast += "• 土星：后半夜可见\n"
+                forecast += "• 金星：早晨东方低空可见\n"
+            
+            return forecast
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ 错误详情: {e}")
+            print(traceback.format_exc())
+            return f"错误：{str(e)}"
     
     def get_monthly_events(self, year=None, month=None):
         """
         获取未来一个月的天象
-        :param year: 年份，默认当前年
-        :param month: 月份，默认下个月
+        
+        Args:
+            year: 年份，可以是整数、字符串或字典
+            month: 月份，可以是整数、字符串
+        
+        Returns:
+            格式化的天象预报字符串
         """
-        today = datetime.now()
-        
-        if year is None:
-            year = today.year
-        if month is None:
-            month = today.month + 1
-            if month > 12:
-                month = 1
-                year += 1
-        
-        # 获取该月的所有特殊天象
-        month_events = []
-        for event in self.special_events_2026:
-            event_date = datetime.strptime(event["date"], "%Y-%m-%d")
-            if event_date.year == year and event_date.month == month:
-                month_events.append(event)
-        
-        # 按日期排序
-        month_events.sort(key=lambda x: x["date"])
-        
-        return self._format_monthly_response(year, month, month_events)
-    
-    def _get_weekday(self, w):
-        """数字星期转中文"""
-        weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-        return weekdays[w]
-    
-    def _format_weekly_response(self, daily_events, special_events):
-        """格式化一周天象响应"""
-        response = "🔭 **未来一周天象预报**\n\n"
-        
-        # 特殊天象置顶
-        if special_events:
-            response += "✨ **特别推荐**\n"
-            for event in special_events:
-                response += f"• {event['date']} {event['event']}：{event['description']}\n"
-            response += "\n"
-        
-        # 每日看点
-        response += "📅 **每日看点**\n"
-        for day in daily_events:
-            response += f"\n**{day['date']} {day['weekday']}**\n"
-            response += f"• 月相：{day['moon_phase']}（{day['moon_desc']}）\n"
-            response += f"• 可见行星：{', '.join(day['planets']) if day['planets'] else '无明显可见行星'}\n"
-            response += f"• 日出：{day['sunrise']}  日落：{day['sunset']}\n"
-        
-        # 观测建议
-        response += "\n💡 **观测建议**\n"
-        response += "• 新月前后最适合观测深空天体\n"
-        response += "• 行星最佳观测时间是合日和冲日前后\n"
-        response += "• 城市光污染下，明亮的行星和月亮仍是好目标\n"
-        
-        return response
-    
-    def _format_monthly_response(self, year, month, events):
-        """格式化一个月天象响应"""
-        month_names = ["1月", "2月", "3月", "4月", "5月", "6月", 
-                      "7月", "8月", "9月", "10月", "11月", "12月"]
-        
-        # 确保year和month是整数
-        if isinstance(year, dict):
-            year = year.get('year', datetime.now().year)
-        if isinstance(month, dict):
-            month = month.get('month', datetime.now().month + 1)
-        
-        response = f"🔭 **{year}年{month_names[month-1]}天象预报**\n\n"
-        
-        if not events:
-            response += f"{year}年{month}月没有特殊天象。\n"
-            response += "但你可以关注日常可见的行星和月相变化。\n"
-        else:
-            response += "✨ **本月特殊天象**\n"
-            for event in events:
-                response += f"• **{event['date']}** {event['event']}\n"
-                response += f"  {event['description']}\n"
-        
-        # 增加行星可见性概览（根据月份动态调整）
-        response += "\n🪐 **本月行星可见性**\n"
-        
-        # 不同月份的行星可见性信息
-        planet_visibility = {
-            1: [
-                "• 木星：前半夜可见，亮度约-2.0等",
-                "• 土星：后半夜可见",
-                "• 金星：早晨东方低空可见"
-            ],
-            2: [
-                "• 木星：前半夜可见，逐渐西沉",
-                "• 土星：后半夜可见",
-                "• 金星：早晨东方低空可见"
-            ],
-            3: [
-                "• 木星：傍晚西方低空可见",
-                "• 土星：后半夜可见",
-                "• 金星：早晨东方低空可见"
-            ],
-            4: [
-                "• 土星：整夜可见，是本月最佳观测目标",
-                "• 金星：早晨东方低空可见",
-                "• 木星：傍晚西方低空可见（月末接近合日）"
-            ],
-            5: [
-                "• 土星：整夜可见，是本月最佳观测目标",
-                "• 金星：早晨东方低空可见",
-                "• 火星：后半夜可见"
-            ],
-            6: [
-                "• 土星：整夜可见，是本月最佳观测目标",
-                "• 金星：早晨东方低空可见",
-                "• 火星：后半夜可见"
-            ],
-            7: [
-                "• 土星：整夜可见，是本月最佳观测目标",
-                "• 火星：前半夜可见",
-                "• 木星：早晨东方低空可见"
-            ],
-            8: [
-                "• 土星：整夜可见，是本月最佳观测目标",
-                "• 火星：前半夜可见",
-                "• 木星：早晨东方低空可见"
-            ],
-            9: [
-                "• 土星：整夜可见，是本月最佳观测目标",
-                "• 火星：前半夜可见",
-                "• 木星：早晨东方低空可见"
-            ],
-            10: [
-                "• 木星：整夜可见，是本月最佳观测目标",
-                "• 土星：前半夜可见",
-                "• 火星：前半夜可见"
-            ],
-            11: [
-                "• 木星：整夜可见，是本月最佳观测目标",
-                "• 土星：傍晚西方低空可见",
-                "• 火星：前半夜可见"
-            ],
-            12: [
-                "• 木星：整夜可见，是本月最佳观测目标",
-                "• 金星：傍晚西方低空可见",
-                "• 火星：前半夜可见"
-            ]
-        }
-        
-        # 添加当前月份的行星可见性信息
-        for line in planet_visibility.get(month, ["• 无明显可见行星"]):
-            response += line + "\n"
-        
-        return response
-    
+        try:
+            from datetime import datetime
+            
+            now = datetime.now()
+            
+            # 处理 year 参数
+            if year is None:
+                year_val = now.year
+            elif isinstance(year, dict):
+                # 从字典中提取year和month
+                year_val = year.get('year', now.year)
+                month_val = year.get('month', now.month)
+                return self.get_monthly_events(year_val, month_val)
+            else:
+                try:
+                    # 尝试转换为整数
+                    if isinstance(year, str):
+                        # 如果是JSON字符串，尝试解析
+                        if year.startswith('{') and year.endswith('}'):
+                            import json
+                            data = json.loads(year)
+                            year_val = data.get('year', now.year)
+                            month_val = data.get('month', now.month)
+                            return self.get_monthly_events(year_val, month_val)
+                        else:
+                            year_val = int(year)
+                    else:
+                        year_val = int(year)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    year_val = now.year
+            
+            # 处理 month 参数
+            if month is None:
+                # 重要：如果month为None，默认为下个月
+                # 计算下个月，处理跨年
+                if year_val == now.year:
+                    month_val = now.month + 1
+                    if month_val > 12:
+                        month_val = 1
+                        year_val += 1
+                else:
+                    # 如果指定了不同的年份，默认使用1月
+                    month_val = 1
+            elif isinstance(month, dict):
+                month_val = month.get('month', now.month)
+            else:
+                try:
+                    if isinstance(month, str):
+                        # 如果是JSON字符串，尝试解析
+                        if month.startswith('{') and month.endswith('}'):
+                            import json
+                            data = json.loads(month)
+                            month_val = data.get('month', now.month)
+                        else:
+                            month_val = int(month)
+                    else:
+                        month_val = int(month)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    month_val = now.month
+            
+            # 确保月份在1-12范围内
+            if month_val < 1 or month_val > 12:
+                month_val = 1  # 如果月份无效，默认使用1月
+            
+            # 筛选本月特殊天象
+            monthly_events = []
+            for event in self.special_events_2026:
+                event_date = datetime.strptime(event['date'], "%Y-%m-%d")
+                if event_date.year == year_val and event_date.month == month_val:
+                    monthly_events.append(event)
+            
+            # 生成预报
+            month_names = ["1月", "2月", "3月", "4月", "5月", "6月", 
+                        "7月", "8月", "9月", "10月", "11月", "12月"]
+            
+            forecast = f"🔭 **{year_val}年{month_names[month_val-1]}天象预报**\n\n"
+            
+            if monthly_events:
+                forecast += "✨ **本月特殊天象**\n"
+                for event in monthly_events:
+                    forecast += f"• **{event['date']}** {event['event']}\n"
+                    forecast += f"  {event['description']}\n"
+            else:
+                forecast += "本月没有特殊天象。\n"
+                forecast += "但你可以关注日常可见的行星和月相变化。\n\n"
+            
+            # 行星可见性信息
+            forecast += "🪐 **本月行星可见性**\n"
+            
+            # 根据月份动态生成行星可见性
+            if month_val in [4, 5, 6]:
+                forecast += "• 土星：整夜可见，是本月最佳观测目标\n"
+                forecast += "• 金星：早晨东方低空可见\n"
+                forecast += "• 木星：傍晚西方低空可见\n"
+            elif month_val in [7, 8, 9]:
+                forecast += "• 土星：整夜可见，是本月最佳观测目标\n"
+                forecast += "• 火星：前半夜可见\n"
+                forecast += "• 木星：早晨东方低空可见\n"
+            elif month_val in [10, 11, 12]:
+                forecast += "• 木星：整夜可见，是本月最佳观测目标\n"
+                forecast += "• 土星：傍晚可见\n"
+                forecast += "• 火星：前半夜可见\n"
+            else:  # 1-3月
+                forecast += "• 木星：傍晚可见\n"
+                forecast += "• 土星：后半夜可见\n"
+                forecast += "• 金星：早晨东方低空可见\n"
+            
+            return forecast
+            
+        except Exception as e:
+            import traceback
+            print(f"错误详情: {e}")
+            print(traceback.format_exc())
+            return f"错误：{str(e)}"
     def get_tonight_best(self):
         """获取今晚最佳观测目标"""
+        from datetime import datetime
         today = datetime.now()
         day_str = today.strftime("%Y-%m-%d")
         

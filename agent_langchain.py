@@ -8,19 +8,24 @@ from langchain_classic.agents import AgentExecutor
 from config import settings
 from rag_langchain import RAGSystem
 from memory import ShortTermMemory
-from typing import Generator, List, Dict, Any
+from typing import Generator, List, Dict, Any, Optional
 import time
 import traceback
-import subprocess
 import json
 from logger import logger
 
-# MCP服务器配置
-MCP_SERVER_SCRIPT = "mcp_server.py"
+# HTTP 客户端库
+import httpx
+import asyncio
+import uuid
+import threading
+
+# MCP服务器配置 - 注意没有结尾斜杠！
+MCP_SERVER_URL = "http://localhost:8000/mcp"  # 修正1：去掉结尾斜杠
 
 
 class AstroAgent:
-    """基于LangChain的天文Agent"""
+    """基于LangChain的天文Agent - 支持HTTP调用MCP服务器（完整会话管理）"""
     
     def __init__(self):
         # 验证API Key
@@ -31,10 +36,20 @@ class AstroAgent:
         self.rag = RAGSystem()
         self.memory = ShortTermMemory()
         self.llm = self._init_llm()
+        
+        # MCP会话管理
+        self.mcp_session_id: Optional[str] = None
+        self.mcp_initialized = False
+        self.http_client: Optional[httpx.Client] = None
+        
+        # 初始化MCP会话（使用同步方式）
+        self._init_mcp_session_sync()
+        
+        # 初始化工具
         self.tools = self._init_tools()
         self.agent_executor = self._build_agent()
         
-        logger.info("✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具")
+        logger.info("✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）")
     
     def _init_llm(self):
         """初始化语言模型"""
@@ -49,54 +64,245 @@ class AstroAgent:
         except Exception as e:
             logger.error(f"❌ 语言模型初始化失败：{str(e)}")
             raise
-    
-    def _call_mcp_tool(self, tool_name, **kwargs):
-        """使用stdio模式调用MCP服务器工具"""
-        try:
-            # 构建请求 - 直接传递工具名和参数
-            request = {
-                "tool": tool_name,
-                "params": kwargs
-            }
+
+    def _parse_sse_response(self, response_text: str) -> Optional[dict]:
+        """
+        解析 SSE 格式的响应
+        
+        Args:
+            response_text: SSE 响应文本
             
-            # 调用MCP服务器脚本
-            process = subprocess.Popen(
-                ["python3", MCP_SERVER_SCRIPT],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+        Returns:
+            解析后的 JSON 字典，如果解析失败返回 None
+        """
+        try:
+            # SSE 格式通常是 "event: message\ndata: {...}\n\n"
+            lines = response_text.strip().split('\n')
+            for line in lines:
+                if line.startswith("data: "):
+                    json_str = line[6:]  # 去掉 "data: "
+                    return json.loads(json_str)
+            return None
+        except Exception as e:
+            logger.error(f"解析 SSE 响应失败: {e}")
+            return None
+
+    def _init_mcp_session_sync(self):
+        """使用同步方式初始化MCP会话"""
+        try:
+            # 使用同步HTTP客户端
+            client = httpx.Client(timeout=30.0)
+            
+            # 1. 建立SSE连接获取session ID
+            logger.info("正在建立SSE连接...")
+            sse_response = client.get(
+                MCP_SERVER_URL,
+                headers={"Accept": "text/event-stream"}
             )
             
-            # 发送请求
-            request_json = json.dumps(request) + "\n"
-            stdout, stderr = process.communicate(input=request_json, timeout=30)
+            # 修正2：使用小写的 header 名称
+            session_id = sse_response.headers.get("mcp-session-id")
+            if not session_id:
+                raise Exception("无法获取session ID")
             
-            # 检查返回码
-            if process.returncode != 0:
-                logger.error(f"❌ MCP服务器返回错误：{stderr}")
-                return f"调用工具失败：{stderr}"
+            logger.info(f"✅ 获取到session ID: {session_id}")
             
-            # 解析响应
-            try:
-                response = json.loads(stdout)
-                if 'result' in response:
-                    return response['result']
-                elif 'error' in response:
-                    return f"工具调用错误：{response['error']}"
-                return str(response)
-            except json.JSONDecodeError:
-                logger.error(f"❌ 解析MCP服务器响应失败：{stdout}")
-                return f"调用工具失败：无法解析响应"
+            # 2. 发送初始化请求
+            logger.info("发送初始化请求...")
+            init_request = {
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "AstroAgent",
+                        "version": "1.0.0"
+                    }
+                },
+                "id": 1
+            }
+            
+            response = client.post(
+                MCP_SERVER_URL,
+                json=init_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": session_id
+                }
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"初始化失败: {response.status_code}")
+            
+            # 解析初始化响应（验证服务器返回）
+            init_result = self._parse_sse_response(response.text)
+            if init_result:
+                logger.debug(f"初始化成功，服务器信息: {init_result.get('result', {}).get('serverInfo', {})}")
+            else:
+                logger.warning("无法解析初始化响应")
+            
+            # 3. 发送initialized通知
+            logger.info("发送initialized通知...")
+            notif_request = {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }
+            
+            client.post(
+                MCP_SERVER_URL,
+                json=notif_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": session_id
+                }
+            )
+            
+            # 4. 获取工具列表（可选，用于验证）
+            logger.info("获取工具列表...")
+            list_request = {
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "id": 2
+            }
+            
+            response = client.post(
+                MCP_SERVER_URL,
+                json=list_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": session_id
+                }
+            )
+            
+            # 解析工具列表
+            tools_result = self._parse_sse_response(response.text)
+            if tools_result:
+                tools_list = tools_result.get("result", {}).get("tools", [])
+                logger.info(f"✅ 从服务器获取到 {len(tools_list)} 个工具")
+            else:
+                logger.warning("无法解析工具列表响应")
+            
+            # 保存会话信息
+            self.mcp_session_id = session_id
+            self.mcp_initialized = True
+            self.http_client = client
+            
+            logger.info(f"✅ MCP会话初始化成功，会话ID: {session_id}")
+            
         except Exception as e:
-            logger.error(f"❌ 调用MCP工具 {tool_name} 失败：{str(e)}")
-            return f"调用工具失败：{str(e)}"
+            logger.error(f"❌ MCP会话初始化失败: {e}")
+            self.mcp_initialized = False
+            self.http_client = None
     
+    def _call_mcp_tool(self, tool_name: str, **kwargs) -> str:
+        """调用MCP工具（同步方法）- 修复参数传递问题"""
+        if not self.mcp_initialized or not self.mcp_session_id:
+            logger.error("❌ MCP会话未初始化")
+            return f"错误：MCP会话未初始化，请检查桥服务器是否运行"
+        
+        try:
+            # 重要：确保参数类型正确
+            # 对于数字参数，确保它们是整数类型
+            processed_kwargs = {}
+            for key, value in kwargs.items():
+                if key in ['year', 'month', 'limit']:
+                    try:
+                        # 如果是字符串数字，转换为整数
+                        if isinstance(value, str) and value.isdigit():
+                            processed_kwargs[key] = int(value)
+                        # 如果是其他字符串（如日期），保持原样
+                        elif isinstance(value, str):
+                            processed_kwargs[key] = value
+                        # 如果是数字，直接使用
+                        else:
+                            processed_kwargs[key] = value
+                    except:
+                        processed_kwargs[key] = value
+                else:
+                    processed_kwargs[key] = value
+            
+            # 构建标准MCP工具调用请求
+            request = {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": processed_kwargs  # 使用处理后的参数
+                },
+                "id": int(time.time() * 1000)
+            }
+            
+            logger.debug(f"调用工具 {tool_name}，处理后的参数: {processed_kwargs}")
+            
+            # 使用同步客户端发送请求
+            response = self.http_client.post(
+                MCP_SERVER_URL,
+                json=request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": self.mcp_session_id
+                },
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                return f"HTTP错误: {response.status_code}"
+            
+            # 解析 SSE 格式的响应
+            result = self._parse_sse_response(response.text)
+            if not result:
+                logger.error(f"无法解析响应: {response.text[:200]}")
+                return f"解析响应失败"
+            
+            logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:200]}")
+            
+            # 检查错误
+            if "error" in result:
+                error_msg = result["error"].get("message", "未知错误")
+                error_code = result["error"].get("code", "")
+                return f"工具调用错误 [{error_code}]: {error_msg}"
+            
+            # 从标准格式中提取文本内容
+            if "result" in result:
+                # 处理标准MCP格式：result.content[0].text
+                if "content" in result["result"]:
+                    content = result["result"]["content"]
+                    if isinstance(content, list) and len(content) > 0:
+                        for item in content:
+                            if item.get("type") == "text":
+                                return item.get("text", "")
+                
+                # 处理直接返回字符串的情况
+                if isinstance(result["result"], str):
+                    return result["result"]
+                
+                # 处理其他格式
+                return str(result["result"])
+            
+            # 如果既没有error也没有result
+            logger.warning(f"未知响应格式: {result}")
+            return str(result)
+            
+        except httpx.TimeoutException:
+            logger.error(f"❌ MCP工具调用超时: {tool_name}")
+            return f"调用工具超时，请稍后重试"
+        except httpx.ConnectError:
+            logger.error(f"❌ 无法连接到MCP服务器: {MCP_SERVER_URL}")
+            return f"错误：无法连接到MCP服务器"
+        except Exception as e:
+            logger.error(f"❌ 调用工具 {tool_name} 失败: {e}")
+            return f"调用工具失败: {str(e)}"
+
     def _init_tools(self):
         """初始化工具"""
         tools = []
         
-        # RAG检索工具
+        # RAG检索工具（本地）
         def rag_retrieve(query):
             """使用RAG系统检索相关天文信息"""
             return self.rag.get_relevant_context(query)
@@ -110,67 +316,77 @@ class AstroAgent:
         # 行星位置计算工具
         def get_planet_position(planet_name, observation_time=None, latitude=None, longitude=None):
             """获取行星位置"""
-            return self._call_mcp_tool("get_planet_position", 
-                                      planet_name=planet_name, 
-                                      observation_time=observation_time, 
-                                      latitude=latitude, 
-                                      longitude=longitude)
+            return self._call_mcp_tool(
+                "get_planet_position", 
+                planet_name=planet_name, 
+                observation_time=observation_time, 
+                latitude=latitude, 
+                longitude=longitude
+            )
         
         tools.append(Tool(
             name="GetPlanetPosition",
             func=get_planet_position,
-            description="获取行星位置，参数：planet_name（行星名称，如 'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'），observation_time（观测时间，可选），latitude（观测点纬度，可选），longitude（观测点经度，可选）"
+            description="获取行星位置，参数：planet_name（行星名称），observation_time（可选），latitude（可选），longitude（可选）"
         ))
         
         # 天体坐标转换工具
         def coordinate_transformation(ra, dec, epoch="J2000", target_system="fk5"):
             """天体坐标转换"""
-            return self._call_mcp_tool("coordinate_transformation", 
-                                      ra=ra, 
-                                      dec=dec, 
-                                      epoch=epoch, 
-                                      target_system=target_system)
+            return self._call_mcp_tool(
+                "coordinate_transformation", 
+                ra=ra, 
+                dec=dec, 
+                epoch=epoch, 
+                target_system=target_system
+            )
         
         tools.append(Tool(
             name="CoordinateTransformation",
             func=coordinate_transformation,
-            description="天体坐标转换，参数：ra（赤经，小时），dec（赤纬，度），epoch（历元，默认为J2000），target_system（目标坐标系，默认为fk5）"
+            description="天体坐标转换，参数：ra（赤经），dec（赤纬），epoch（历元），target_system（目标坐标系）"
         ))
         
         # 升起落下时间工具
         def get_rise_set_times(body_name, latitude, longitude, date=None):
             """获取天体升起和落下时间"""
-            return self._call_mcp_tool("get_rise_set_times", 
-                                      body_name=body_name, 
-                                      latitude=latitude, 
-                                      longitude=longitude, 
-                                      date=date)
+            return self._call_mcp_tool(
+                "get_rise_set_times", 
+                body_name=body_name, 
+                latitude=latitude, 
+                longitude=longitude, 
+                date=date
+            )
         
         tools.append(Tool(
             name="GetRiseSetTimes",
             func=get_rise_set_times,
-            description="获取天体升起和落下时间，参数：body_name（天体名称，如 'sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn'），latitude（观测点纬度），longitude（观测点经度），date（日期，可选）"
+            description="获取天体升起和落下时间，参数：body_name（天体名称），latitude（纬度），longitude（经度），date（日期，可选）"
         ))
         
         # 当前天空天体工具
         def get_current_sky_objects(latitude, longitude, date=None):
             """获取当前天空中的主要天体"""
-            return self._call_mcp_tool("get_current_sky_objects", 
-                                      latitude=latitude, 
-                                      longitude=longitude, 
-                                      date=date)
+            return self._call_mcp_tool(
+                "get_current_sky_objects", 
+                latitude=latitude, 
+                longitude=longitude, 
+                date=date
+            )
         
         tools.append(Tool(
             name="GetCurrentSkyObjects",
             func=get_current_sky_objects,
-            description="获取当前天空中的主要天体，参数：latitude（观测点纬度），longitude（观测点经度），date（日期，可选）"
+            description="获取当前天空中的主要天体，参数：latitude（纬度），longitude（经度），date（日期，可选）"
         ))
         
         # 天体基本信息工具
         def get_astrophysical_object_info(object_name):
             """查询天体基本信息"""
-            return self._call_mcp_tool("get_astrophysical_object_info", 
-                                      object_name=object_name)
+            return self._call_mcp_tool(
+                "get_astrophysical_object_info", 
+                object_name=object_name
+            )
         
         tools.append(Tool(
             name="GetAstrophysicalObjectInfo",
@@ -181,8 +397,10 @@ class AstroAgent:
         # 星系数据查询工具
         def get_galaxy_data(galaxy_name):
             """星系数据查询"""
-            return self._call_mcp_tool("get_galaxy_data", 
-                                      galaxy_name=galaxy_name)
+            return self._call_mcp_tool(
+                "get_galaxy_data", 
+                galaxy_name=galaxy_name
+            )
         
         tools.append(Tool(
             name="GetGalaxyData",
@@ -193,28 +411,32 @@ class AstroAgent:
         # NASA每日天文图工具
         def get_nasa_apod(date=None, hd=False):
             """获取NASA每日天文图"""
-            return self._call_mcp_tool("get_nasa_apod", 
-                                      date=date, 
-                                      hd=hd)
+            return self._call_mcp_tool(
+                "get_nasa_apod", 
+                date=date, 
+                hd=hd
+            )
         
         tools.append(Tool(
             name="GetNASAAPOD",
             func=get_nasa_apod,
-            description="获取NASA每日天文图，参数：date（日期，格式为YYYY-MM-DD，可选），hd（是否获取高清图像，可选）"
+            description="获取NASA每日天文图，参数：date（日期），hd（是否高清）"
         ))
         
         # 近地天体数据工具
         def get_neo_data(start_date=None, end_date=None, limit=10):
             """获取近地天体数据"""
-            return self._call_mcp_tool("get_neo_data", 
-                                      start_date=start_date, 
-                                      end_date=end_date, 
-                                      limit=limit)
+            return self._call_mcp_tool(
+                "get_neo_data", 
+                start_date=start_date, 
+                end_date=end_date, 
+                limit=limit
+            )
         
         tools.append(Tool(
             name="GetNEOData",
             func=get_neo_data,
-            description="获取近地天体数据，参数：start_date（开始日期，格式为YYYY-MM-DD，可选），end_date（结束日期，格式为YYYY-MM-DD，可选），limit（返回结果数量限制，可选）"
+            description="获取近地天体数据，参数：start_date（开始日期），end_date（结束日期），limit（数量限制）"
         ))
         
         # 今晚最佳观测目标工具
@@ -225,50 +447,63 @@ class AstroAgent:
         tools.append(Tool(
             name="GetTonightBest",
             func=get_tonight_best,
-            description="获取今晚最佳观测目标，无需参数"
+            description="获取今晚最佳观测目标"
         ))
         
         # 未来一周天象工具
         def get_weekly_events(start_date=None):
             """获取未来一周的天象"""
-            return self._call_mcp_tool("get_weekly_events", 
-                                      start_date=start_date)
+            return self._call_mcp_tool(
+                "get_weekly_events", 
+                start_date=start_date
+            )
         
         tools.append(Tool(
             name="GetWeeklyEvents",
             func=get_weekly_events,
-            description="获取未来一周的天象，参数：start_date（起始日期，可选，默认为今天）"
+            description="获取未来一周的天象，参数：start_date（起始日期）"
         ))
         
-        # 未来一个月天象工具
+        # 未来一个月天象工具 - 修复参数传递
         def get_monthly_events(year=None, month=None):
             """获取未来一个月的天象"""
-            return self._call_mcp_tool("get_monthly_events", 
-                                      year=year, 
-                                      month=month)
+            # 确保year和month是整数类型
+            params = {}
+            if year is not None:
+                try:
+                    params['year'] = int(year)
+                except:
+                    params['year'] = year
+            if month is not None:
+                try:
+                    params['month'] = int(month)
+                except:
+                    params['month'] = month
+            
+            return self._call_mcp_tool(
+                "get_monthly_events", 
+                **params
+            )
         
         tools.append(Tool(
             name="GetMonthlyEvents",
             func=get_monthly_events,
-            description="获取未来一个月的天象，参数：year（年份，可选，默认为当前年），month（月份，可选，默认为下个月）"
+            description="获取未来一个月的天象，参数：year（年份），month（月份）"
         ))
         
-        logger.info(f"✅ 成功注册 {len(tools)} 个天文工具（使用stdio模式调用MCP服务器）")
+        logger.info(f"✅ 成功注册 {len(tools)} 个天文工具")
         return tools
     
     def _build_agent(self):
         """构建React Agent"""
-        # 创建React提示模板
         from langchain_core.prompts import PromptTemplate
         
-        # 从外部文件读取prompt模板
         try:
             with open('prompt_template.txt', 'r', encoding='utf-8') as f:
                 template = f.read()
             logger.info("✅ 成功从外部文件读取prompt模板")
         except Exception as e:
             logger.error(f"❌ 读取prompt模板文件失败：{str(e)}")
-            # 使用默认模板作为后备
             template = '''
 你是一个专业的天文助手，帮助用户解答天文问题。
             
@@ -294,18 +529,17 @@ Thought: {agent_scratchpad}
         
         prompt = PromptTemplate.from_template(template)
         
-        # 创建React agent
         agent = create_react_agent(
             llm=self.llm,
             tools=self.tools,
             prompt=prompt
         )
         
-        # 创建agent执行器
         agent_executor = AgentExecutor(
             agent=agent,
             tools=self.tools,
-            verbose=True
+            verbose=True,
+            handle_parsing_errors=True  # 添加错误处理
         )
         
         logger.info("✅ React Agent构建完成")
@@ -325,21 +559,17 @@ Thought: {agent_scratchpad}
         logger.info(f"\n=== 处理用户查询：{query} ===")
         
         try:
-            # 调用Agent执行器获取响应
             response = self.agent_executor.invoke({
                 "input": query
             })
             
-            # 获取最终响应
             final_response = response.get("output", "")
             
-            # 模拟流式输出
             for i in range(0, len(final_response), 50):
                 chunk = final_response[i:i+50]
                 yield chunk
-                time.sleep(0.1)  # 模拟流式效果
+                time.sleep(0.1)
             
-            # 保存对话到记忆
             self.memory.add_message("user", query, time.time())
             self.memory.add_message("assistant", final_response, time.time())
             logger.info(f"✅ 对话已存入记忆 | 助手响应长度：{len(final_response)} 字符")
@@ -347,10 +577,8 @@ Thought: {agent_scratchpad}
         except Exception as e:
             logger.error(f"❌ 生成响应失败：{str(e)}")
             traceback.print_exc()
-            # 提供默认响应
             default_response = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
             yield default_response
-            # 保存对话到记忆
             self.memory.add_message("user", query, time.time())
             self.memory.add_message("assistant", default_response, time.time())
     
@@ -361,7 +589,6 @@ Thought: {agent_scratchpad}
             return
         
         try:
-            # 将字符串转换为Document对象
             from langchain.schema import Document
             documents = [Document(page_content=k) for k in knowledge]
             self.rag.add_documents(documents)
@@ -378,3 +605,12 @@ Thought: {agent_scratchpad}
         except Exception as e:
             logger.error(f"❌ 清空记忆失败：{str(e)}")
             traceback.print_exc()
+    
+    def __del__(self):
+        """析构函数，确保HTTP客户端被正确关闭"""
+        if hasattr(self, 'http_client') and self.http_client:
+            try:
+                self.http_client.close()
+                logger.info("✅ HTTP客户端已关闭")
+            except:
+                pass

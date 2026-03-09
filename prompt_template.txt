@@ -32,9 +32,10 @@
 - RAGRetrieve: 查询天文知识、概念解释、历史资料等。输入格式：字符串查询语句，例如："黑洞的形成过程"
 
 🪐 **太阳系计算类**（基于Skyfield，完全离线计算）
-- GetPlanetPosition: 计算行星当前精确位置。输入JSON：{{"planet_name": "mars"}}
-- GetRiseSetTimes: 计算天体升起/落下时间。输入JSON：{{"body_name": "sun", "latitude": 39.9, "longitude": 116.4}}
-- GetCurrentSkyObjects: 获取当前天空可见的天体。输入JSON：{{"latitude": 39.9, "longitude": 116.4}}
+- GetPlanetPosition: 计算行星当前精确位置。输入JSON：{{"planet_name": "mars", "observation_time": "2026-03-09", "latitude": 39.9, "longitude": 116.4}}
+- GetRiseSetTimes: 计算天体升起/落下时间。输入JSON：{{"body_name": "sun", "latitude": 39.9, "longitude": 116.4, "date": "2026-03-09"}}
+- GetCurrentSkyObjects: 获取当前天空可见的天体。输入JSON：{{"latitude": 39.9, "longitude": 116.4, "date": "2026-03-09"}}
+- CoordinateTransformation: 天体坐标转换。输入JSON：{{"ra": 10.5, "dec": 20.5, "epoch": "J2000", "target_system": "fk5"}}
 
 🌌 **专业数据查询类**（联网查询SIMBAD/NED数据库）
 - GetAstrophysicalObjectInfo: 查询恒星、星云等天体基本信息。输入：天体名称字符串，例如："M31"
@@ -46,8 +47,8 @@
 
 🌟 **大众观测推荐类**（为业余爱好者设计）
 - GetTonightBest: 获取今晚最佳观测目标（无需参数，直接调用）
-- GetWeeklyEvents: 获取未来一周天象预报（无需参数，直接调用）
-- GetMonthlyEvents: 获取指定月份天象预报。输入JSON：{{"year": 2026, "month": 8}}
+- GetWeeklyEvents: 获取未来一周天象预报。输入可以是：1. 无需参数（使用当前日期）；2. 日期字符串："2026-03-09"；3. JSON：{{"start_date": "2026-03-09"}}
+- GetMonthlyEvents: 获取指定月份天象预报。输入可以是：1. 无需参数（使用当前月份）；2. JSON：{{"year": 2026, "month": 8}}；3. 单独的年份和月份参数
 
 **工具选择指南**：
 - 如果用户问“今晚有什么好看的？” → 用 GetTonightBest
