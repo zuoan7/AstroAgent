@@ -305,3 +305,541 @@
 === 处理用户查询：最大的那个行星有多大？ ===
 2026-03-07 21:48:21 - AstroAgent - INFO - 📄 检索到上下文长度：1345 字符
 2026-03-07 21:48:38 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：314 字符
+2026-03-08 15:06:48 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:06:48 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:06:48 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:06:48 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:06:48 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:06:48 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:06:49 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:06:49 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:06:49 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:06:49 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:06:49 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:07:16 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:07:16 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:07:16 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:07:16 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:07:16 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:07:16 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:07:17 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:07:17 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:07:17 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:07:17 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:07:17 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:07:17 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:07:17 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:07:17 - AstroAgent - INFO - 
+=== 处理用户查询：今天的NASA每日天文图是什么？ ===
+2026-03-08 15:07:17 - AstroAgent - ERROR - ❌ 生成响应失败：variable agent_scratchpad should be a list of base messages, got  of type <class 'str'>
+2026-03-08 15:07:34 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:07:34 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:07:34 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:07:34 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:07:34 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:07:34 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:07:35 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:07:35 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:07:35 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:07:35 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:07:35 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:07:35 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:07:35 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:07:35 - AstroAgent - INFO - 
+=== 处理用户查询：今天的NASA每日天文图是什么？ ===
+2026-03-08 15:07:35 - AstroAgent - ERROR - ❌ 生成响应失败：variable agent_scratchpad should be a list of base messages, got  of type <class 'str'>
+2026-03-08 15:07:57 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:07:57 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:07:57 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:07:57 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:07:57 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:07:57 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:07:58 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:07:58 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:07:58 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:07:58 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:07:58 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:07:58 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:07:58 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:07:58 - AstroAgent - INFO - 
+=== 处理用户查询：今天的NASA每日天文图是什么？ ===
+2026-03-08 15:07:58 - AstroAgent - ERROR - ❌ 生成响应失败：variable agent_scratchpad should be a list of base messages, got  of type <class 'str'>
+2026-03-08 15:08:32 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:08:32 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:08:32 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:08:32 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:08:32 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:08:32 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:08:33 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:08:33 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:08:33 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:08:33 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:08:33 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:12:23 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:12:23 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:12:23 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:12:23 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:12:23 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:12:23 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:12:24 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:12:24 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:12:24 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:12:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:12:24 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:12:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:12:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:12:24 - AstroAgent - INFO - 
+=== 处理用户查询：今天的NASA每日天文图是什么？ ===
+2026-03-08 15:12:24 - AstroAgent - ERROR - ❌ 生成响应失败：RunnableAgent.plan() got multiple values for argument 'intermediate_steps'
+2026-03-08 15:12:43 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:12:43 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:12:43 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:12:43 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:12:43 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:12:43 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:12:44 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:12:44 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:12:44 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:12:44 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:12:44 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:12:44 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:12:44 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:12:44 - AstroAgent - INFO - 
+=== 处理用户查询：今天的NASA每日天文图是什么？ ===
+2026-03-08 15:14:03 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：129 字符
+2026-03-08 15:20:28 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:20:28 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:20:28 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:20:28 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:20:28 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:20:28 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:20:29 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:20:29 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:20:29 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:20:29 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:20:29 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:20:29 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:20:29 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:20:29 - AstroAgent - INFO - 
+=== 处理用户查询：What is the current position of Mars? ===
+2026-03-08 15:20:34 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: mercury, venus, mars, jupiter, uranus, saturn, neptune
+2026-03-08 15:25:30 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:25:30 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:25:30 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:25:31 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:25:31 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:25:31 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:25:32 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:25:32 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:25:32 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:25:32 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:25:32 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:25:32 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:25:32 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:25:32 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我火星的位置 ===
+2026-03-08 15:25:35 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: saturn, neptune, venus, mercury, jupiter, uranus, mars
+2026-03-08 15:25:35 - AstroAgent - INFO - 
+=== 处理用户查询：What is the position of Mars? ===
+2026-03-08 15:25:39 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: saturn, neptune, venus, mercury, jupiter, uranus, mars
+2026-03-08 15:26:49 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:26:49 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:26:49 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:26:49 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:26:49 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:26:49 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:26:50 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:26:50 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:26:50 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:26:50 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:26:50 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:26:50 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:26:50 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:26:50 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我火星的位置 ===
+2026-03-08 15:26:57 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：62 字符
+2026-03-08 15:26:57 - AstroAgent - INFO - 
+=== 处理用户查询：What is the position of Mars? ===
+2026-03-08 15:27:04 - AstroAgent - ERROR - ❌ 生成响应失败：AstronomyTools.coordinate_transformation() missing 1 required positional argument: 'dec'
+2026-03-08 15:27:31 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:27:31 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:27:31 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:27:31 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:27:31 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:27:31 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:27:32 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:27:32 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:27:32 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:27:32 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:27:32 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:27:32 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:27:32 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:27:32 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我火星的位置 ===
+2026-03-08 15:27:36 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: venus, mars, neptune, saturn, uranus, jupiter, mercury
+2026-03-08 15:27:36 - AstroAgent - INFO - 
+=== 处理用户查询：What is the position of Mars? ===
+2026-03-08 15:27:40 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: venus, mars, neptune, saturn, uranus, jupiter, mercury
+2026-03-08 15:28:23 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:28:23 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:28:23 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:28:23 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:28:23 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:28:23 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:28:24 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:28:24 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:28:24 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:28:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:28:24 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:28:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:28:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:28:24 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我火星的位置 ===
+2026-03-08 15:28:26 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: neptune, mercury, venus, uranus, saturn, jupiter, mars
+2026-03-08 15:28:26 - AstroAgent - INFO - 
+=== 处理用户查询：What is the position of Mars? ===
+2026-03-08 15:28:32 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: neptune, mercury, venus, uranus, saturn, jupiter, mars
+2026-03-08 15:32:19 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:32:19 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:32:19 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:32:19 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:32:19 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:32:19 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:32:20 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:32:20 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:32:20 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:32:20 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:32:20 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:32:20 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:32:20 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:32:20 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我火星的位置 ===
+2026-03-08 15:32:26 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：48 字符
+2026-03-08 15:32:26 - AstroAgent - INFO - 
+=== 处理用户查询：What is the position of Mars? ===
+2026-03-08 15:32:35 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：286 字符
+2026-03-08 15:33:50 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:33:50 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:33:50 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:33:50 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:33:50 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:33:50 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:33:51 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:33:51 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:33:51 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:33:51 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:33:51 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:33:51 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:33:51 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:33:51 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我火星的位置 ===
+2026-03-08 15:34:10 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：138 字符
+2026-03-08 15:34:10 - AstroAgent - INFO - 
+=== 处理用户查询：What is the position of Mars? ===
+2026-03-08 15:34:12 - AstroAgent - INFO - 📄 检索到上下文长度：1034 字符
+2026-03-08 15:34:22 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：95 字符
+2026-03-08 15:40:10 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:40:10 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:40:10 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:40:10 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:40:10 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:40:10 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:40:11 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:40:11 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:40:11 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:40:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:40:11 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:40:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:40:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:40:28 - AstroAgent - INFO - 
+=== 处理用户查询：你好 ===
+2026-03-08 15:40:34 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：32 字符
+2026-03-08 15:41:04 - AstroAgent - INFO - 
+=== 处理用户查询：未来一周有什么天文现象吗 ===
+2026-03-08 15:41:08 - AstroAgent - INFO - 📄 检索到上下文长度：1472 字符
+2026-03-08 15:41:26 - AstroAgent - ERROR - ❌ 生成响应失败：AstronomyTools.get_current_sky_objects() missing 1 required positional argument: 'longitude'
+2026-03-08 15:43:13 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:43:13 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:43:13 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:43:13 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:43:13 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:43:13 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:43:14 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:43:14 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:43:14 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:43:14 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:43:14 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:43:14 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:43:14 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:43:14 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我北京当前天空中的主要天体 ===
+2026-03-08 15:43:18 - AstroAgent - ERROR - ❌ 生成响应失败：AstronomyTools.get_current_sky_objects() missing 1 required positional argument: 'longitude'
+2026-03-08 15:43:54 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:43:54 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:43:54 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:43:54 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:43:54 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:43:54 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:43:55 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:43:55 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:43:55 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:43:55 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:43:55 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:43:55 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:43:55 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:43:55 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我北京当前天空中的主要天体 ===
+2026-03-08 15:44:00 - AstroAgent - ERROR - ❌ 生成响应失败：无效的输入格式，需要包含latitude和longitude值
+2026-03-08 15:44:32 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 15:44:32 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 15:44:32 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 15:44:32 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 15:44:32 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 15:44:32 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 15:44:33 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 15:44:33 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 15:44:33 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 15:44:33 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 15:44:33 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 15:44:33 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 15:44:33 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 15:44:33 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我北京当前天空中的主要天体 ===
+2026-03-08 15:44:59 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：367 字符
+2026-03-08 21:16:56 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 21:16:56 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 21:16:56 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 21:16:56 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 21:16:56 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 21:16:56 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 21:16:57 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 21:16:57 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 21:16:57 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 21:16:57 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 21:16:57 - AstroAgent - INFO - ✅ 成功注册 9 个天文工具
+2026-03-08 21:16:57 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 21:16:57 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 21:20:08 - AstroAgent - INFO - 
+=== 处理用户查询：太阳系有哪些行星 ===
+2026-03-08 21:20:15 - AstroAgent - INFO - 📄 检索到上下文长度：1454 字符
+2026-03-08 21:20:27 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：80 字符
+2026-03-08 21:23:20 - AstroAgent - INFO - 
+=== 处理用户查询：我想看流星雨该准备什么 ===
+2026-03-08 21:23:23 - AstroAgent - INFO - 📄 检索到上下文长度：1434 字符
+2026-03-08 21:23:29 - AstroAgent - INFO - 📄 检索到上下文长度：1450 字符
+2026-03-08 21:23:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：458 字符
+2026-03-08 21:25:34 - AstroAgent - INFO - 
+=== 处理用户查询：NASA有哪些新发现 ===
+2026-03-08 21:25:36 - AstroAgent - INFO - 📄 检索到上下文长度：1446 字符
+2026-03-08 21:25:44 - AstroAgent - INFO - 📄 检索到上下文长度：1446 字符
+2026-03-08 21:25:57 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：159 字符
+2026-03-08 21:34:12 - AstroAgent - INFO - 
+=== 处理用户查询：NAS每日图 ===
+2026-03-08 21:34:59 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：298 字符
+2026-03-08 21:36:23 - AstroAgent - INFO - 
+=== 处理用户查询：金星的升起降落时间 ===
+2026-03-08 21:36:28 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：66 字符
+2026-03-08 21:36:56 - AstroAgent - INFO - 
+=== 处理用户查询：苏州 ===
+2026-03-08 21:37:15 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：129 字符
+2026-03-08 21:38:27 - AstroAgent - INFO - 
+=== 处理用户查询：在苏州现在能看到什么天文现象 ===
+2026-03-08 21:38:36 - AstroAgent - INFO - 📄 检索到上下文长度：1450 字符
+2026-03-08 21:38:56 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：340 字符
+2026-03-08 22:18:10 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:18:10 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:18:10 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:18:10 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:18:10 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:18:10 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:18:11 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:18:11 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:18:11 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:18:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:18:11 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:18:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 22:18:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 22:18:11 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-08 22:18:14 - AstroAgent - ERROR - ❌ 生成响应失败：AstronomyEventsPredictor.get_tonight_best() takes 1 positional argument but 2 were given
+2026-03-08 22:18:14 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-08 22:18:16 - AstroAgent - ERROR - ❌ 生成响应失败：can only concatenate str (not "datetime.timedelta") to str
+2026-03-08 22:18:16 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-08 22:18:26 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：184 字符
+2026-03-08 22:18:26 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-08 22:18:59 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：222 字符
+2026-03-08 22:21:18 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:21:18 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:21:18 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:21:18 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:21:18 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:21:18 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:21:19 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:21:19 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:21:19 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:21:19 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:21:19 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:21:19 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 22:21:19 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 22:21:19 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-08 22:21:22 - AstroAgent - ERROR - ❌ 生成响应失败：AstronomyEventsPredictor.get_tonight_best() takes 1 positional argument but 2 were given
+2026-03-08 22:21:22 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-08 22:21:23 - AstroAgent - ERROR - ❌ 生成响应失败：can only concatenate str (not "datetime.timedelta") to str
+2026-03-08 22:21:23 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-08 22:21:33 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：145 字符
+2026-03-08 22:21:33 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-08 22:21:42 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：125 字符
+2026-03-08 22:26:33 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:26:33 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:26:33 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:26:33 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:26:33 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:26:33 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:26:34 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:26:34 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:26:34 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:26:34 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:26:34 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:26:34 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 22:26:34 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 22:26:34 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-08 22:26:34 - AstroAgent - ERROR - ❌ 生成响应失败：'Input to PromptTemplate is missing variables {\'"body_name"\', \'"year"\', \'"date"\', \'"planet_name"\', \'"start_date"\', \'"latitude"\'}.  Expected: [\'"body_name"\', \'"date"\', \'"latitude"\', \'"planet_name"\', \'"start_date"\', \'"year"\', \'agent_scratchpad\', \'input\'] Received: [\'input\', \'intermediate_steps\', \'agent_scratchpad\']\nNote: if you intended {"body_name"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{"body_name"}}\'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT '
+2026-03-08 22:26:34 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-08 22:26:34 - AstroAgent - ERROR - ❌ 生成响应失败：'Input to PromptTemplate is missing variables {\'"body_name"\', \'"year"\', \'"date"\', \'"planet_name"\', \'"start_date"\', \'"latitude"\'}.  Expected: [\'"body_name"\', \'"date"\', \'"latitude"\', \'"planet_name"\', \'"start_date"\', \'"year"\', \'agent_scratchpad\', \'input\'] Received: [\'input\', \'intermediate_steps\', \'agent_scratchpad\']\nNote: if you intended {"body_name"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{"body_name"}}\'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT '
+2026-03-08 22:26:34 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-08 22:26:34 - AstroAgent - ERROR - ❌ 生成响应失败：'Input to PromptTemplate is missing variables {\'"body_name"\', \'"year"\', \'"date"\', \'"planet_name"\', \'"start_date"\', \'"latitude"\'}.  Expected: [\'"body_name"\', \'"date"\', \'"latitude"\', \'"planet_name"\', \'"start_date"\', \'"year"\', \'agent_scratchpad\', \'input\'] Received: [\'input\', \'intermediate_steps\', \'agent_scratchpad\']\nNote: if you intended {"body_name"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{"body_name"}}\'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT '
+2026-03-08 22:26:34 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-08 22:26:34 - AstroAgent - ERROR - ❌ 生成响应失败：'Input to PromptTemplate is missing variables {\'"body_name"\', \'"year"\', \'"date"\', \'"planet_name"\', \'"start_date"\', \'"latitude"\'}.  Expected: [\'"body_name"\', \'"date"\', \'"latitude"\', \'"planet_name"\', \'"start_date"\', \'"year"\', \'agent_scratchpad\', \'input\'] Received: [\'input\', \'intermediate_steps\', \'agent_scratchpad\']\nNote: if you intended {"body_name"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{"body_name"}}\'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT '
+2026-03-08 22:27:09 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:27:09 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:27:09 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:27:10 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:27:10 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:27:10 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:27:11 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:27:11 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:27:11 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:27:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:27:11 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:27:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 22:27:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 22:27:11 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-08 22:27:19 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：156 字符
+2026-03-08 22:27:19 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-08 22:27:36 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：299 字符
+2026-03-08 22:27:36 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-08 22:27:47 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：234 字符
+2026-03-08 22:27:47 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-08 22:27:58 - AstroAgent - INFO - 📄 检索到上下文长度：1423 字符
+2026-03-08 22:28:24 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：380 字符
+2026-03-08 22:44:13 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:44:13 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:44:13 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:44:14 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:44:14 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:44:14 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:44:15 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:44:15 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:44:15 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:44:15 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:44:15 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:44:15 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 22:44:15 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 22:44:38 - AstroAgent - INFO - 
+=== 处理用户查询：未来一周有什么天文现象 ===
+2026-03-08 22:44:47 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：186 字符
+2026-03-08 22:46:25 - AstroAgent - INFO - 
+=== 处理用户查询：未来一个月呢 ===
+2026-03-08 22:46:37 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：223 字符
+2026-03-08 22:48:27 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:48:27 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:48:27 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:48:27 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:48:27 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:48:27 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:48:28 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:48:28 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:48:28 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:48:28 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:48:28 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:50:46 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:50:46 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:50:46 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:50:47 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:50:47 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:50:47 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:50:48 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:50:48 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:50:48 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:50:48 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:50:48 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:50:48 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 22:50:48 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 22:54:09 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 22:54:09 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 22:54:09 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 22:54:09 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 22:54:09 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 22:54:09 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 22:54:11 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 22:54:11 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 22:54:11 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 22:54:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 22:54:11 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 22:54:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 22:54:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 22:54:45 - AstroAgent - INFO - 
+=== 处理用户查询：未来一周有什么天文现象 ===
+2026-03-08 22:54:56 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：145 字符
+2026-03-08 23:00:18 - AstroAgent - INFO - 
+=== 处理用户查询：一个月呢 ===
+2026-03-08 23:00:49 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：244 字符
+2026-03-08 23:29:02 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 23:29:02 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 23:29:02 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 23:29:02 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 23:29:02 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 23:29:02 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 23:29:03 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 23:29:03 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 23:29:03 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 23:29:03 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 23:29:03 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 23:29:03 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-08 23:29:03 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 23:29:03 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 23:29:03 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-08 23:29:03 - AstroAgent - ERROR - ❌ 生成响应失败：'Input to PromptTemplate is missing variables {\'"start_date"\', \'"year"\', \'"date"\', \'"latitude"\', \'"body_name"\', \'"planet_name"\'}.  Expected: [\'"body_name"\', \'"date"\', \'"latitude"\', \'"planet_name"\', \'"start_date"\', \'"year"\', \'agent_scratchpad\', \'input\'] Received: [\'input\', \'intermediate_steps\', \'agent_scratchpad\']\nNote: if you intended {"start_date"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{"start_date"}}\'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT '
+2026-03-08 23:29:39 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-08 23:29:39 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-08 23:29:39 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-08 23:29:39 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-08 23:29:39 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-08 23:29:39 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-08 23:29:41 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-08 23:29:41 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-08 23:29:41 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-08 23:29:41 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-08 23:29:41 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-08 23:29:41 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-08 23:29:41 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-08 23:29:41 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-08 23:29:41 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-08 23:29:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：102 字符
