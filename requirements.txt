@@ -23,3 +23,7 @@ websockets
 
 # Tools
 rich
+
+# MCP
+fastmcp
+langchain-mcp-adapters

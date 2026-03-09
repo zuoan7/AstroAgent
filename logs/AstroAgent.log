@@ -843,3 +843,406 @@
 2026-03-08 23:29:41 - AstroAgent - INFO - 
 === 处理用户查询：今晚能看到什么？ ===
 2026-03-08 23:29:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：102 字符
+2026-03-09 11:03:40 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:03:40 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:03:40 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:03:40 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:03:40 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:03:40 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:03:41 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:03:41 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:03:41 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:03:41 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:03:41 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（从MCP服务器获取）
+2026-03-09 11:03:41 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:03:41 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:03:41 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-09 11:03:41 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:03:44 - AstroAgent - ERROR - ❌ 生成响应失败：AstroAgent._init_tools.<locals>.get_tonight_best() takes 0 positional arguments but 1 was given
+2026-03-09 11:03:44 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:03:47 - AstroAgent - ERROR - ❌ 调用MCP工具 get_planet_position 失败：Server error '500 Internal Server Error' for url 'http://localhost:8000/tools/get_planet_position'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-03-09 11:03:56 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来在尝试获取火星当前位置时遇到了一些技术问题。可能是由于网络状况或服务器暂时不可用导致的。不用担心，让我们换个方式来解答这个问题。
+
+既然在线工具暂时无法使用，我可以提供一些关于火星轨道的基本知识，帮助你大致了解它可能所在的位置。火星绕太阳公转的周期大约是687个地球日，这意味着它每年相对于地球的位置都会有所不同。如果你想知道一个大概的位置，可以考虑火星是在哪个星座附近，通常这需要查看最近的天文历或者星图。
+
+不过别担心，我们还有其他方法可以获得更准确的信息。你可以尝试稍后再次询问，或者访问一些知名的天文网站和应用，它们通常会提供最新的行星位置信息。希望这些信息对你有所帮助！如果还有其他想了解的内容，请随时告诉我。
+
+（注：虽然我没能直接给出火星当前的确切位置，但提供了替代方案和建议，希望能帮到用户。）`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:13:08 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:13:08 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:13:08 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:13:08 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:13:08 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:13:08 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:13:09 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:13:09 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:13:09 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:13:09 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:13:09 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（从MCP服务器获取）
+2026-03-09 11:13:09 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:13:09 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:13:09 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-09 11:13:09 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:13:14 - AstroAgent - ERROR - ❌ 调用MCP工具 get_tonight_best 失败：Client error '404 Not Found' for url 'http://localhost:8000/mcp/tools/get_tonight_best'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+2026-03-09 11:13:25 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来在尝试获取今晚最佳观测目标时遇到了一些技术问题。这可能是由于网络或服务器暂时不可用导致的。不过不用担心，让我根据当前季节和时间给你一些建议吧！
+
+在这个时候，如果天气晴朗的话，你可以试着找找木星或者土星这样的明亮行星。它们通常非常容易辨认，因为比周围的星星要亮得多。此外，如果你有一个望远镜，那么观察月亮上的陨石坑或是银河系中的某些深空天体（如星团）也会是非常棒的选择。
+
+希望你能享受一个美好的夜晚观星体验！记得带上热饮哦，夜间的气温可能会比较低。`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:13:25 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:13:37 - AstroAgent - ERROR - ❌ 调用MCP工具 get_planet_position 失败：Client error '404 Not Found' for url 'http://localhost:8000/mcp/tools/get_planet_position'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+2026-03-09 11:13:42 - AstroAgent - INFO - 📄 检索到上下文长度：1433 字符
+2026-03-09 11:13:59 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：196 字符
+2026-03-09 11:15:20 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:15:20 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:15:20 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:15:20 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:15:20 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:15:20 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:15:21 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:15:21 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:15:21 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:15:21 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:15:21 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（从MCP服务器获取）
+2026-03-09 11:15:21 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:15:21 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:15:21 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-09 11:15:21 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:15:24 - AstroAgent - ERROR - ❌ 调用MCP工具 get_tonight_best 失败：Client error '406 Not Acceptable' for url 'http://localhost:8000/mcp'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/406
+2026-03-09 11:15:37 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来我们在尝试获取今晚最佳观测目标时遇到了一些技术问题。不过别担心，让我根据当前的季节和一般天文现象来给你一些建议吧！
+
+通常，在晴朗无云的夜晚，你可以寻找一些非常明亮且容易辨认的天体或星座作为观测对象。比如：
+
+- **月亮**：如果今晚不是满月，那么观察月亮的不同相位会是一件很有趣的事情。
+- **金星** 或 **木星**：这两颗行星都非常亮，很容易在夜空中找到。特别是金星，它有时被称为“晨星”或“暮星”，因为它经常出现在黎明前或黄昏后。
+- **夏季大三角**（如果你在北半球）：由天津四、织女星和牛郎星构成的大三角形是夏夜天空中最容易识别的形状之一。
+
+当然，最好的建议是使用一个天文应用程序或者访问当地的天文馆网站查看最新的夜间观星指南。希望你能有一个美好的观星体验！记得带上毯子和热饮，享受星空下的宁静时刻哦！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:15:37 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:15:39 - AstroAgent - ERROR - ❌ 调用MCP工具 get_planet_position 失败：Client error '406 Not Acceptable' for url 'http://localhost:8000/mcp'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/406
+2026-03-09 11:15:48 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来我们在尝试获取火星当前位置信息时遇到了一些技术问题。这可能是暂时的网络或服务器问题导致的。不过，不用担心，我可以根据我们已知的信息来大致描述一下火星现在可能位于哪个星座附近，并且提供一些关于如何找到它的建议。
+
+通常情况下，火星在夜空中比较容易被认出，因为它呈现出一种明显的红色。你可以使用天文应用程序或者访问一些在线天文网站来查看火星当前的确切位置。如果你告诉我你所在的位置（纬度和经度），我还可以尝试给出更具体的建议哦！
+
+如果需要更加准确的数据，请稍后再试一次，或者告诉我你的具体位置，我会尽力帮助你！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:16:07 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:16:07 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:16:07 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:16:07 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:16:07 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:16:07 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:16:08 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:16:08 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:16:08 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:16:08 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:16:08 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（从MCP服务器获取）
+2026-03-09 11:16:08 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:16:08 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:16:08 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-09 11:16:08 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:16:13 - AstroAgent - ERROR - ❌ 调用MCP工具 get_tonight_best 失败：Client error '400 Bad Request' for url 'http://localhost:8000/mcp'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-03-09 11:16:23 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来我们遇到了一点小问题，可能是网络连接或者服务器暂时出了状况。不过不用担心，我还可以给你一些建议！
+
+今晚你可以尝试找找看月亮的位置，通常月亮是非常容易辨认的天体之一。此外，如果天气晴朗的话，你也可以试着寻找一些明亮的星星或行星，比如金星和木星，它们在夜空中非常显眼。使用天文观测应用可以帮助你更容易地定位这些天体哦！希望你能有一个美好的观星夜晚！如果你有特定想观察的目标，告诉我，我可以提供更具体的建议。
+
+由于刚才尝试获取今晚最佳观测目标时遇到了技术问题，请稍后再试一次或者告诉我你的具体位置（城市名即可），这样我能给出更加准确的建议。`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:16:23 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:16:24 - AstroAgent - ERROR - ❌ 调用MCP工具 get_planet_position 失败：Client error '400 Bad Request' for url 'http://localhost:8000/mcp'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-03-09 11:16:29 - AstroAgent - INFO - 📄 检索到上下文长度：1034 字符
+2026-03-09 11:16:41 - AstroAgent - ERROR - ❌ 调用MCP工具 get_planet_position 失败：Client error '400 Bad Request' for url 'http://localhost:8000/mcp'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-03-09 11:16:55 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来我们遇到了一些技术问题，无法直接获取火星当前的精确位置。不过别担心，我可以给你一些建议来帮助你大致了解火星现在的位置。
+
+首先，你可以下载一些天文观测的应用程序，比如Stellarium或者SkySafari，这些应用能够显示夜空中所有天体的位置，包括火星。只需输入你的地理位置，它们就能告诉你火星今晚会在哪个方向、什么时间升起和落下。
+
+另外，如果你对火星的运动规律感兴趣的话，可以知道火星大约每两年就会接近地球一次（称为“冲”），这时是观察它的最佳时机。在非冲期，火星也会出现在夜空中，但可能不会那么明亮或容易找到。
+
+对于具体的观测建议，如果你告诉我你所在的城市，我可以尝试提供更详细的指导，比如火星什么时候从地平线升起，以及它会出现在哪个星座附近。
+
+希望这些建议对你有所帮助！如果有其他想了解的内容，随时欢迎提问。`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:19:20 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:19:20 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:19:20 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:19:20 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:19:20 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:19:20 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:19:21 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:19:21 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:19:21 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:19:21 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:19:21 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 11:19:21 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:19:21 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:19:21 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-09 11:19:21 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:19:30 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：148 字符
+2026-03-09 11:19:30 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:19:33 - AstroAgent - ERROR - ❌ 生成响应失败：无效的行星名称。有效行星: saturn, uranus, jupiter, venus, mars, mercury, neptune
+2026-03-09 11:21:28 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:21:28 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:21:28 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:21:28 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:21:28 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:21:28 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:21:29 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:21:29 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:21:29 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:21:29 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:21:29 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-09 11:21:29 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:21:29 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:21:29 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型
+2026-03-09 11:21:29 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:21:39 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：148 字符
+2026-03-09 11:21:39 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:21:55 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：177 字符
+2026-03-09 11:31:31 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:31:31 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:31:31 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:31:32 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:31:32 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:31:32 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:31:33 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:31:33 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:31:33 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:31:33 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:31:33 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 11:31:33 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:31:33 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:31:33 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 11:31:33 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:31:37 - AstroAgent - ERROR - ❌ MCP服务器返回错误：/root/AstroAgent/astronomy_tools.py:10: DeprecationWarning: the ``ned`` module has been moved to astroquery.ipac.ned, please update your imports.
+  from astroquery.ned import Ned
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 3.1.0                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                 🖥  Server:      AstroAgent MCP Server, 1.0.0                 │
+│                 🚀 Deploy free: https://fastmcp.cloud                        │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[03/09/26 11:31:36] INFO     Starting MCP server 'AstroAgent    transport.py:273
+                             MCP Server' with transport 'http'                  
+                             on http://0.0.0.0:8000/mcp                         
+INFO:     Started server process [861695]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8000): [errno 98] address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+
+2026-03-09 11:31:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：76 字符
+2026-03-09 11:31:50 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:31:55 - AstroAgent - ERROR - ❌ MCP服务器返回错误：/root/AstroAgent/astronomy_tools.py:10: DeprecationWarning: the ``ned`` module has been moved to astroquery.ipac.ned, please update your imports.
+  from astroquery.ned import Ned
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 3.1.0                                 │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                 🖥  Server:      AstroAgent MCP Server, 1.0.0                 │
+│                 🚀 Deploy free: https://fastmcp.cloud                        │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+[03/09/26 11:31:54] INFO     Starting MCP server 'AstroAgent    transport.py:273
+                             MCP Server' with transport 'http'                  
+                             on http://0.0.0.0:8000/mcp                         
+INFO:     Started server process [862217]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8000): [errno 98] address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+
+2026-03-09 11:31:58 - AstroAgent - INFO - 📄 检索到上下文长度：1450 字符
+2026-03-09 11:32:12 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来RAGRetrieve返回的信息并不是直接关于火星当前位置的，而是更多关于太阳系探索历史和行星科学的一般性讨论。这可能是因为查询语句不够具体或数据库中的信息有所偏差。尽管如此，从观察结果中我们可以看到一些关于火星的基础数据，但没有明确给出当前的位置。
+
+不过，我可以根据常识告诉你，火星在夜空中是很容易辨认的一颗红色星星，并且它在天空中的位置会随时间变化而移动。如果你想要知道更精确的位置，比如它位于哪个星座附近，以及它的亮度如何，通常可以通过天文软件或者网站来查看实时星图。
+
+如果需要更具体的帮助，比如想了解今晚在北京（或其他地点）观测火星的最佳时间和方向，可以告诉我你的具体位置，我会尝试提供进一步的帮助！
+
+由于工具调用暂时遇到问题，我建议你可以访问一些在线天文网站如Stellarium Web或使用手机上的天文应用来查看火星现在的确切位置。这些工具能够基于你所在的位置给出非常准确的信息。希望这些建议对你有所帮助！如果有其他问题或需要进一步指导，请随时告诉我哦！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:32:39 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:32:39 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:32:39 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:32:39 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:32:39 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:32:39 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:32:40 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:32:40 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:32:40 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:32:40 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:32:40 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 11:32:40 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:32:40 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:32:40 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 11:32:40 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:32:51 - AstroAgent - INFO - 📄 检索到上下文长度：1440 字符
+2026-03-09 11:33:14 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：275 字符
+2026-03-09 11:33:14 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:33:33 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：99 字符
+2026-03-09 11:36:55 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:36:55 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:36:55 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:36:55 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:36:55 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:36:55 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:36:56 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:36:56 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:36:56 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:36:56 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:36:56 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 11:36:56 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:36:56 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:36:56 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 11:36:56 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:37:23 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：150 字符
+2026-03-09 11:37:23 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:37:44 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：195 字符
+2026-03-09 11:38:11 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:38:11 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:38:11 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:38:11 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:38:11 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:38:11 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:38:12 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:38:12 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:38:12 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:38:12 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:38:12 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 11:38:12 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:38:12 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:38:12 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 11:38:12 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:38:23 - AstroAgent - ERROR - ❌ 生成响应失败：AstroAgent._init_tools.<locals>.get_current_sky_objects() missing 1 required positional argument: 'longitude'
+2026-03-09 11:38:23 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:38:48 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来我们遇到了一些技术上的小障碍，暂时无法直接获取火星的确切位置。这可能是因为网络问题或者是服务暂时不可用导致的。不过没关系，我可以基于已有的知识给你一个大概的解释。
+
+火星是太阳系内的一颗行星，它绕着太阳公转，同时也在自转。由于地球和火星都在各自的轨道上移动，因此从地球上看到的火星的位置会随着时间而变化。一般来说，火星在夜空中看起来是一颗红色的星星，而且它的亮度也会随着与地球的距离变化而有所不同。当火星、地球和太阳几乎成一条直线时（这种情况每隔大约26个月发生一次），火星就会显得特别亮，也最容易被观察到。
+
+如果你告诉我你所在的地理位置，我还可以尝试给出更具体的建议，比如什么时候以及朝哪个方向看可能会找到火星。此外，使用星图应用或者天文望远镜也可以帮助你更容易地定位火星哦！
+
+如果有其他感兴趣的天文话题或需要进一步的帮助，请随时告诉我！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:40:04 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:40:04 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:40:04 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:40:05 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:40:05 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:40:05 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:40:06 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:40:06 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:40:06 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:40:06 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:40:06 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 11:40:06 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:40:06 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:40:06 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 11:40:06 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:40:11 - AstroAgent - ERROR - ❌ 解析MCP服务器响应失败：🚀 启动天文工具MCP服务器 (stdio模式)...
+{"error": "Object of type coroutine is not JSON serializable"}
+
+2026-03-09 11:40:17 - AstroAgent - ERROR - ❌ 生成响应失败：AstroAgent._init_tools.<locals>.get_current_sky_objects() missing 1 required positional argument: 'longitude'
+2026-03-09 11:40:17 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:40:23 - AstroAgent - ERROR - ❌ 解析MCP服务器响应失败：🚀 启动天文工具MCP服务器 (stdio模式)...
+{"error": "FastMCP.call_tool() got an unexpected keyword argument 'planet_name'"}
+
+2026-03-09 11:40:32 - AstroAgent - ERROR - ❌ 生成响应失败：An output parsing error occurred. In order to pass this error back to the agent and have it try again, pass `handle_parsing_errors=True` to the AgentExecutor. This is the error: Could not parse LLM output: `看起来在尝试获取火星当前位置时遇到了一些问题。这可能是由于网络状况或其他技术原因导致的。不过，不用太担心，我们可以稍后再试或者换一个时间点来看看。
+
+如果现在方便的话，你可以告诉我你的大概位置（比如城市名），我可以试着提供一些关于火星何时可见的一般性建议。另外，如果你对火星的一些基础知识感兴趣，比如它为什么会有红色外观等，我也可以为你解释一下哦！`
+For troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE 
+2026-03-09 11:40:53 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:40:53 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:40:53 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:40:54 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:40:54 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:40:54 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:40:55 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:40:55 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:40:55 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:40:55 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:40:55 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 11:40:55 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:40:55 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:40:55 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 11:40:55 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:41:39 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：156 字符
+2026-03-09 11:41:39 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:41:54 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：135 字符
+2026-03-09 11:43:12 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-09 11:43:12 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-09 11:43:12 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-09 11:43:12 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-09 11:43:12 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-09 11:43:12 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-09 11:43:13 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-09 11:43:13 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-09 11:43:13 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-09 11:43:13 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-09 11:43:13 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具（使用stdio模式调用MCP服务器）
+2026-03-09 11:43:13 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-09 11:43:13 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-09 11:43:13 - AstroAgent - INFO - ✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具
+2026-03-09 11:43:13 - AstroAgent - INFO - 
+=== 处理用户查询：今晚能看到什么？ ===
+2026-03-09 11:43:24 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：137 字符
+2026-03-09 11:43:24 - AstroAgent - INFO - 
+=== 处理用户查询：火星现在的位置 ===
+2026-03-09 11:43:40 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：120 字符

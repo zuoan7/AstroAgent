@@ -8,11 +8,15 @@ from langchain_classic.agents import AgentExecutor
 from config import settings
 from rag_langchain import RAGSystem
 from memory import ShortTermMemory
-from astronomy_tools import AstronomyTools, AstronomyEventsPredictor
 from typing import Generator, List, Dict, Any
 import time
 import traceback
+import subprocess
+import json
 from logger import logger
+
+# MCP服务器配置
+MCP_SERVER_SCRIPT = "mcp_server.py"
 
 
 class AstroAgent:
@@ -27,12 +31,10 @@ class AstroAgent:
         self.rag = RAGSystem()
         self.memory = ShortTermMemory()
         self.llm = self._init_llm()
-        self.astronomy_tools = AstronomyTools()
-        self.events_predictor = AstronomyEventsPredictor()
         self.tools = self._init_tools()
         self.agent_executor = self._build_agent()
         
-        logger.info("✅ AstroAgent初始化完成，基于LangChain框架和React模型")
+        logger.info("✅ AstroAgent初始化完成，基于LangChain框架和React模型，使用stdio模式调用MCP服务器工具")
     
     def _init_llm(self):
         """初始化语言模型"""
@@ -47,6 +49,48 @@ class AstroAgent:
         except Exception as e:
             logger.error(f"❌ 语言模型初始化失败：{str(e)}")
             raise
+    
+    def _call_mcp_tool(self, tool_name, **kwargs):
+        """使用stdio模式调用MCP服务器工具"""
+        try:
+            # 构建请求 - 直接传递工具名和参数
+            request = {
+                "tool": tool_name,
+                "params": kwargs
+            }
+            
+            # 调用MCP服务器脚本
+            process = subprocess.Popen(
+                ["python3", MCP_SERVER_SCRIPT],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # 发送请求
+            request_json = json.dumps(request) + "\n"
+            stdout, stderr = process.communicate(input=request_json, timeout=30)
+            
+            # 检查返回码
+            if process.returncode != 0:
+                logger.error(f"❌ MCP服务器返回错误：{stderr}")
+                return f"调用工具失败：{stderr}"
+            
+            # 解析响应
+            try:
+                response = json.loads(stdout)
+                if 'result' in response:
+                    return response['result']
+                elif 'error' in response:
+                    return f"工具调用错误：{response['error']}"
+                return str(response)
+            except json.JSONDecodeError:
+                logger.error(f"❌ 解析MCP服务器响应失败：{stdout}")
+                return f"调用工具失败：无法解析响应"
+        except Exception as e:
+            logger.error(f"❌ 调用MCP工具 {tool_name} 失败：{str(e)}")
+            return f"调用工具失败：{str(e)}"
     
     def _init_tools(self):
         """初始化工具"""
@@ -64,140 +108,152 @@ class AstroAgent:
         ))
         
         # 行星位置计算工具
+        def get_planet_position(planet_name, observation_time=None, latitude=None, longitude=None):
+            """获取行星位置"""
+            return self._call_mcp_tool("get_planet_position", 
+                                      planet_name=planet_name, 
+                                      observation_time=observation_time, 
+                                      latitude=latitude, 
+                                      longitude=longitude)
+        
         tools.append(Tool(
             name="GetPlanetPosition",
-            func=self.astronomy_tools.get_planet_position,
+            func=get_planet_position,
             description="获取行星位置，参数：planet_name（行星名称，如 'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'），observation_time（观测时间，可选），latitude（观测点纬度，可选），longitude（观测点经度，可选）"
         ))
         
         # 天体坐标转换工具
+        def coordinate_transformation(ra, dec, epoch="J2000", target_system="fk5"):
+            """天体坐标转换"""
+            return self._call_mcp_tool("coordinate_transformation", 
+                                      ra=ra, 
+                                      dec=dec, 
+                                      epoch=epoch, 
+                                      target_system=target_system)
+        
         tools.append(Tool(
             name="CoordinateTransformation",
-            func=self.astronomy_tools.coordinate_transformation,
+            func=coordinate_transformation,
             description="天体坐标转换，参数：ra（赤经，小时），dec（赤纬，度），epoch（历元，默认为J2000），target_system（目标坐标系，默认为fk5）"
         ))
         
         # 升起落下时间工具
+        def get_rise_set_times(body_name, latitude, longitude, date=None):
+            """获取天体升起和落下时间"""
+            return self._call_mcp_tool("get_rise_set_times", 
+                                      body_name=body_name, 
+                                      latitude=latitude, 
+                                      longitude=longitude, 
+                                      date=date)
+        
         tools.append(Tool(
             name="GetRiseSetTimes",
-            func=self.astronomy_tools.get_rise_set_times,
+            func=get_rise_set_times,
             description="获取天体升起和落下时间，参数：body_name（天体名称，如 'sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn'），latitude（观测点纬度），longitude（观测点经度），date（日期，可选）"
         ))
         
         # 当前天空天体工具
-        def get_current_sky_objects_wrapper(*args, **kwargs):
-            """包装器函数，处理各种格式的参数"""
-            # 检查参数格式
-            if args:
-                params = args[0]
-                if isinstance(params, str):
-                    import re
-                    # 尝试从字符串中提取latitude和longitude值
-                    lat_match = re.search(r"latitude=([-\d.]+)", params)
-                    lon_match = re.search(r"longitude=([-\d.]+)", params)
-                    if lat_match and lon_match:
-                        latitude = float(lat_match.group(1))
-                        longitude = float(lon_match.group(1))
-                        return self.astronomy_tools.get_current_sky_objects(latitude, longitude)
-                    else:
-                        raise ValueError("无效的输入格式，需要包含latitude和longitude值")
-                elif isinstance(params, dict):
-                    # 处理字典格式的参数
-                    latitude = params.get('latitude')
-                    longitude = params.get('longitude')
-                    if latitude and longitude:
-                        return self.astronomy_tools.get_current_sky_objects(latitude, longitude)
-                    else:
-                        raise ValueError("无效的输入格式，需要包含latitude和longitude值")
-            # 处理关键字参数
-            elif kwargs:
-                latitude = kwargs.get('latitude')
-                longitude = kwargs.get('longitude')
-                if latitude and longitude:
-                    return self.astronomy_tools.get_current_sky_objects(latitude, longitude)
-                else:
-                    raise ValueError("无效的输入格式，需要包含latitude和longitude值")
-            else:
-                raise ValueError("无效的输入格式，需要提供参数")
+        def get_current_sky_objects(latitude, longitude, date=None):
+            """获取当前天空中的主要天体"""
+            return self._call_mcp_tool("get_current_sky_objects", 
+                                      latitude=latitude, 
+                                      longitude=longitude, 
+                                      date=date)
         
         tools.append(Tool(
             name="GetCurrentSkyObjects",
-            func=get_current_sky_objects_wrapper,
+            func=get_current_sky_objects,
             description="获取当前天空中的主要天体，参数：latitude（观测点纬度），longitude（观测点经度），date（日期，可选）"
         ))
         
         # 天体基本信息工具
+        def get_astrophysical_object_info(object_name):
+            """查询天体基本信息"""
+            return self._call_mcp_tool("get_astrophysical_object_info", 
+                                      object_name=object_name)
+        
         tools.append(Tool(
             name="GetAstrophysicalObjectInfo",
-            func=self.astronomy_tools.get_astrophysical_object_info,
+            func=get_astrophysical_object_info,
             description="查询天体基本信息，参数：object_name（天体名称）"
         ))
         
         # 星系数据查询工具
+        def get_galaxy_data(galaxy_name):
+            """星系数据查询"""
+            return self._call_mcp_tool("get_galaxy_data", 
+                                      galaxy_name=galaxy_name)
+        
         tools.append(Tool(
             name="GetGalaxyData",
-            func=self.astronomy_tools.get_galaxy_data,
+            func=get_galaxy_data,
             description="星系数据查询，参数：galaxy_name（星系名称）"
         ))
         
         # NASA每日天文图工具
+        def get_nasa_apod(date=None, hd=False):
+            """获取NASA每日天文图"""
+            return self._call_mcp_tool("get_nasa_apod", 
+                                      date=date, 
+                                      hd=hd)
+        
         tools.append(Tool(
             name="GetNASAAPOD",
-            func=self.astronomy_tools.get_nasa_apod,
+            func=get_nasa_apod,
             description="获取NASA每日天文图，参数：date（日期，格式为YYYY-MM-DD，可选），hd（是否获取高清图像，可选）"
         ))
         
         # 近地天体数据工具
+        def get_neo_data(start_date=None, end_date=None, limit=10):
+            """获取近地天体数据"""
+            return self._call_mcp_tool("get_neo_data", 
+                                      start_date=start_date, 
+                                      end_date=end_date, 
+                                      limit=limit)
+        
         tools.append(Tool(
             name="GetNEOData",
-            func=self.astronomy_tools.get_neo_data,
+            func=get_neo_data,
             description="获取近地天体数据，参数：start_date（开始日期，格式为YYYY-MM-DD，可选），end_date（结束日期，格式为YYYY-MM-DD，可选），limit（返回结果数量限制，可选）"
         ))
         
-        # 天象预测工具
-        def get_tonight_best_wrapper(*args, **kwargs):
-            """包装器函数，处理无参数调用"""
-            return self.events_predictor.get_tonight_best()
-        
-        def get_weekly_events_wrapper(*args, **kwargs):
-            """包装器函数，处理各种格式的参数"""
-            if args:
-                params = args[0]
-                if isinstance(params, dict):
-                    start_date = params.get('start_date')
-                    return self.events_predictor.get_weekly_events(start_date)
-            return self.events_predictor.get_weekly_events()
-        
-        def get_monthly_events_wrapper(*args, **kwargs):
-            """包装器函数，处理各种格式的参数"""
-            year = None
-            month = None
-            if args:
-                params = args[0]
-                if isinstance(params, dict):
-                    year = params.get('year')
-                    month = params.get('month')
-            return self.events_predictor.get_monthly_events(year, month)
+        # 今晚最佳观测目标工具
+        def get_tonight_best(*args, **kwargs):
+            """获取今晚最佳观测目标"""
+            return self._call_mcp_tool("get_tonight_best")
         
         tools.append(Tool(
             name="GetTonightBest",
-            func=get_tonight_best_wrapper,
+            func=get_tonight_best,
             description="获取今晚最佳观测目标，无需参数"
         ))
         
+        # 未来一周天象工具
+        def get_weekly_events(start_date=None):
+            """获取未来一周的天象"""
+            return self._call_mcp_tool("get_weekly_events", 
+                                      start_date=start_date)
+        
         tools.append(Tool(
             name="GetWeeklyEvents",
-            func=get_weekly_events_wrapper,
+            func=get_weekly_events,
             description="获取未来一周的天象，参数：start_date（起始日期，可选，默认为今天）"
         ))
         
+        # 未来一个月天象工具
+        def get_monthly_events(year=None, month=None):
+            """获取未来一个月的天象"""
+            return self._call_mcp_tool("get_monthly_events", 
+                                      year=year, 
+                                      month=month)
+        
         tools.append(Tool(
             name="GetMonthlyEvents",
-            func=get_monthly_events_wrapper,
+            func=get_monthly_events,
             description="获取未来一个月的天象，参数：year（年份，可选，默认为当前年），month（月份，可选，默认为下个月）"
         ))
         
-        logger.info(f"✅ 成功注册 {len(tools)} 个天文工具")
+        logger.info(f"✅ 成功注册 {len(tools)} 个天文工具（使用stdio模式调用MCP服务器）")
         return tools
     
     def _build_agent(self):

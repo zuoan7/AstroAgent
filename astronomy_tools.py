@@ -41,18 +41,26 @@ class AstronomyTools:
         if isinstance(planet_name, dict):
             # 从字典中提取行星名称
             planet_name = planet_name.get('planet_name', planet_name)
-        # 处理字符串格式的输入（来自LangChain agent，如 "planet_name='mars'"）
+        # 处理字符串格式的输入（来自LangChain agent，如 "planet_name='mars'" 或 '{"planet_name": "mars"}'）
         elif isinstance(planet_name, str):
             import re
-            # 尝试从字符串中提取行星名称
-            match = re.search(r"planet_name=['\"]([^'\"]+)['\"]", planet_name)
-            if match:
-                planet_name = match.group(1)
-            # 也处理没有引号的情况
-            elif '=' in planet_name:
-                parts = planet_name.split('=')
-                if len(parts) == 2:
-                    planet_name = parts[1].strip().strip("'\"").strip()
+            import json
+            # 尝试从JSON字符串中提取行星名称
+            try:
+                # 尝试解析为JSON
+                json_data = json.loads(planet_name)
+                if isinstance(json_data, dict) and 'planet_name' in json_data:
+                    planet_name = json_data['planet_name']
+            except:
+                # 尝试从普通字符串中提取行星名称
+                match = re.search(r'planet_name=[\'"]([^\'\"]+)[\'" ]', planet_name)
+                if match:
+                    planet_name = match.group(1)
+                # 也处理没有引号的情况
+                elif '=' in planet_name:
+                    parts = planet_name.split('=')
+                    if len(parts) == 2:
+                        planet_name = parts[1].strip().strip("'\"").strip()
         
         # 确保行星名称是字符串
         if not isinstance(planet_name, str):
