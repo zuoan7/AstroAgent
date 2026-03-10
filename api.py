@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from agent import AstroAgent
+from agent_langchain import AstroAgent
 import json
 
 # 创建FastAPI应用

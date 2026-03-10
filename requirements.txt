@@ -4,17 +4,29 @@ langchain-core
 langchain-community
 langchain-chroma>=0.1.0
 langgraph
+langchain-classic
 pydantic
 pydantic-settings
 python-dotenv
 pyPDF2
 PyCryptodome
+
+# HTTP clients
+httpx
+requests
+
 # Qwen model integration
 dashscope
 
 # RAG related
 chromadb
 langchain-text-splitters
+
+# Astronomy and scientific stack
+skyfield
+astropy
+ephem
+astroquery
 
 # Streaming output and API
 fastapi

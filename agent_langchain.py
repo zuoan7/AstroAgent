@@ -21,7 +21,8 @@ import uuid
 import threading
 
 # MCP服务器配置 - 注意没有结尾斜杠！
-MCP_SERVER_URL = "http://localhost:8000/mcp"  # 修正1：去掉结尾斜杠
+# 默认使用 8001 端口，与 FastAPI 服务错开
+MCP_SERVER_URL = "http://localhost:8001/mcp"
 
 
 class AstroAgent:

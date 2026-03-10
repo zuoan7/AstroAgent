@@ -340,7 +340,8 @@ if __name__ == "__main__":
     
     # 使用环境变量或默认值设置主机和端口
     host = os.environ.get("FASTMCP_HOST", "0.0.0.0")
-    port = int(os.environ.get("FASTMCP_PORT", "8000"))
+    # 默认端口改为 8001，避免与 FastAPI 冲突
+    port = int(os.environ.get("FASTMCP_PORT", "8001"))
     
     print(f"📡 监听地址: http://{host}:{port}/mcp/")
     print(f"📦 已注册工具: 12个")

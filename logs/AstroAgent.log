@@ -2199,3 +2199,107 @@ data: {"jsonrpc":"2.0","id":1773058876741,"result":{"content":[{"type":"text","t
 2026-03-09 22:44:19 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773067459022, "result": {"content": [{"type": "text", "text": "🔭 **2026年8月天象预报**\n\n✨ **本月特殊天象**\n• **2026-08-12** 英仙座流星雨极大\n  每小时约100颗，年度最佳流星雨！\n• **2026-08-12** 日偏食\n  北京时间
 2026-03-09 22:44:48 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：333 字符
 2026-03-09 22:44:48 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-10 10:57:28 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-10 10:57:28 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-10 10:57:28 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-10 10:57:28 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-10 10:57:28 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-10 10:57:28 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-10 10:57:30 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-10 10:57:30 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-10 10:57:30 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ 获取到session ID: 9491d55f5136424e863cc1abebe5f245
+2026-03-10 10:57:30 - AstroAgent - INFO - 发送初始化请求...
+2026-03-10 10:57:30 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-10 10:57:30 - AstroAgent - INFO - 发送initialized通知...
+2026-03-10 10:57:30 - AstroAgent - INFO - 获取工具列表...
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 9491d55f5136424e863cc1abebe5f245
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-10 10:57:30 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-10 10:57:39 - AstroAgent - INFO - 
+=== 处理用户查询：我刚买了一台星特朗的80EQ折射望远镜，在北京。今晚天气好的话想找个深空天体看看， ===
+2026-03-10 10:57:43 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-10 10:57:43 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773111463271, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-10）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:15\n  • 日出：22:32\n"}], "
+2026-03-10 10:57:54 - AstroAgent - INFO - 📄 检索到上下文长度：1453 字符
+2026-03-10 10:58:01 - AstroAgent - INFO - 📄 检索到上下文长度：1449 字符
+2026-03-10 10:59:01 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：439 字符
+2026-03-10 11:00:09 - AstroAgent - INFO - 
+=== 处理用户查询：最好是比较亮、容易找到的。有什么推荐吗？下个月我准备去内蒙古草原，有什么适合拍照的深空天体吗？ ===
+2026-03-10 11:00:17 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-10 11:00:17 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773111617867, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-10）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:15\n  • 日出：22:32\n"}], "
+2026-03-10 11:00:23 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 4}'}
+2026-03-10 11:00:23 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773111623430, "result": {"content": [{"type": "text", "text": "🔭 **2026年4月天象预报**\n\n✨ **本月特殊天象**\n• **2026-04-22** 天琴座流星雨极大\n  每小时约18颗，无月光干扰\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测
+2026-03-10 11:00:44 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：212 字符
+2026-03-10 11:04:54 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-10 11:14:29 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-10 11:14:29 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-10 11:14:29 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-10 11:14:29 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-10 11:14:29 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-10 11:14:29 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-10 11:14:30 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-10 11:14:30 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-10 11:14:30 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ 获取到session ID: 54424caf6c6a431583c0f941615f6002
+2026-03-10 11:14:30 - AstroAgent - INFO - 发送初始化请求...
+2026-03-10 11:14:30 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-10 11:14:30 - AstroAgent - INFO - 发送initialized通知...
+2026-03-10 11:14:30 - AstroAgent - INFO - 获取工具列表...
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 54424caf6c6a431583c0f941615f6002
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-10 11:14:30 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-10 11:14:32 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-10 11:14:32 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-10 11:14:32 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-10 11:14:32 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-10 11:14:32 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-10 11:14:32 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-10 11:14:33 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-10 11:14:33 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-10 11:14:33 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 获取到session ID: 1cba8cd8e09e4e08b25c6a13c3ebf640
+2026-03-10 11:14:33 - AstroAgent - INFO - 发送初始化请求...
+2026-03-10 11:14:33 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-10 11:14:33 - AstroAgent - INFO - 发送initialized通知...
+2026-03-10 11:14:33 - AstroAgent - INFO - 获取工具列表...
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 1cba8cd8e09e4e08b25c6a13c3ebf640
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 内置千问嵌入模型 text-embedding-v2 初始化成功
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 加载了 4 个已添加文档的哈希值
+2026-03-10 11:14:33 - AstroAgent - INFO - === 开始初始化向量数据库 ===
+2026-03-10 11:14:33 - AstroAgent - INFO - ✅ 向量数据库初始化成功，保存路径：./vector_db
+2026-03-10 11:14:33 - AstroAgent - WARNING - ⚠️  文档 astromy.txt 已存在，跳过
+2026-03-10 11:14:33 - AstroAgent - WARNING - ⚠️  文档 通俗天文学.txt 已存在，跳过
+2026-03-10 11:14:34 - AstroAgent - WARNING - ⚠️  文档 BNA.pdf 已存在，跳过
+2026-03-10 11:14:34 - AstroAgent - WARNING - ⚠️  未加载到任何有效文档
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ 保存了 4 个文档哈希值到 ./vector_db/document_hashes.txt
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-10 11:14:34 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ 获取到session ID: 936fdd836cdb4f24b1d240cd5e545353
+2026-03-10 11:14:34 - AstroAgent - INFO - 发送初始化请求...
+2026-03-10 11:14:34 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-10 11:14:34 - AstroAgent - INFO - 发送initialized通知...
+2026-03-10 11:14:34 - AstroAgent - INFO - 获取工具列表...
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ 从服务器获取到 11 个工具
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 936fdd836cdb4f24b1d240cd5e545353
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ 成功注册 12 个天文工具
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-10 11:14:34 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-10 11:16:52 - AstroAgent - INFO - ✅ HTTP客户端已关闭
