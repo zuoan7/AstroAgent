@@ -6,9 +6,9 @@ from langchain_core.tools import Tool
 from langchain_classic.agents import create_react_agent
 from langchain_classic.agents import AgentExecutor
 from config import settings
-from rag_langchain import RAGSystem
+from rag.online_retriever import OnlineRetriever
 from memory import ShortTermMemory
-from typing import Generator, List, Dict, Any, Optional
+from typing import Generator, List, Dict, Any, Optional, AsyncGenerator
 import time
 import traceback
 import json
@@ -34,7 +34,7 @@ class AstroAgent:
             raise ValueError("❌ DashScope API Key未配置！请在settings中设置DASHSCOPE_API_KEY")
         
         # 初始化组件
-        self.rag = RAGSystem()
+        self.rag = OnlineRetriever()
         self.memory = ShortTermMemory()
         self.llm = self._init_llm()
         
@@ -42,6 +42,9 @@ class AstroAgent:
         self.mcp_session_id: Optional[str] = None
         self.mcp_initialized = False
         self.http_client: Optional[httpx.Client] = None
+        # 工具调用跟踪
+        self._tool_runs: Dict[str, Dict[str, Any]] = {}
+        self._current_request_id: Optional[str] = None
         
         # 初始化MCP会话（使用同步方式）
         self._init_mcp_session_sync()
@@ -366,13 +369,13 @@ class AstroAgent:
         ))
         
         # 当前天空天体工具
-        def get_current_sky_objects(latitude, longitude, date=None):
+        def get_current_sky_objects(latitude, longitude=None, date=None):
             """获取当前天空中的主要天体"""
             return self._call_mcp_tool(
-                "get_current_sky_objects", 
-                latitude=latitude, 
-                longitude=longitude, 
-                date=date
+                "get_current_sky_objects",
+                latitude=latitude,
+                longitude=longitude,
+                date=date,
             )
         
         tools.append(Tool(
@@ -582,6 +585,104 @@ Thought: {agent_scratchpad}
             yield default_response
             self.memory.add_message("user", query, time.time())
             self.memory.add_message("assistant", default_response, time.time())
+
+    async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
+        """
+        使用 LangChain Agent 的事件流实现端到端流式输出，并带有工具调用 trace。
+        """
+        request_id = uuid.uuid4().hex[:8]
+        self._current_request_id = request_id
+        logger.info(f"[{request_id}] 开始处理流式查询：{query}")
+
+        final_chunks: list[str] = []
+
+        try:
+            # 使用事件流接口捕获 LLM token 与工具事件
+            async for event in self.agent_executor.astream_events(
+                {"input": query},
+                version="v1",
+            ):
+                event_type = event.get("event")
+                data = event.get("data", {}) or {}
+                run_id = event.get("run_id")
+
+                # 工具开始：记录输入与开始时间
+                if event_type == "on_tool_start":
+                    tool_name = data.get("name") or data.get("tool")
+                    tool_input = data.get("input")
+                    self._tool_runs[run_id] = {
+                        "name": tool_name,
+                        "input": str(tool_input),
+                        "start_time": time.time(),
+                        "request_id": request_id,
+                    }
+                    logger.info(
+                        json.dumps(
+                            {
+                                "type": "tool_start",
+                                "request_id": request_id,
+                                "run_id": run_id,
+                                "tool_name": tool_name,
+                                "input": str(tool_input),
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    continue
+
+                # 工具结束：记录输出与耗时
+                if event_type == "on_tool_end":
+                    meta = self._tool_runs.pop(run_id, {})
+                    duration = None
+                    if meta.get("start_time") is not None:
+                        duration = time.time() - meta["start_time"]
+                    tool_output = data.get("output")
+                    logger.info(
+                        json.dumps(
+                            {
+                                "type": "tool_end",
+                                "request_id": request_id,
+                                "run_id": run_id,
+                                "tool_name": meta.get("name"),
+                                "duration_sec": duration,
+                                "output_preview": str(tool_output)[:200],
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    continue
+
+                # LLM token 级别流：on_chat_model_stream / on_llm_stream
+                if event_type in ("on_chat_model_stream", "on_llm_stream"):
+                    chunk = data.get("chunk")
+                    if not chunk:
+                        continue
+
+                    text = getattr(chunk, "content", None) or getattr(
+                        chunk, "text", None
+                    )
+                    if not text:
+                        continue
+
+                    final_chunks.append(text)
+                    yield text
+
+        except Exception as e:
+            logger.error(f"[{request_id}] ❌ 流式生成失败：{e}")
+            traceback.print_exc()
+            fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
+            yield fallback
+            self.memory.add_message("user", query, time.time())
+            self.memory.add_message("assistant", fallback, time.time())
+        else:
+            final_response = "".join(final_chunks)
+            self.memory.add_message("user", query, time.time())
+            self.memory.add_message("assistant", final_response, time.time())
+            logger.info(
+                f"[{request_id}] ✅ 流式对话完成，响应长度：{len(final_response)} 字符"
+            )
+        finally:
+            self._current_request_id = None
     
     def add_astronomy_knowledge(self, knowledge: List[str]):
         """添加天文知识到RAG系统"""

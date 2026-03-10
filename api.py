@@ -25,11 +25,11 @@ class KnowledgeRequest(BaseModel):
 async def query_endpoint(request: QueryRequest):
     """查询接口，支持流式输出"""
     try:
-        def generate():
-            for chunk in agent.generate_response(request.query):
+        async def generate():
+            async for chunk in agent.generate_response_stream(request.query):
                 # 流式输出，每个chunk作为一个SSE事件
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
-        
+
         return StreamingResponse(generate(), media_type="text/event-stream")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
