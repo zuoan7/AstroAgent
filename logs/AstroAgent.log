@@ -869,3 +869,632 @@
 2026-03-12 10:50:54 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773283854742, "result": {"content": [{"type": "text", "text": "{\"error\": \"AMAP_API_KEY 未配置，无法查询天气\"}"}], "structuredContent": {"result": "{\"error\": \"AMAP_API_KEY 未配置，无法
 2026-03-12 10:51:35 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：357 字符
 2026-03-12 10:52:14 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:05 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 获取到session ID: 6b7458da0dbf4bc6810acb1c1073756f
+2026-03-12 10:59:05 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:05 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:05 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:05 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 6b7458da0dbf4bc6810acb1c1073756f
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:05 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 获取到session ID: 70e85511b75d4450a25205943d46b3f2
+2026-03-12 10:59:05 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:05 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:05 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:05 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 70e85511b75d4450a25205943d46b3f2
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:05 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:13 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 获取到session ID: 2d29fdc54dfc4126b66ebde160bc3197
+2026-03-12 10:59:13 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:13 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:13 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:13 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 2d29fdc54dfc4126b66ebde160bc3197
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:13 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 获取到session ID: a781df2e51fb4949aa70abecc79df1fa
+2026-03-12 10:59:13 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:13 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:13 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:13 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: a781df2e51fb4949aa70abecc79df1fa
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:13 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:18 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:18 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:18 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:18 - AstroAgent - INFO - ✅ 获取到session ID: 83cb7014765141b687ac50b868870b6c
+2026-03-12 10:59:18 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:18 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:18 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:18 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 83cb7014765141b687ac50b868870b6c
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:19 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 获取到session ID: 0b9f77c87b3d439d985936aa03ab67b1
+2026-03-12 10:59:19 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:19 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:19 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:19 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 0b9f77c87b3d439d985936aa03ab67b1
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:19 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:28 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:28 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:29 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 获取到session ID: de515e30feec4539a5198e4bdcaf153e
+2026-03-12 10:59:29 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:29 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:29 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:29 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: de515e30feec4539a5198e4bdcaf153e
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:29 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 获取到session ID: 89eea89e083c4fabb79cae57d92f62d0
+2026-03-12 10:59:29 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:29 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:29 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:29 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 89eea89e083c4fabb79cae57d92f62d0
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:29 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 10:59:59 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ 获取到session ID: 869b6e8e14c14b9096839e17d2d1db0f
+2026-03-12 10:59:59 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 10:59:59 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 10:59:59 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 10:59:59 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 869b6e8e14c14b9096839e17d2d1db0f
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 10:59:59 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:00:00 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ 获取到session ID: e54d395b2cb04bacac4b378c86936b6e
+2026-03-12 11:00:00 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:00:00 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:00:00 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:00:00 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: e54d395b2cb04bacac4b378c86936b6e
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:00:00 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:00:05 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 获取到session ID: 7a55b2affb89422eb0f27eda5c696937
+2026-03-12 11:00:05 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:00:05 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:00:05 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:00:05 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 7a55b2affb89422eb0f27eda5c696937
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:00:05 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 获取到session ID: 16afdd193dbb4f28917484c389a6fac9
+2026-03-12 11:00:05 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:00:05 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:00:05 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:00:05 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 16afdd193dbb4f28917484c389a6fac9
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:00:05 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:00:15 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 获取到session ID: a350cf69150948f380d3f137976f45ab
+2026-03-12 11:00:15 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:00:15 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:00:15 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:00:15 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: a350cf69150948f380d3f137976f45ab
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:00:15 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 获取到session ID: eb773b1080204c8d84bc1a85d3998e20
+2026-03-12 11:00:15 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:00:15 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:00:15 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:00:15 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: eb773b1080204c8d84bc1a85d3998e20
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:00:15 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:26:45 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:26:45 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:26:45 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:26:45 - AstroAgent - ERROR - ❌ MCP会话初始化失败: [Errno 111] Connection refused
+2026-03-12 11:26:45 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:26:45 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:26:45 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:26:45 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:27:09 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ 获取到session ID: 2ad8297103b5458d91b994eea86a5676
+2026-03-12 11:27:09 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:27:09 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:27:09 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:27:09 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 2ad8297103b5458d91b994eea86a5676
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:27:09 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:27:11 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 获取到session ID: fdd14a3878ff42b391be72bda41649b9
+2026-03-12 11:27:11 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:27:11 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:27:11 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:27:11 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: fdd14a3878ff42b391be72bda41649b9
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:27:11 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 获取到session ID: 4231ffe8570e43ffaf32c56754a99823
+2026-03-12 11:27:11 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:27:11 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:27:11 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:27:11 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 4231ffe8570e43ffaf32c56754a99823
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:27:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:27:16 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ 获取到session ID: 5de66e1427914d278514cdbd6c237f49
+2026-03-12 11:27:16 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:27:16 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:27:16 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:27:16 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 5de66e1427914d278514cdbd6c237f49
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:27:16 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:27:23 - AstroAgent - INFO - 
+=== 处理用户查询：北京今晚适合观星吗 ===
+2026-03-12 11:27:27 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '{"city": "北京", "extensions": "base"}', 'extensions': 'base'}
+2026-03-12 11:27:27 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773286047621, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"北京\", \"extensions\": \"base\", \"raw\": {\"status\": \"1\", \"count\": \"1\", \"info\": \"O
+2026-03-12 11:27:36 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：102 字符
+2026-03-12 11:31:11 - AstroAgent - INFO - 
+=== 处理用户查询：苏州天气如何，观测吗 ===
+2026-03-12 11:31:16 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '{"city": "苏州", "extensions": "base"}', 'extensions': 'base'}
+2026-03-12 11:31:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773286276815, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"苏州\", \"extensions\": \"base\", \"raw\": {\"status\": \"1\", \"count\": \"1\", \"info\": \"O
+2026-03-12 11:31:23 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：97 字符
+2026-03-12 11:34:23 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-12 11:36:02 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:36:02 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:36:03 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 获取到session ID: 3e5a50b8c5ff4c3bb6d0c959dfd234e4
+2026-03-12 11:36:03 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:36:03 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:36:03 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:36:03 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 3e5a50b8c5ff4c3bb6d0c959dfd234e4
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:36:03 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 获取到session ID: aa8ff35e5fe04cbd829be8763c4715fd
+2026-03-12 11:36:03 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:36:03 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:36:03 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:36:03 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: aa8ff35e5fe04cbd829be8763c4715fd
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:36:03 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 11:39:12 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ 获取到session ID: ef3b7f355ef847a295c839c58bcba08e
+2026-03-12 11:39:12 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 11:39:12 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 11:39:12 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 11:39:12 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: ef3b7f355ef847a295c839c58bcba08e
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 11:39:12 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 11:39:19 - AstroAgent - INFO - 
+=== 处理用户查询：铁岭天气如何，适合观星吗 ===
+2026-03-12 11:39:25 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '{"city": "铁岭"}', 'extensions': 'base'}
+2026-03-12 11:39:25 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773286765587, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"铁岭\", \"extensions\": \"base\", \"raw\": {\"status\": \"1\", \"count\": \"2\", \"info\": \"O
+2026-03-12 11:39:35 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：90 字符
+2026-03-12 11:40:20 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:32:32 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 获取到session ID: 9e1d2020346147f28b0cfc2d54d4e1b1
+2026-03-12 13:32:32 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:32:32 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:32:32 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:32:32 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 9e1d2020346147f28b0cfc2d54d4e1b1
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:32:32 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 获取到session ID: 020425a539814cd682a9f40c62ed6bd6
+2026-03-12 13:32:32 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:32:32 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:32:32 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:32:32 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 020425a539814cd682a9f40c62ed6bd6
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:32:32 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:34:13 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 获取到session ID: 693fcef5e18147468c7bf137ab773568
+2026-03-12 13:34:13 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:34:13 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:34:13 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:34:13 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 693fcef5e18147468c7bf137ab773568
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:34:13 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 获取到session ID: 71f8a4ce04d24bfdb5bcaf516c761980
+2026-03-12 13:34:13 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:34:13 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:34:13 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:34:13 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 71f8a4ce04d24bfdb5bcaf516c761980
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:34:13 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:34:46 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 获取到session ID: 21eb1111516a48019bad35014a9d9161
+2026-03-12 13:34:46 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:34:46 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:34:46 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:34:46 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 21eb1111516a48019bad35014a9d9161
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:34:46 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 获取到session ID: 39da1e7af12f4cf09ac9f586d98db2b7
+2026-03-12 13:34:46 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:34:46 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:34:46 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:34:46 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 39da1e7af12f4cf09ac9f586d98db2b7
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:34:46 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:35:11 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 获取到session ID: d88f3f06161442d889398181a258d807
+2026-03-12 13:35:11 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:35:11 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:35:11 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:35:11 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: d88f3f06161442d889398181a258d807
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:35:11 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 获取到session ID: e77fb454f78c429d8d86bb874cd6eb16
+2026-03-12 13:35:11 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:35:11 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:35:11 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:35:11 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: e77fb454f78c429d8d86bb874cd6eb16
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:35:11 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:35:40 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 获取到session ID: f111a13f8794446f85c74747c4ab0329
+2026-03-12 13:35:40 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:35:40 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:35:40 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:35:40 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: f111a13f8794446f85c74747c4ab0329
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:35:40 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 获取到session ID: 2a93234d33e54bc1a273721f0a2f9081
+2026-03-12 13:35:40 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:35:40 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:35:40 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:35:40 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 2a93234d33e54bc1a273721f0a2f9081
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:35:40 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:35:56 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 获取到session ID: bf06d77136294b26bbab78c55d597a96
+2026-03-12 13:35:56 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:35:56 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:35:56 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:35:56 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: bf06d77136294b26bbab78c55d597a96
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:35:56 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 获取到session ID: d6ed4f5c2071421b81e2dea4e916d024
+2026-03-12 13:35:56 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:35:56 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:35:56 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:35:56 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: d6ed4f5c2071421b81e2dea4e916d024
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:35:56 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:36:54 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 获取到session ID: d661015840204c5c98fc7d0070cf29dc
+2026-03-12 13:36:54 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:36:54 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:36:54 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:36:54 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: d661015840204c5c98fc7d0070cf29dc
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:36:54 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 获取到session ID: ebc0c1cbee3249ff93470add7f21b08f
+2026-03-12 13:36:54 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:36:54 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:36:54 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:36:54 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: ebc0c1cbee3249ff93470add7f21b08f
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:36:54 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:37:16 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 获取到session ID: 79c8c79ed22e4ca9ace80bb369933d34
+2026-03-12 13:37:16 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:37:16 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:37:16 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:37:16 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 79c8c79ed22e4ca9ace80bb369933d34
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:37:16 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 获取到session ID: ad34af991d2c43498d817c98b5efed14
+2026-03-12 13:37:16 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:37:16 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:37:16 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:37:16 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: ad34af991d2c43498d817c98b5efed14
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:37:16 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:37:24 - AstroAgent - ERROR - 搜索请求失败: 401 Client Error: Unauthorized for url: https://api.tavily.com/search
+2026-03-12 13:44:23 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:44:23 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:44:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:44:24 - AstroAgent - INFO - ✅ 获取到session ID: cfccc5dcec834982a81fe97918dc36ed
+2026-03-12 13:44:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:44:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:44:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:44:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:44:24 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:44:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: cfccc5dcec834982a81fe97918dc36ed
+2026-03-12 13:44:24 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:44:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:44:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:44:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:44:54 - AstroAgent - INFO - 
+=== 处理用户查询：许嵩出了哪些歌曲 ===
+2026-03-12 13:45:04 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：100 字符
+2026-03-12 13:46:49 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:48:48 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 获取到session ID: f929130b6a374af89c18aab33f622ab8
+2026-03-12 13:48:48 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:48:48 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:48:48 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:48:48 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: f929130b6a374af89c18aab33f622ab8
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:48:48 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 获取到session ID: 999c7f67b6564f99b9bb1b30a3cdcc4d
+2026-03-12 13:48:48 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:48:48 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:48:48 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:48:48 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 999c7f67b6564f99b9bb1b30a3cdcc4d
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:48:48 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:48:57 - AstroAgent - INFO - 联网搜索成功: 今天天气怎么样, 获取到 5 条结果
+2026-03-12 13:48:58 - AstroAgent - ERROR - 搜索请求失败: 401 Client Error: Unauthorized for url: https://api.tavily.com/search
+2026-03-12 13:48:59 - AstroAgent - INFO - 联网搜索成功: 北京天气, 获取到 3 条结果
+2026-03-12 13:49:03 - AstroAgent - INFO - 联网搜索成功: 今晚能看到哪些星星, 获取到 3 条结果
+2026-03-12 13:49:07 - AstroAgent - INFO - 联网搜索成功: 2026年有哪些重要天象, 获取到 3 条结果
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:50:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 获取到session ID: 4226ce13d3fe426e9e4a69bedf30fd76
+2026-03-12 13:50:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:50:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:50:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:50:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 4226ce13d3fe426e9e4a69bedf30fd76
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ OnlineRetriever 已连接向量库：./vector_db
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 13:50:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 获取到session ID: 2167fe1291844a8cab3aee0642f8e25e
+2026-03-12 13:50:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 13:50:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 13:50:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 13:50:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 从服务器获取到 12 个工具
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 2167fe1291844a8cab3aee0642f8e25e
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 13:50:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 13:50:39 - AstroAgent - INFO - 联网搜索成功: 北京天气, 获取到 3 条结果
+2026-03-12 13:50:40 - AstroAgent - INFO - 联网搜索成功: 今晚能看到哪些星星, 获取到 3 条结果
+2026-03-12 13:50:42 - AstroAgent - INFO - 联网搜索成功: 2026年重要天象, 获取到 3 条结果
+2026-03-12 13:51:19 - AstroAgent - INFO - 联网搜索成功: 北京天气, 获取到 3 条结果
+2026-03-12 13:51:20 - AstroAgent - INFO - 联网搜索成功: 今晚能看到哪些星星, 获取到 3 条结果
+2026-03-12 13:51:20 - AstroAgent - INFO - 联网搜索成功: 2026年重要天象, 获取到 3 条结果

@@ -10,6 +10,7 @@ from astroquery.simbad import Simbad
 from astroquery.ned import Ned
 import requests
 import json
+from config import settings
 
 class AstronomyTools:
     def __init__(self):
@@ -362,7 +363,7 @@ class AstronomyTools:
             url = "https://api.nasa.gov/planetary/apod"
             
             # API密钥
-            api_key = os.getenv('NASA_API_KEY')
+            api_key = settings.NASA_API_KEY
             
             # 参数
             params = {
@@ -398,7 +399,7 @@ class AstronomyTools:
             url = "https://api.nasa.gov/neo/rest/v1/feed"
             
             # API密钥
-            api_key = os.getenv('NASA_API_KEY')
+            api_key = settings.NASA_API_KEY
             
             # 参数
             params = {
@@ -451,12 +452,12 @@ class AstronomyTools:
                     except Exception:
                         pass
 
-            api_key = os.getenv("AMAP_API_KEY") or ""
+            api_key = settings.AMAP_API_KEY
             if not api_key:
                 return {"error": "AMAP_API_KEY 未配置，无法查询天气"}
 
             if not city:
-                city = os.getenv("AMAP_DEFAULT_CITY") or "北京"
+                city = settings.AMAP_DEFAULT_CITY
 
             url = "https://restapi.amap.com/v3/weather/weatherInfo"
             params = {

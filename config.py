@@ -26,9 +26,12 @@ class Settings(BaseSettings):
     NASA_API_KEY: str
 
     # 高德地图 API（天气）
-    AMAP_API_KEY: str = "e080601a0183de5cf38367fdd5d40e90"
+    AMAP_API_KEY: str
     AMAP_DEFAULT_CITY: str = "北京"
-    
+
+    # Tavily 联网搜索 API
+    TAVILY_API_KEY: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = True

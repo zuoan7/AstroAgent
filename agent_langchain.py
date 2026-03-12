@@ -8,6 +8,7 @@ from langchain_classic.agents import AgentExecutor
 from config import settings
 from rag.online_retriever import OnlineRetriever
 from memory import ShortTermMemory
+from web_search import web_search
 from typing import Generator, List, Dict, Any, Optional, AsyncGenerator
 import time
 import traceback
@@ -356,16 +357,27 @@ class AstroAgent:
     def _init_tools(self):
         """初始化工具"""
         tools = []
-        
+
         # RAG检索工具（本地）
         def rag_retrieve(query):
             """使用RAG系统检索相关天文信息"""
             return self.rag.get_relevant_context(query)
-        
+
         tools.append(Tool(
             name="RAGRetrieve",
             func=rag_retrieve,
             description="使用RAG系统检索相关天文信息，参数：query（查询语句）"
+        ))
+
+        # 联网搜索工具（降级机制）
+        def web_search_func(query, max_results=5):
+            """联网搜索工具 - 当本地工具/RAG失败时的降级方案"""
+            return web_search(query, max_results)
+
+        tools.append(Tool(
+            name="WebSearch",
+            func=web_search_func,
+            description="联网搜索工具，当其他工具不可用时使用。参数：query（搜索内容），max_results（结果数量，默认5）"
         ))
 
         # 天气查询工具（高德）
@@ -623,34 +635,143 @@ Thought: {agent_scratchpad}
             role = "用户" if msg["role"] == "user" else "助手"
             history_text += f"{role}：{msg['content']}\n"
         return history_text
-    
+
+    def _try_web_search_fallback(self, query: str) -> str:
+        """
+        降级机制：当工具调用失败时，尝试使用联网搜索
+        """
+        logger.warning("检测到工具调用可能失败，尝试使用联网搜索...")
+        try:
+            search_result = web_search(query, max_results=5)
+            logger.info("联网搜索降级方案执行成功")
+            return search_result
+        except Exception as e:
+            logger.error(f"联网搜索降级也失败: {e}")
+            return json.dumps({"error": f"降级搜索失败: {str(e)}"}, ensure_ascii=False)
+
     def generate_response(self, query: str) -> Generator[str, None, None]:
         """生成流式响应"""
         logger.info(f"\n=== 处理用户查询：{query} ===")
-        
+
+        # 首先尝试正常流程
+        tool_call_failed = False
+        fallback_used = False
+
         try:
             response = self.agent_executor.invoke({
                 "input": query
             })
-            
-            final_response = response.get("output", "")
-            
+
+            output = response.get("output", "")
+
+            # 检查是否需要降级
+            # 如果返回结果包含错误指示或结果为空，尝试降级
+            if self._should_use_fallback(output):
+                logger.warning("检测到工具调用可能未返回有效结果，尝试联网搜索...")
+                tool_call_failed = True
+                search_result = self._try_web_search_fallback(query)
+                output = self._format_fallback_response(query, search_result)
+                fallback_used = True
+            else:
+                output = response.get("output", "")
+
+            final_response = output
+
             for i in range(0, len(final_response), 50):
                 chunk = final_response[i:i+50]
                 yield chunk
                 time.sleep(0.1)
-            
+
             self.memory.add_message("user", query, time.time())
             self.memory.add_message("assistant", final_response, time.time())
-            logger.info(f"✅ 对话已存入记忆 | 助手响应长度：{len(final_response)} 字符")
-            
+
+            if fallback_used:
+                logger.info(f"✅ 使用联网搜索降级 | 助手响应长度：{len(final_response)} 字符")
+            else:
+                logger.info(f"✅ 对话已存入记忆 | 助手响应长度：{len(final_response)} 字符")
+
         except Exception as e:
             logger.error(f"❌ 生成响应失败：{str(e)}")
             traceback.print_exc()
+
+            # 降级机制：工具调用失败时尝试联网搜索
+            if not tool_call_failed:
+                logger.warning("检测到异常，尝试使用联网搜索降级...")
+                try:
+                    search_result = self._try_web_search_fallback(query)
+                    fallback_response = self._format_fallback_response(query, search_result)
+                    fallback_used = True
+
+                    for i in range(0, len(fallback_response), 50):
+                        chunk = fallback_response[i:i+50]
+                        yield chunk
+                        time.sleep(0.1)
+
+                    self.memory.add_message("user", query, time.time())
+                    self.memory.add_message("assistant", fallback_response, time.time())
+                    logger.info(f"✅ 降级搜索成功 | 助手响应长度：{len(fallback_response)} 字符")
+                    return
+                except Exception as fallback_error:
+                    logger.error(f"降级搜索也失败: {fallback_error}")
+
             default_response = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
             yield default_response
             self.memory.add_message("user", query, time.time())
             self.memory.add_message("assistant", default_response, time.time())
+
+    def _should_use_fallback(self, output: str) -> bool:
+        """
+        判断是否应该使用降级搜索
+        """
+        if not output:
+            return True
+
+        # 检查输出中是否包含错误关键词
+        error_keywords = [
+            "无法", "失败", "错误", "不可用",
+            "没有", "不存在", "查询不到"
+        ]
+
+        # 检查是否返回了工具调用失败的信息
+        for keyword in error_keywords:
+            if keyword in output and len(output) < 200:
+                return True
+
+        return False
+
+    def _format_fallback_response(self, query: str, search_result: str) -> str:
+        """
+        格式化降级搜索结果为自然语言回复
+        """
+        try:
+            result_data = json.loads(search_result)
+
+            if "error" in result_data:
+                return f"抱歉，我在处理您的查询「{query}」时遇到了问题：{result_data['error']}。请稍后再试或尝试其他问题。"
+
+            answer = result_data.get("answer", "")
+            results = result_data.get("results", [])
+
+            if answer:
+                response = f"根据搜索结果：\n\n{answer}\n\n"
+            else:
+                response = f"关于「{query}」，我找到以下信息：\n\n"
+
+            for i, item in enumerate(results[:3], 1):
+                title = item.get("title", "")
+                url = item.get("url", "")
+                content = item.get("content", "")
+                if title:
+                    response += f"{i}. {title}\n"
+                    if content:
+                        response += f"   {content[:150]}...\n"
+                    response += f"   来源: {url}\n\n"
+
+            return response
+
+        except Exception as e:
+            logger.error(f"格式化降级结果失败: {e}")
+            return f"抱歉，处理搜索结果时出现问题。请稍后再试。"
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
         """
