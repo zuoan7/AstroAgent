@@ -22,6 +22,9 @@ dashscope
 chromadb
 langchain-text-splitters
 
+# BM25 for hybrid search
+rank-bm25
+
 # Astronomy and scientific stack
 skyfield
 astropy

@@ -8,7 +8,6 @@ from langchain_classic.agents import AgentExecutor
 from config import settings
 from rag.online_retriever import OnlineRetriever
 from memory import ShortTermMemory
-from web_search import web_search
 from typing import Generator, List, Dict, Any, Optional, AsyncGenerator
 import time
 import traceback
@@ -369,10 +368,14 @@ class AstroAgent:
             description="使用RAG系统检索相关天文信息，参数：query（查询语句）"
         ))
 
-        # 联网搜索工具（降级机制）
+        # 联网搜索工具（通过MCP服务器调用）
         def web_search_func(query, max_results=5):
             """联网搜索工具 - 当本地工具/RAG失败时的降级方案"""
-            return web_search(query, max_results)
+            return self._call_mcp_tool(
+                "web_search",
+                query=query,
+                max_results=max_results
+            )
 
         tools.append(Tool(
             name="WebSearch",
@@ -642,7 +645,7 @@ Thought: {agent_scratchpad}
         """
         logger.warning("检测到工具调用可能失败，尝试使用联网搜索...")
         try:
-            search_result = web_search(query, max_results=5)
+            search_result = self._call_mcp_tool("web_search", query=query, max_results=5)
             logger.info("联网搜索降级方案执行成功")
             return search_result
         except Exception as e:

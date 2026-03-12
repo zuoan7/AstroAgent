@@ -159,6 +159,21 @@ def get_weather(city: str = None, extensions: str = "base") -> str:
         return f"错误：{str(e)}"
 
 @mcp.tool()
+def web_search(query: str, max_results: int = 5) -> str:
+    """
+    联网搜索工具 - 当其他工具不可用时的降级方案
+
+    Args:
+        query: 搜索查询内容
+        max_results: 最大结果数，默认5
+    """
+    try:
+        result = tools.web_search(query=query, max_results=max_results)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+@mcp.tool()
 def get_tonight_best() -> str:
     """
     获取今晚最佳观测目标
@@ -359,7 +374,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("FASTMCP_PORT", "8001"))
     
     print(f"📡 监听地址: http://{host}:{port}/mcp/")
-    print(f"📦 已注册工具: 12个")
+    print(f"📦 已注册工具: 13个")
     print(f"💡 按 Ctrl+C 停止服务器")
     print("="*60 + "\n")
     
