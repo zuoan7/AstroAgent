@@ -19,6 +19,12 @@ import httpx
 import asyncio
 import uuid
 import threading
+from pathlib import Path
+import re
+
+# DashScope 多模态
+import dashscope
+from dashscope import MultiModalConversation
 
 # MCP服务器配置 - 注意没有结尾斜杠！
 # 默认使用 8001 端口，与 FastAPI 服务错开
@@ -68,6 +74,51 @@ class AstroAgent:
         except Exception as e:
             logger.error(f"❌ 语言模型初始化失败：{str(e)}")
             raise
+
+    def describe_image(self, image_path: str, prompt: str) -> str:
+        """
+        使用 DashScope Qwen-VL 对图片做描述/问答。
+        image_path: 本地文件路径，将以 file:// URI 传入。
+        """
+        try:
+            dashscope.api_key = settings.DASHSCOPE_API_KEY
+            p = Path(image_path).resolve()
+            image_uri = f"file://{p}"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"image": image_uri},
+                        {"text": prompt},
+                    ],
+                }
+            ]
+            resp = MultiModalConversation.call(
+                model=settings.VISION_MODEL_NAME,
+                messages=messages,
+            )
+            # 兼容不同返回结构
+            if isinstance(resp, dict):
+                # DashScope Python SDK 常见结构：output.choices[0].message.content
+                out = resp.get("output") or {}
+                choices = out.get("choices") or []
+                if choices:
+                    msg = choices[0].get("message") or {}
+                    content = msg.get("content")
+                    # content 可能是 string 或 list[dict]
+                    if isinstance(content, str):
+                        return content
+                    if isinstance(content, list):
+                        texts = []
+                        for item in content:
+                            if isinstance(item, dict) and "text" in item:
+                                texts.append(str(item["text"]))
+                        return "\n".join(texts).strip()
+            # fallback
+            return str(resp)
+        except Exception as e:
+            logger.error(f"❌ 图片理解失败: {e}")
+            return f"图片理解失败：{e}"
 
     def _parse_sse_response(self, response_text: str) -> Optional[dict]:
         """
@@ -315,6 +366,21 @@ class AstroAgent:
             name="RAGRetrieve",
             func=rag_retrieve,
             description="使用RAG系统检索相关天文信息，参数：query（查询语句）"
+        ))
+
+        # 天气查询工具（高德）
+        def get_weather(city=None, extensions="base"):
+            """查询天气（实时/预报）并给出观测建议"""
+            return self._call_mcp_tool(
+                "get_weather",
+                city=city,
+                extensions=extensions,
+            )
+
+        tools.append(Tool(
+            name="GetWeather",
+            func=get_weather,
+            description="查询指定城市天气（高德），参数：city（城市名或adcode，可选，默认北京），extensions（base实时/all预报）"
         ))
         
         # 行星位置计算工具
@@ -681,6 +747,145 @@ Thought: {agent_scratchpad}
             logger.info(
                 f"[{request_id}] ✅ 流式对话完成，响应长度：{len(final_response)} 字符"
             )
+        finally:
+            self._current_request_id = None
+
+    async def generate_events(
+        self, query: str, image_path: Optional[str] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        事件流：同时输出 text/image 两类事件，便于 API 返回图片。
+
+        - text: {"type": "text", "content": "..."}
+        - image: {"type": "image", "url": "...", "meta": {...}}
+        """
+        # 如果用户上传了图片，先做一次视觉理解，把结果注入 query
+        if image_path:
+            yield {
+                "type": "text",
+                "content": "已收到图片，正在进行视觉分析并结合天文知识回答……",
+            }
+            vision_prompt = (
+                "请详细描述这张图片的内容。若包含星空/天体/望远镜设备，请指出："
+                "1) 可能的天体/星座/现象；2) 光害/天空质量线索；3) 设备与拍摄参数线索；"
+                "4) 适合的后续观测或拍摄建议。"
+            )
+            vision_desc = self.describe_image(image_path=image_path, prompt=vision_prompt)
+            query = f"{query}\n\n[用户上传图片的视觉信息]\n{vision_desc}"
+
+        # 复用现有真流式 token 输出，但升级为事件格式
+        request_id = uuid.uuid4().hex[:8]
+        self._current_request_id = request_id
+        logger.info(f"[{request_id}] 开始处理事件流查询：{query[:200]}")
+
+        final_chunks: list[str] = []
+
+        def _maybe_extract_image_url(text: str) -> Optional[str]:
+            # 简单提取常见图片 URL
+            m = re.search(r"(https?://\\S+\\.(?:png|jpg|jpeg|webp))", text, re.IGNORECASE)
+            return m.group(1) if m else None
+
+        try:
+            async for event in self.agent_executor.astream_events(
+                {"input": query},
+                version="v1",
+            ):
+                event_type = event.get("event")
+                data = event.get("data", {}) or {}
+                run_id = event.get("run_id")
+
+                if event_type == "on_tool_start":
+                    tool_name = data.get("name") or data.get("tool")
+                    tool_input = data.get("input")
+                    self._tool_runs[run_id] = {
+                        "name": tool_name,
+                        "input": str(tool_input),
+                        "start_time": time.time(),
+                        "request_id": request_id,
+                    }
+                    logger.info(
+                        json.dumps(
+                            {
+                                "type": "tool_start",
+                                "request_id": request_id,
+                                "run_id": run_id,
+                                "tool_name": tool_name,
+                                "input": str(tool_input),
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    continue
+
+                if event_type == "on_tool_end":
+                    meta = self._tool_runs.pop(run_id, {})
+                    duration = None
+                    if meta.get("start_time") is not None:
+                        duration = time.time() - meta["start_time"]
+                    tool_output = data.get("output")
+                    tool_output_str = "" if tool_output is None else str(tool_output)
+
+                    logger.info(
+                        json.dumps(
+                            {
+                                "type": "tool_end",
+                                "request_id": request_id,
+                                "run_id": run_id,
+                                "tool_name": meta.get("name"),
+                                "duration_sec": duration,
+                                "output_preview": tool_output_str[:200],
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+
+                    # 从工具输出中尽量抽取图片 URL（例如 NASA APOD 的 url/hdurl）
+                    extracted_url = None
+                    # 1) 如果工具输出是 JSON 字符串，解析 url 字段
+                    if tool_output_str.strip().startswith("{"):
+                        try:
+                            obj = json.loads(tool_output_str)
+                            if isinstance(obj, dict):
+                                extracted_url = obj.get("hdurl") or obj.get("url")
+                        except Exception:
+                            extracted_url = None
+                    # 2) 兜底：正则从文本里抓图片链接
+                    if not extracted_url:
+                        extracted_url = _maybe_extract_image_url(tool_output_str)
+
+                    if extracted_url:
+                        yield {
+                            "type": "image",
+                            "url": extracted_url,
+                            "meta": {
+                                "request_id": request_id,
+                                "tool": meta.get("name"),
+                            },
+                        }
+                    continue
+
+                if event_type in ("on_chat_model_stream", "on_llm_stream"):
+                    chunk = data.get("chunk")
+                    if not chunk:
+                        continue
+                    text = getattr(chunk, "content", None) or getattr(chunk, "text", None)
+                    if not text:
+                        continue
+                    final_chunks.append(text)
+                    yield {"type": "text", "content": text}
+
+        except Exception as e:
+            logger.error(f"[{request_id}] ❌ 事件流生成失败：{e}")
+            traceback.print_exc()
+            fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
+            yield {"type": "text", "content": fallback}
+            self.memory.add_message("user", query, time.time())
+            self.memory.add_message("assistant", fallback, time.time())
+        else:
+            final_response = "".join(final_chunks)
+            self.memory.add_message("user", query, time.time())
+            self.memory.add_message("assistant", final_response, time.time())
+            logger.info(f"[{request_id}] ✅ 事件流完成，响应长度：{len(final_response)} 字符")
         finally:
             self._current_request_id = None
     

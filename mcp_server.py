@@ -144,6 +144,21 @@ def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) 
         return f"错误：{str(e)}"
 
 @mcp.tool()
+def get_weather(city: str = None, extensions: str = "base") -> str:
+    """
+    使用高德天气 API 查询天气（实时/预报），并给出观测建议。
+
+    Args:
+        city: 城市名称或城市 adcode（可选）
+        extensions: "base"(实时) 或 "all"(预报)
+    """
+    try:
+        result = tools.get_weather(city=city, extensions=extensions)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+@mcp.tool()
 def get_tonight_best() -> str:
     """
     获取今晚最佳观测目标

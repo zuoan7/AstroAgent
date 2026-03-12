@@ -9,6 +9,7 @@ import ephem
 from astroquery.simbad import Simbad
 from astroquery.ned import Ned
 import requests
+import json
 
 class AstronomyTools:
     def __init__(self):
@@ -421,6 +422,112 @@ class AstronomyTools:
             return data
         except Exception as e:
             return {'error': f'获取近地天体数据时出错: {e}'}
+
+    def get_weather(self, city=None, extensions="base"):
+        """
+        使用高德天气 API 查询天气。
+        https://restapi.amap.com/v3/weather/weatherInfo
+
+        Args:
+            city: 城市名称/城市adcode，默认读取环境变量 AMAP_DEFAULT_CITY 或使用“北京”
+            extensions: "base"(实时) 或 "all"(预报)
+
+        Returns:
+            dict：包含原始字段 + 适合观测的简要建议
+        """
+        try:
+            # 兼容 agent 传 dict / json 字符串
+            if isinstance(city, dict):
+                extensions = city.get("extensions", extensions)
+                city = city.get("city") or city.get("adcode") or city.get("citycode")
+            elif isinstance(city, str):
+                c = city.strip()
+                if c.startswith("{") and c.endswith("}"):
+                    try:
+                        obj = json.loads(c)
+                        if isinstance(obj, dict):
+                            extensions = obj.get("extensions", extensions)
+                            city = obj.get("city") or obj.get("adcode") or obj.get("citycode")
+                    except Exception:
+                        pass
+
+            api_key = os.getenv("AMAP_API_KEY") or ""
+            if not api_key:
+                return {"error": "AMAP_API_KEY 未配置，无法查询天气"}
+
+            if not city:
+                city = os.getenv("AMAP_DEFAULT_CITY") or "北京"
+
+            url = "https://restapi.amap.com/v3/weather/weatherInfo"
+            params = {
+                "key": api_key,
+                "city": city,
+                "extensions": extensions or "base",
+                "output": "JSON",
+            }
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+
+            if str(data.get("status")) != "1":
+                return {"error": data.get("info") or "高德天气查询失败", "raw": data}
+
+            lives = data.get("lives") or []
+            forecasts = data.get("forecasts") or []
+
+            result = {
+                "query_city": city,
+                "extensions": params["extensions"],
+                "raw": data,
+            }
+
+            # 实时
+            if lives:
+                live = lives[0]
+                weather = live.get("weather")
+                humidity = live.get("humidity")
+                windpower = live.get("windpower")
+                reporttime = live.get("reporttime")
+                result["live"] = {
+                    "city": live.get("city"),
+                    "weather": weather,
+                    "temperature": live.get("temperature"),
+                    "humidity": humidity,
+                    "winddirection": live.get("winddirection"),
+                    "windpower": windpower,
+                    "reporttime": reporttime,
+                }
+
+                # 面向观测的粗略建议（不做过度承诺）
+                tips = []
+                if weather and any(k in weather for k in ["雨", "雪", "雷", "雾", "霾"]):
+                    tips.append("天气现象不佳（雨雪雷雾霾等），不建议深空观测；可改观测月亮/行星或室内学习。")
+                else:
+                    tips.append("若夜间少云、能见度好，可尝试行星/亮星团观测。")
+                if humidity is not None:
+                    try:
+                        h = float(humidity)
+                        if h >= 80:
+                            tips.append("湿度偏高，易起雾/结露，建议准备除露带、镜头加热。")
+                    except Exception:
+                        pass
+                if windpower is not None:
+                    try:
+                        # windpower 常见为字符串数字
+                        wp = float(str(windpower).replace("级", "").strip())
+                        if wp >= 4:
+                            tips.append("风力偏大，三脚架需加重，长曝光拍摄成功率下降。")
+                    except Exception:
+                        pass
+                result["observing_tips"] = tips
+
+            # 预报（all）
+            if forecasts:
+                result["forecast"] = forecasts[0]
+
+            return result
+        except Exception as e:
+            return {"error": f"获取天气信息时出错: {e}"}
 
 
 
