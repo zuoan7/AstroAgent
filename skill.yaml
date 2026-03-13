@@ -1,0 +1,124 @@
+name: observation-planner
+description: 生成指定日期和地点的天文观测计划
+parameters:
+  - name: date
+    type: string
+    description: 观测日期，格式YYYY-MM-DD，支持"今天"、"明天"、"2026-03-14"
+    required: false
+  - name: location
+    type: string
+    description: 观测地点（城市名称或经纬度）
+    required: false
+  - name: duration
+    type: string
+    description: 观测时段，如"整晚"、"前半夜"、"后半夜"
+    required: false
+
+
+name: celestial-events-forecast
+description: 查询指定时间段的天象事件
+parameters:
+  - name: start_date
+    type: string
+    description: 开始日期，格式YYYY-MM-DD
+    required: false
+  - name: end_date
+    type: string
+    description: 结束日期，格式YYYY-MM-DD，不指定则查询未来一周
+    required: false
+  - name: event_type
+    type: string
+    description: 事件类型筛选，如"行星合月"、"流星雨"、"月食"等
+    required: false
+  
+
+name: deep-sky-observing-guide
+description: 为指定深空天体提供观测指导
+parameters:
+  - name: target
+    type: string
+    description: 天体名称（如"M31"、"猎户座大星云"）
+    required: true
+  - name: observer_location
+    type: string
+    description: 观测者位置
+    required: false
+  - name: date
+    type: string
+    description: 观测日期
+    required: false
+  - name: equipment
+    type: string
+    description: 观测设备，如"裸眼"、"双筒"、"8寸望远镜"
+    required: false
+  
+
+name: neo-tracker
+description: 追踪近地天体飞掠事件
+parameters:
+  - name: time_range
+    type: string
+    description: 时间范围，如"未来30天"、"本月"
+    required: false
+  - name: min_size
+    type: number
+    description: 最小直径（米），筛选大于该值的天体
+    required: false
+  - name: max_distance
+    type: number
+    description: 最大距离（地月距离倍数）
+    required: false
+  - name: observable_only
+    type: boolean
+    description: 是否只返回可观测的天体
+    required: false
+  
+
+name: astrophotography-calculator
+description: 计算天文摄影参数
+parameters:
+  - name: target
+    type: string
+    description: 拍摄目标
+    required: true
+  - name: camera
+    type: string
+    description: 相机型号
+    required: true
+  - name: telescope
+    type: string
+    description: 望远镜型号或焦距
+    required: false
+  - name: mount
+    type: string
+    description: 赤道仪型号
+    required: false
+  - name: location
+    type: string
+    description: 拍摄地点
+    required: false
+  - name: date
+    type: string
+    description: 拍摄日期
+    required: false
+  
+
+name: celestial-position-calculator
+description: 计算天体在指定时间的位置
+parameters:
+  - name: target
+    type: string
+    description: 天体名称
+    required: true
+  - name: datetime
+    type: string
+    description: 观测时间
+    required: true
+  - name: location
+    type: string
+    description: 观测地点
+    required: true
+  - name: output_format
+    type: string
+    description: 输出格式，如"altaz"（高度方位）、"radec"（赤道坐标）
+    required: false

@@ -1951,3 +1951,828 @@
 2026-03-12 14:52:56 - AstroAgent - INFO - 📄 BM25 检索返回 2 个结果
 2026-03-12 14:52:56 - AstroAgent - INFO - 📄 BM25 检索返回 1 个结果
 2026-03-12 14:52:56 - AstroAgent - INFO - 📄 BM25 检索返回 2 个结果
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-12 22:33:28 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-12 22:33:28 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-12 22:33:28 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 22:33:28 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 获取到session ID: 2721c3fbf67a4fabbd16eea9c713ad80
+2026-03-12 22:33:28 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 22:33:28 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 22:33:28 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 22:33:28 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 2721c3fbf67a4fabbd16eea9c713ad80
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-12 22:33:28 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-12 22:33:28 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-12 22:33:28 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 22:33:28 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 获取到session ID: c2e4664fa270412c849930c4a688000f
+2026-03-12 22:33:28 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 22:33:28 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 22:33:28 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 22:33:28 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: c2e4664fa270412c849930c4a688000f
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 22:33:28 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-12 22:33:43 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-12 22:33:43 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-12 22:33:43 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 22:33:43 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 获取到session ID: 9c18b60bf1c746439d039a75d3b65e58
+2026-03-12 22:33:43 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 22:33:43 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 22:33:43 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 22:33:43 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 9c18b60bf1c746439d039a75d3b65e58
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-12 22:33:43 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-12 22:33:43 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-12 22:33:43 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 22:33:43 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 获取到session ID: 677d7be420c540308ccf12737913be51
+2026-03-12 22:33:43 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 22:33:43 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 22:33:43 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 22:33:43 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 677d7be420c540308ccf12737913be51
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 22:33:43 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-12 22:34:48 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-12 22:34:48 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-12 22:34:48 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 22:34:48 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ 获取到session ID: d9b6755fde844577bb776821ba8a41c0
+2026-03-12 22:34:48 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 22:34:48 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 22:34:48 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 22:34:48 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: d9b6755fde844577bb776821ba8a41c0
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ 成功注册 14 个天文工具
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 22:34:48 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 22:34:48 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-12 22:34:52 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-12 22:34:52 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773326092000, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-12）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:17\n  • 日出：22:29\n"}], "
+2026-03-12 22:35:01 - AstroAgent - WARNING - 检测到工具调用可能未返回有效结果，尝试联网搜索...
+2026-03-12 22:35:01 - AstroAgent - WARNING - 检测到工具调用可能失败，尝试使用联网搜索...
+2026-03-12 22:35:01 - AstroAgent - DEBUG - 调用工具 web_search，处理后的参数: {'query': '请告诉我今晚最佳观测目标', 'max_results': 5}
+2026-03-12 22:35:04 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773326101041, "result": {"content": [{"type": "text", "text": "{\"query\": \"请告诉我今晚最佳观测目标\", \"answer\": \"Tonight's best observation target is the Moon, as it will be at its
+2026-03-12 22:35:04 - AstroAgent - INFO - 联网搜索降级方案执行成功
+2026-03-12 22:35:06 - AstroAgent - INFO - ✅ 使用联网搜索降级 | 助手响应长度：1000 字符
+2026-03-12 22:35:06 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-12 22:35:08 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '{}'}
+2026-03-12 22:35:08 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773326108948, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-12 至 2026-03-18 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-12: 🌗 下弦月\n• 
+2026-03-12 22:35:15 - AstroAgent - WARNING - 检测到工具调用可能未返回有效结果，尝试联网搜索...
+2026-03-12 22:35:15 - AstroAgent - WARNING - 检测到工具调用可能失败，尝试使用联网搜索...
+2026-03-12 22:35:15 - AstroAgent - DEBUG - 调用工具 web_search，处理后的参数: {'query': '请告诉我未来一周的天象', 'max_results': 5}
+2026-03-12 22:35:19 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773326115733, "result": {"content": [{"type": "text", "text": "{\"query\": \"请告诉我未来一周的天象\", \"answer\": \"本周天象包括月面光影变化和木星冲日。夜晚观测月球，然后寻找白羊座亮星。\", \"results\": [{\"title\": \"未
+2026-03-12 22:35:19 - AstroAgent - INFO - 联网搜索降级方案执行成功
+2026-03-12 22:35:20 - AstroAgent - INFO - ✅ 使用联网搜索降级 | 助手响应长度：614 字符
+2026-03-12 22:35:20 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-12 22:35:23 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{}'}
+2026-03-12 22:35:23 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773326123561, "result": {"content": [{"type": "text", "text": "🔭 **2026年4月天象预报**\n\n✨ **本月特殊天象**\n• **2026-04-22** 天琴座流星雨极大\n  每小时约18颗，无月光干扰\n🪐 **本月行星可见性**\n• 土星：整夜可见，是本月最佳观测
+2026-03-12 22:35:36 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：268 字符
+2026-03-12 22:35:36 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-12 22:35:40 - AstroAgent - DEBUG - 调用工具 get_monthly_events，处理后的参数: {'year': '{"year": 2026, "month": 8}'}
+2026-03-12 22:35:40 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773326140685, "result": {"content": [{"type": "text", "text": "🔭 **2026年8月天象预报**\n\n✨ **本月特殊天象**\n• **2026-08-12** 英仙座流星雨极大\n  每小时约100颗，年度最佳流星雨！\n• **2026-08-12** 日偏食\n  北京时间
+2026-03-12 22:35:53 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：333 字符
+2026-03-12 22:35:54 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-12 22:44:37 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-12 22:44:37 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-12 22:44:37 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 22:44:37 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ 获取到session ID: fbf17842ef9a45e9a132a3cb28fb8ef2
+2026-03-12 22:44:37 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 22:44:37 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 22:44:37 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 22:44:37 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: fbf17842ef9a45e9a132a3cb28fb8ef2
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 22:44:37 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-12 22:44:38 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-12 22:44:38 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-12 22:44:38 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-12 22:44:38 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ 获取到session ID: 24d5b6d36efd401089387e4444507c40
+2026-03-12 22:44:38 - AstroAgent - INFO - 发送初始化请求...
+2026-03-12 22:44:38 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-12 22:44:38 - AstroAgent - INFO - 发送initialized通知...
+2026-03-12 22:44:38 - AstroAgent - INFO - 获取工具列表...
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 24d5b6d36efd401089387e4444507c40
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ 成功注册 13 个天文工具
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-12 22:44:38 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 11:51:18 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 11:51:18 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 11:51:18 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 11:51:18 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ 获取到session ID: 90294350bc1047f48e032b6761fd50b5
+2026-03-13 11:51:18 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 11:51:18 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 11:51:18 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 11:51:18 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 90294350bc1047f48e032b6761fd50b5
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 11:51:18 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 11:51:19 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 11:51:19 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 11:51:19 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 11:51:19 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ 获取到session ID: 29969b0131b24a07a6effee1a8e9c739
+2026-03-13 11:51:19 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 11:51:19 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 11:51:19 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 11:51:19 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 29969b0131b24a07a6effee1a8e9c739
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 11:51:19 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 11:51:20 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 11:51:20 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 11:51:20 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 11:51:20 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ 获取到session ID: bbb8dd5454ee4a86a4e9bdda355417ff
+2026-03-13 11:51:20 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 11:51:20 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 11:51:20 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 11:51:20 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: bbb8dd5454ee4a86a4e9bdda355417ff
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 11:51:20 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 11:52:00 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 11:52:00 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 11:52:00 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 11:52:00 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ 获取到session ID: 1b1f4ccb979f42fa8d0f8efa21c888d5
+2026-03-13 11:52:00 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 11:52:00 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 11:52:00 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 11:52:00 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 1b1f4ccb979f42fa8d0f8efa21c888d5
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 11:52:00 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 11:52:00 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-13 11:52:21 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 11:52:22 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773373941937, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 11:52:55 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：163 字符
+2026-03-13 11:52:55 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-13 11:53:00 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 11:53:00 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773373980598, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 11:53:12 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：293 字符
+2026-03-13 11:53:12 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-13 11:53:17 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 11:53:17 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773373997776, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 11:53:25 - AstroAgent - WARNING - 检测到工具调用可能未返回有效结果，尝试联网搜索...
+2026-03-13 11:53:25 - AstroAgent - WARNING - 检测到工具调用可能失败，尝试使用联网搜索...
+2026-03-13 11:53:25 - AstroAgent - DEBUG - 调用工具 web_search，处理后的参数: {'query': '请告诉我本月的天象', 'max_results': 5}
+2026-03-13 11:53:29 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374005754, "result": {"content": [{"type": "text", "text": "{\"query\": \"请告诉我本月的天象\", \"answer\": \"今天是3月13日，本月的主要天象是3月3日的月全食。月全食将在下午7时34分开始，结束于下午10时25分。月亮会呈现暗红色。\", \"re
+2026-03-13 11:53:29 - AstroAgent - INFO - 联网搜索降级方案执行成功
+2026-03-13 11:53:30 - AstroAgent - INFO - ✅ 使用联网搜索降级 | 助手响应长度：654 字符
+2026-03-13 11:53:30 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-13 11:53:37 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 11:53:37 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374017099, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 11:53:44 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 11:53:44 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374024097, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 11:54:12 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：333 字符
+2026-03-13 11:54:13 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:30 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:30 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:30 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:30 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 获取到session ID: 22d5a60cfbe141978f3d2cbd8c268b97
+2026-03-13 12:01:30 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:30 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:30 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:30 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 22d5a60cfbe141978f3d2cbd8c268b97
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:30 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:30 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:30 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:30 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 获取到session ID: 3e2ba83dfe2442ad84fdaf6abb197031
+2026-03-13 12:01:30 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:30 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:30 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:30 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 3e2ba83dfe2442ad84fdaf6abb197031
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:30 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:37 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:37 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:37 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:37 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 获取到session ID: 09f6c71de8424072b2f881c60f51fe6a
+2026-03-13 12:01:37 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:37 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:37 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:37 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 09f6c71de8424072b2f881c60f51fe6a
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:37 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:37 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:37 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:37 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 获取到session ID: c624b2038e9749b397da1a9bf8d41628
+2026-03-13 12:01:37 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:37 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:37 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:37 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: c624b2038e9749b397da1a9bf8d41628
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:37 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:43 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:43 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:43 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:43 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 获取到session ID: 0fee127fc67740d7a12e38c282272e9d
+2026-03-13 12:01:43 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:43 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:43 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:43 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 0fee127fc67740d7a12e38c282272e9d
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:43 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:43 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:43 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:43 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 获取到session ID: f8d1c131ca1d41f088465145bd834f1a
+2026-03-13 12:01:43 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:43 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:43 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:43 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: f8d1c131ca1d41f088465145bd834f1a
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:43 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:50 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:50 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:50 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:50 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 获取到session ID: be23d078ff6e49b78f3fc0e14fa23c88
+2026-03-13 12:01:50 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:50 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:50 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:50 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: be23d078ff6e49b78f3fc0e14fa23c88
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:01:50 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:01:50 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:01:50 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:01:50 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 获取到session ID: fd7bb540769c497ba3753eba2ec4f689
+2026-03-13 12:01:50 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:01:50 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:01:50 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:01:50 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: fd7bb540769c497ba3753eba2ec4f689
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:01:50 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:05:21 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:05:21 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:05:21 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:05:21 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ 获取到session ID: 3d7ffb0830d74e7a9f23c7a0ab621111
+2026-03-13 12:05:21 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:05:21 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:05:21 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:05:21 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 3d7ffb0830d74e7a9f23c7a0ab621111
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:05:21 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:05:21 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我今晚最佳观测目标 ===
+2026-03-13 12:05:28 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:05:28 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374728859, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:05:28 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-13 12:05:28 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374728889, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-13）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:18\n  • 日出：22:28\n"}], "
+2026-03-13 12:05:36 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:05:36 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374736015, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:05:50 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：240 字符
+2026-03-13 12:05:50 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我未来一周的天象 ===
+2026-03-13 12:05:58 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:05:58 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374758468, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:06:10 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：182 字符
+2026-03-13 12:06:10 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我本月的天象 ===
+2026-03-13 12:06:13 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:06:13 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374773116, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:06:22 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：172 字符
+2026-03-13 12:06:22 - AstroAgent - INFO - 
+=== 处理用户查询：请告诉我2026年8月的天象 ===
+2026-03-13 12:06:26 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-08-01'}
+2026-03-13 12:06:26 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773374786551, "result": {"content": [{"type": "text", "text": "🌌 **2026-08-01 至 2026-08-07 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-08-01: 🌖 亏凸月\n• 
+2026-03-13 12:06:36 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：224 字符
+2026-03-13 12:06:36 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:10:06 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:10:06 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:10:06 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:10:06 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ 获取到session ID: 811d5c132b534b159ac6b623b2e6ad54
+2026-03-13 12:10:06 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:10:06 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:10:06 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:10:06 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 811d5c132b534b159ac6b623b2e6ad54
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:10:06 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:10:14 - AstroAgent - INFO - 
+=== 处理用户查询：今天铁岭天气如何 ===
+2026-03-13 12:10:19 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:10:19 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773375019329, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:10:19 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-13 12:10:19 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773375019356, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-13）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:18\n  • 日出：22:28\n"}], "
+2026-03-13 12:10:38 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：92 字符
+2026-03-13 12:11:12 - AstroAgent - INFO - 
+=== 处理用户查询：制定铁岭今晚的观测计划 ===
+2026-03-13 12:11:16 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:11:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773375076559, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:11:16 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-13 12:11:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773375076586, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-13）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:18\n  • 日出：22:28\n"}], "
+2026-03-13 12:11:42 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：331 字符
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:19:24 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:19:24 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:19:24 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:19:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 获取到session ID: a9ac67adaf034e8887e70decd1b9a6f5
+2026-03-13 12:19:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:19:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:19:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:19:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: a9ac67adaf034e8887e70decd1b9a6f5
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:19:24 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:19:24 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:19:24 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:19:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 获取到session ID: c7c9346fbfcd4210b8ff73c036da17f4
+2026-03-13 12:19:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:19:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:19:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:19:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: c7c9346fbfcd4210b8ff73c036da17f4
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:19:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:19:27 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:19:27 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:19:27 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:19:27 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ 获取到session ID: bc115227f04c4d209696eb7367504e33
+2026-03-13 12:19:27 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:19:27 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:19:27 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:19:27 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: bc115227f04c4d209696eb7367504e33
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:19:27 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:19:28 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:19:28 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:19:28 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:19:28 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ 获取到session ID: 7865ca34ced8435f8f5c6f7c48121dc5
+2026-03-13 12:19:28 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:19:28 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:19:28 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:19:28 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 7865ca34ced8435f8f5c6f7c48121dc5
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:19:28 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:19:39 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:19:39 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:19:39 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:19:39 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:19:39 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:19:40 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 获取到session ID: 9b1c3f495c214c6086ef1b9f35b64015
+2026-03-13 12:19:40 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:19:40 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:19:40 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:19:40 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 9b1c3f495c214c6086ef1b9f35b64015
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:19:40 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:19:40 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:19:40 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:19:40 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 获取到session ID: fb55fb47502a4436b0342521f5948568
+2026-03-13 12:19:40 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:19:40 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:19:40 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:19:40 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: fb55fb47502a4436b0342521f5948568
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:19:40 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:21:51 - AstroAgent - INFO - 
+=== 处理用户查询： ===
+2026-03-13 12:21:54 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:22:00 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:22:00 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:22:00 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:22:00 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ 获取到session ID: 1af9b4b1297d4e869b4e01551e47b921
+2026-03-13 12:22:00 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:22:00 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:22:00 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:22:00 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 1af9b4b1297d4e869b4e01551e47b921
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:22:00 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:22:04 - AstroAgent - INFO - 
+=== 处理用户查询：铁岭天气怎么样 ===
+2026-03-13 12:22:15 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：106 字符
+2026-03-13 12:22:33 - AstroAgent - INFO - 
+=== 处理用户查询：铁岭今晚的观星指南 ===
+2026-03-13 12:22:36 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '{"location": "铁岭"}', 'extensions': 'all'}
+2026-03-13 12:22:36 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773375756376, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"北京\", \"extensions\": \"all\", \"raw\": {\"status\": \"1\", \"count\": \"1\", \"info\": \"OK
+2026-03-13 12:22:36 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:22:36 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773375756444, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:22:36 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-13 12:22:36 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773375756471, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-13）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:18\n  • 日出：22:28\n"}], "
+2026-03-13 12:23:04 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：393 字符
+2026-03-13 12:23:22 - AstroAgent - INFO - 
+=== 处理用户查询：e2xit ===
+2026-03-13 12:23:25 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:25:42 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:25:42 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:25:42 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:25:42 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 获取到session ID: baa1fd3305654adba6fe80e9296cfd9b
+2026-03-13 12:25:42 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:25:42 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:25:42 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:25:42 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: baa1fd3305654adba6fe80e9296cfd9b
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:25:42 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:25:42 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:25:42 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:25:42 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 获取到session ID: c833a37c6f2344a38588d7af32f876df
+2026-03-13 12:25:42 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:25:42 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:25:42 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:25:42 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: c833a37c6f2344a38588d7af32f876df
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:25:42 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:25:47 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:25:47 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:25:47 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:25:47 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 获取到session ID: 3fc1ef358e0248d8b58f2afad1adda3c
+2026-03-13 12:25:47 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:25:47 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:25:47 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:25:47 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 3fc1ef358e0248d8b58f2afad1adda3c
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:25:47 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:25:47 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:25:47 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:25:47 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 获取到session ID: 535cbbfc122b408e9f028a5dc8983d42
+2026-03-13 12:25:47 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:25:47 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:25:47 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:25:47 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 535cbbfc122b408e9f028a5dc8983d42
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 成功注册 7 个高层技能工具（含RAG）
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:25:47 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:25:52 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:25:52 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:25:52 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:25:52 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 获取到session ID: b816ae4238044fe8af584829ada85665
+2026-03-13 12:25:52 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:25:52 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:25:52 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:25:52 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: b816ae4238044fe8af584829ada85665
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:25:52 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:25:52 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:25:52 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:25:52 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 获取到session ID: 3f82546aa63c40d1b3cba4d91fb1331d
+2026-03-13 12:25:52 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:25:52 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:25:52 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:25:52 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 3f82546aa63c40d1b3cba4d91fb1331d
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:25:52 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:26:34 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:26:34 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:26:34 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:26:34 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:26:34 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:26:35 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:26:35 - AstroAgent - INFO - ✅ 获取到session ID: 30f938aa0935483d9052d88f2d5ac101
+2026-03-13 12:26:35 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:26:35 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:26:35 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:26:35 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:26:35 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:26:35 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 30f938aa0935483d9052d88f2d5ac101
+2026-03-13 12:26:35 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-13 12:26:35 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:26:35 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:26:35 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:26:40 - AstroAgent - INFO - 
+=== 处理用户查询：铁岭的天气怎么样 ===
+2026-03-13 12:26:43 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '{"city": "铁岭"}', 'extensions': 'all'}
+2026-03-13 12:26:43 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376003456, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"铁岭\", \"extensions\": \"all\", \"raw\": {\"status\": \"1\", \"count\": \"2\", \"info\": \"OK
+2026-03-13 12:26:54 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：169 字符
+2026-03-13 12:26:59 - AstroAgent - INFO - 
+=== 处理用户查询：苏州呢 ===
+2026-03-13 12:27:06 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：61 字符
+2026-03-13 12:27:38 - AstroAgent - INFO - 
+=== 处理用户查询：苏未来一周观星指南 ===
+2026-03-13 12:27:45 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '苏州', 'extensions': 'all'}
+2026-03-13 12:27:45 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376065045, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"苏州\", \"extensions\": \"all\", \"raw\": {\"status\": \"1\", \"count\": \"1\", \"info\": \"OK
+2026-03-13 12:27:45 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:27:45 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376065105, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:27:45 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-13 12:27:45 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376065131, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-13）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:18\n  • 日出：22:28\n"}], "
+2026-03-13 12:27:50 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:27:50 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376070359, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:28:14 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：458 字符
+2026-03-13 12:28:50 - AstroAgent - INFO - 
+=== 处理用户查询：铁岭呢 ===
+2026-03-13 12:29:02 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '铁岭', 'extensions': 'all'}
+2026-03-13 12:29:02 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376142020, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"铁岭\", \"extensions\": \"all\", \"raw\": {\"status\": \"1\", \"count\": \"2\", \"info\": \"OK
+2026-03-13 12:29:02 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:29:02 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376142080, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:29:02 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-13 12:29:02 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376142108, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-13）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:18\n  • 日出：22:28\n"}], "
+2026-03-13 12:29:12 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：128 字符
+2026-03-13 12:30:08 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-13 12:34:41 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:35:22 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:35:22 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:35:22 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:35:22 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ 获取到session ID: 8ba496d0dd4f42d1b539310566e30837
+2026-03-13 12:35:22 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:35:22 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:35:22 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:35:22 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 8ba496d0dd4f42d1b539310566e30837
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:35:22 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:35:24 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:35:24 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:35:24 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:35:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 获取到session ID: c7f3130b1e6e4ceda5be67153a3f67aa
+2026-03-13 12:35:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:35:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:35:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:35:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: c7f3130b1e6e4ceda5be67153a3f67aa
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:35:24 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:35:24 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:35:24 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:35:24 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 获取到session ID: 97c0c2127ea84d8392997097bddc7e11
+2026-03-13 12:35:24 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:35:24 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:35:24 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:35:24 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: 97c0c2127ea84d8392997097bddc7e11
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:35:24 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-13 12:35:27 - AstroAgent - WARNING - ⚠️  BM25 索引文件不存在: ./vector_db/bm25_index.pkl
+2026-03-13 12:35:27 - AstroAgent - INFO - 📝 需要先构建 BM25 索引，运行: python -m rag.build_bm25_index
+2026-03-13 12:35:27 - AstroAgent - WARNING - ⚠️  BM25 索引未加载，将使用纯向量检索
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-13 12:35:27 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ 获取到session ID: e0bce890728b4d1eb21126c2bcc6ff99
+2026-03-13 12:35:27 - AstroAgent - INFO - 发送初始化请求...
+2026-03-13 12:35:27 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-13 12:35:27 - AstroAgent - INFO - 发送initialized通知...
+2026-03-13 12:35:27 - AstroAgent - INFO - 获取工具列表...
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: e0bce890728b4d1eb21126c2bcc6ff99
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ React Agent构建完成
+2026-03-13 12:35:27 - AstroAgent - INFO - ✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）
+2026-03-13 12:36:04 - AstroAgent - INFO - 
+=== 处理用户查询：铁岭的天气如何 ===
+2026-03-13 12:36:06 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '{"city": "铁岭"}', 'extensions': 'all'}
+2026-03-13 12:36:07 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376566929, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"铁岭\", \"extensions\": \"all\", \"raw\": {\"status\": \"1\", \"count\": \"2\", \"info\": \"OK
+2026-03-13 12:36:15 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：101 字符
+2026-03-13 12:36:28 - AstroAgent - INFO - 
+=== 处理用户查询：铁岭的观星指南 ===
+2026-03-13 12:36:37 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '铁岭', 'extensions': 'all'}
+2026-03-13 12:36:37 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376597004, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"铁岭\", \"extensions\": \"all\", \"raw\": {\"status\": \"1\", \"count\": \"2\", \"info\": \"OK
+2026-03-13 12:36:37 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-13'}
+2026-03-13 12:36:37 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376597071, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-13 至 2026-03-19 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-13: 🌗 下弦月\n• 
+2026-03-13 12:36:37 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-13 12:36:37 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1773376597112, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-13）观测指南**\n\n【月相】🌗 下弦月\n  后半夜可见\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:18\n  • 日出：22:28\n"}], "
+2026-03-13 12:37:00 - AstroAgent - INFO - ✅ 对话已存入记忆 | 助手响应长度：557 字符
+2026-03-13 12:37:24 - AstroAgent - INFO - ✅ HTTP客户端已关闭
+2026-03-13 12:37:46 - AstroAgent - INFO - ✅ HTTP客户端已关闭

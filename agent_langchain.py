@@ -1,14 +1,11 @@
 from langchain_community.chat_models import ChatTongyi
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.tools import Tool
-from langchain_classic.agents import create_react_agent
-from langchain_classic.agents import AgentExecutor
+from langchain_classic.agents import AgentExecutor, create_react_agent
 from config import settings
 from rag.online_retriever import OnlineRetriever
 from memory import ShortTermMemory
-from typing import Generator, List, Dict, Any, Optional, AsyncGenerator
+from skills import AstronomySkillRouter
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
 import time
 import traceback
 import json
@@ -54,6 +51,9 @@ class AstroAgent:
         
         # 初始化MCP会话（使用同步方式）
         self._init_mcp_session_sync()
+
+        # Skill 路由层：对上暴露“技能”，对下通过 _call_mcp_tool 访问 MCP 工具
+        self.skill_router = AstronomySkillRouter(self._call_mcp_tool)
         
         # 初始化工具
         self.tools = self._init_tools()
@@ -354,229 +354,219 @@ class AstroAgent:
             return f"调用工具失败: {str(e)}"
 
     def _init_tools(self):
-        """初始化工具"""
-        tools = []
+        """初始化工具（改造为基于 Skill 的高层接口）"""
+        tools: List[Tool] = []
 
-        # RAG检索工具（本地）
-        def rag_retrieve(query):
+        # RAG检索工具（本地，不依赖 MCP）
+        def rag_retrieve(query: str):
             """使用RAG系统检索相关天文信息"""
             return self.rag.get_relevant_context(query)
 
-        tools.append(Tool(
-            name="RAGRetrieve",
-            func=rag_retrieve,
-            description="使用RAG系统检索相关天文信息，参数：query（查询语句）"
-        ))
-
-        # 联网搜索工具（通过MCP服务器调用）
-        def web_search_func(query, max_results=5):
-            """联网搜索工具 - 当本地工具/RAG失败时的降级方案"""
-            return self._call_mcp_tool(
-                "web_search",
-                query=query,
-                max_results=max_results
+        tools.append(
+            Tool(
+                name="RAGRetrieve",
+                func=rag_retrieve,
+                description="使用本地RAG知识库检索天文知识、概念解释、历史资料等。参数：query（查询语句，中文即可）。",
             )
+        )
 
-        tools.append(Tool(
-            name="WebSearch",
-            func=web_search_func,
-            description="联网搜索工具，当其他工具不可用时使用。参数：query（搜索内容），max_results（结果数量，默认5）"
-        ))
+        # ===== Skill 层工具：上层Agent只看到这些“技能”，不直接看到底层 MCP 工具 =====
 
-        # 天气查询工具（高德）
-        def get_weather(city=None, extensions="base"):
-            """查询天气（实时/预报）并给出观测建议"""
-            return self._call_mcp_tool(
-                "get_weather",
-                city=city,
+        def weather_lookup_skill(
+            city: str = None,
+            location: str = None,
+            extensions: str = "all",
+        ):
+            """天气查询技能：包装 get_weather，用于单独查询观测相关天气"""
+            # city 与 location 二选一，优先使用 city
+            target = city or location
+            return self.skill_router.call(
+                "weather-lookup",
+                city=target,
+                location=target,
                 extensions=extensions,
             )
 
-        tools.append(Tool(
-            name="GetWeather",
-            func=get_weather,
-            description="查询指定城市天气（高德），参数：city（城市名或adcode，可选，默认北京），extensions（base实时/all预报）"
-        ))
-        
-        # 行星位置计算工具
-        def get_planet_position(planet_name, observation_time=None, latitude=None, longitude=None):
-            """获取行星位置"""
-            return self._call_mcp_tool(
-                "get_planet_position", 
-                planet_name=planet_name, 
-                observation_time=observation_time, 
-                latitude=latitude, 
-                longitude=longitude
+        tools.append(
+            Tool(
+                name="WeatherLookup",
+                func=weather_lookup_skill,
+                description=(
+                    "查询指定城市的观测相关天气信息（skill: weather-lookup，对应 MCP 工具 get_weather）。\n"
+                    "参数：city（城市名称或adcode，可选），"
+                    "location（城市名称，和 city 等价，可选），"
+                    "extensions（\"base\" 实时 或 \"all\" 预报，默认 all）。"
+                ),
             )
-        
-        tools.append(Tool(
-            name="GetPlanetPosition",
-            func=get_planet_position,
-            description="获取行星位置，参数：planet_name（行星名称），observation_time（可选），latitude（可选），longitude（可选）"
-        ))
-        
-        # 天体坐标转换工具
-        def coordinate_transformation(ra, dec, epoch="J2000", target_system="fk5"):
-            """天体坐标转换"""
-            return self._call_mcp_tool(
-                "coordinate_transformation", 
-                ra=ra, 
-                dec=dec, 
-                epoch=epoch, 
-                target_system=target_system
+        )
+
+        def observation_planner_skill(date: str = None, location: str = None, duration: str = None):
+            """观测计划技能：封装天气、天象事件等多源信息"""
+            return self.skill_router.call(
+                "observation-planner",
+                date=date,
+                location=location,
+                duration=duration,
             )
-        
-        tools.append(Tool(
-            name="CoordinateTransformation",
-            func=coordinate_transformation,
-            description="天体坐标转换，参数：ra（赤经），dec（赤纬），epoch（历元），target_system（目标坐标系）"
-        ))
-        
-        # 升起落下时间工具
-        def get_rise_set_times(body_name, latitude, longitude, date=None):
-            """获取天体升起和落下时间"""
-            return self._call_mcp_tool(
-                "get_rise_set_times", 
-                body_name=body_name, 
-                latitude=latitude, 
-                longitude=longitude, 
-                date=date
+
+        tools.append(
+            Tool(
+                name="ObservationPlanner",
+                func=observation_planner_skill,
+                description=(
+                    "生成指定日期和地点的天文观测计划（skill: observation-planner）。\n"
+                    "参数：date（观测日期，可为“今天”“明天”或YYYY-MM-DD，可选），"
+                    "location（观测地点，城市名或“纬度,经度”，必填），"
+                    "duration（观测时段，如“整晚”“前半夜”“后半夜”，可选）。"
+                ),
             )
-        
-        tools.append(Tool(
-            name="GetRiseSetTimes",
-            func=get_rise_set_times,
-            description="获取天体升起和落下时间，参数：body_name（天体名称），latitude（纬度），longitude（经度），date（日期，可选）"
-        ))
-        
-        # 当前天空天体工具
-        def get_current_sky_objects(latitude, longitude=None, date=None):
-            """获取当前天空中的主要天体"""
-            return self._call_mcp_tool(
-                "get_current_sky_objects",
-                latitude=latitude,
-                longitude=longitude,
+        )
+
+        def celestial_events_forecast_skill(start_date: str = None, end_date: str = None, event_type: str = None):
+            """天象预报技能：封装一周/月事件查询"""
+            return self.skill_router.call(
+                "celestial-events-forecast",
+                start_date=start_date,
+                end_date=end_date,
+                event_type=event_type,
+            )
+
+        tools.append(
+            Tool(
+                name="CelestialEventsForecast",
+                func=celestial_events_forecast_skill,
+                description=(
+                    "查询指定时间段的天象事件（skill: celestial-events-forecast）。\n"
+                    "参数：start_date（开始日期YYYY-MM-DD，可选），"
+                    "end_date（结束日期YYYY-MM-DD，可选），"
+                    "event_type（事件类型，如“流星雨”“行星合月”“月食”，可选，用于意图说明）。"
+                ),
+            )
+        )
+
+        def deep_sky_observing_guide_skill(
+            target: str,
+            observer_location: str = None,
+            date: str = None,
+            equipment: str = None,
+        ):
+            """深空观测指导技能"""
+            return self.skill_router.call(
+                "deep-sky-observing-guide",
+                target=target,
+                observer_location=observer_location,
+                date=date,
+                equipment=equipment,
+            )
+
+        tools.append(
+            Tool(
+                name="DeepSkyObservingGuide",
+                func=deep_sky_observing_guide_skill,
+                description=(
+                    "为指定深空天体提供观测指导（skill: deep-sky-observing-guide）。\n"
+                    "参数：target（天体名称，如“M31”“猎户座大星云”，必填），"
+                    "observer_location（观测者位置，可选），"
+                    "date（观测日期，可选），"
+                    "equipment（设备描述，如“裸眼”“双筒”“8寸望远镜”，可选）。"
+                ),
+            )
+        )
+
+        def neo_tracker_skill(
+            time_range: str = None,
+            min_size: float = None,
+            max_distance: float = None,
+            observable_only: bool = None,
+        ):
+            """近地天体追踪技能"""
+            return self.skill_router.call(
+                "neo-tracker",
+                time_range=time_range,
+                min_size=min_size,
+                max_distance=max_distance,
+                observable_only=observable_only,
+            )
+
+        tools.append(
+            Tool(
+                name="NEOTracker",
+                func=neo_tracker_skill,
+                description=(
+                    "追踪近地天体飞掠事件（skill: neo-tracker）。\n"
+                    "参数：time_range（时间范围，如“未来30天”“本月”，可选），"
+                    "min_size（最小直径，单位米，可选），"
+                    "max_distance（最大距离，单位地月距离倍数，可选），"
+                    "observable_only（是否只返回具有观测价值的目标，布尔值，可选）。"
+                ),
+            )
+        )
+
+        def astrophotography_calculator_skill(
+            target: str,
+            camera: str,
+            telescope: str = None,
+            mount: str = None,
+            location: str = None,
+            date: str = None,
+        ):
+            """天文摄影参数计算技能"""
+            return self.skill_router.call(
+                "astrophotography-calculator",
+                target=target,
+                camera=camera,
+                telescope=telescope,
+                mount=mount,
+                location=location,
                 date=date,
             )
-        
-        tools.append(Tool(
-            name="GetCurrentSkyObjects",
-            func=get_current_sky_objects,
-            description="获取当前天空中的主要天体，参数：latitude（纬度），longitude（经度），date（日期，可选）"
-        ))
-        
-        # 天体基本信息工具
-        def get_astrophysical_object_info(object_name):
-            """查询天体基本信息"""
-            return self._call_mcp_tool(
-                "get_astrophysical_object_info", 
-                object_name=object_name
+
+        tools.append(
+            Tool(
+                name="AstrophotographyCalculator",
+                func=astrophotography_calculator_skill,
+                description=(
+                    "计算天文摄影参数与拍摄建议（skill: astrophotography-calculator）。\n"
+                    "参数：target（拍摄目标，必填），"
+                    "camera（相机型号，必填），"
+                    "telescope（望远镜型号或焦距，可选），"
+                    "mount（赤道仪型号，可选），"
+                    "location（拍摄地点，可选），"
+                    "date（拍摄日期，可选）。"
+                ),
             )
-        
-        tools.append(Tool(
-            name="GetAstrophysicalObjectInfo",
-            func=get_astrophysical_object_info,
-            description="查询天体基本信息，参数：object_name（天体名称）"
-        ))
-        
-        # 星系数据查询工具
-        def get_galaxy_data(galaxy_name):
-            """星系数据查询"""
-            return self._call_mcp_tool(
-                "get_galaxy_data", 
-                galaxy_name=galaxy_name
+        )
+
+        def celestial_position_calculator_skill(
+            target: str,
+            datetime: str,
+            location: str,
+            output_format: str = None,
+        ):
+            """天体位置计算技能"""
+            return self.skill_router.call(
+                "celestial-position-calculator",
+                target=target,
+                datetime=datetime,
+                location=location,
+                output_format=output_format,
             )
-        
-        tools.append(Tool(
-            name="GetGalaxyData",
-            func=get_galaxy_data,
-            description="星系数据查询，参数：galaxy_name（星系名称）"
-        ))
-        
-        # NASA每日天文图工具
-        def get_nasa_apod(date=None, hd=False):
-            """获取NASA每日天文图"""
-            return self._call_mcp_tool(
-                "get_nasa_apod", 
-                date=date, 
-                hd=hd
+
+        tools.append(
+            Tool(
+                name="CelestialPositionCalculator",
+                func=celestial_position_calculator_skill,
+                description=(
+                    "计算天体在指定时间的位置（skill: celestial-position-calculator）。\n"
+                    "参数：target（目标名称，如“mars”“jupiter”等，必填），"
+                    "datetime（观测时间，建议YYYY-MM-DD HH:MM 格式，必填），"
+                    "location（观测地点，经纬度“纬度,经度”形式，必填），"
+                    "output_format（输出坐标格式，如“altaz”“radec”，可选）。"
+                ),
             )
-        
-        tools.append(Tool(
-            name="GetNASAAPOD",
-            func=get_nasa_apod,
-            description="获取NASA每日天文图，参数：date（日期），hd（是否高清）"
-        ))
-        
-        # 近地天体数据工具
-        def get_neo_data(start_date=None, end_date=None, limit=10):
-            """获取近地天体数据"""
-            return self._call_mcp_tool(
-                "get_neo_data", 
-                start_date=start_date, 
-                end_date=end_date, 
-                limit=limit
-            )
-        
-        tools.append(Tool(
-            name="GetNEOData",
-            func=get_neo_data,
-            description="获取近地天体数据，参数：start_date（开始日期），end_date（结束日期），limit（数量限制）"
-        ))
-        
-        # 今晚最佳观测目标工具
-        def get_tonight_best(*args, **kwargs):
-            """获取今晚最佳观测目标"""
-            return self._call_mcp_tool("get_tonight_best")
-        
-        tools.append(Tool(
-            name="GetTonightBest",
-            func=get_tonight_best,
-            description="获取今晚最佳观测目标"
-        ))
-        
-        # 未来一周天象工具
-        def get_weekly_events(start_date=None):
-            """获取未来一周的天象"""
-            return self._call_mcp_tool(
-                "get_weekly_events", 
-                start_date=start_date
-            )
-        
-        tools.append(Tool(
-            name="GetWeeklyEvents",
-            func=get_weekly_events,
-            description="获取未来一周的天象，参数：start_date（起始日期）"
-        ))
-        
-        # 未来一个月天象工具 - 修复参数传递
-        def get_monthly_events(year=None, month=None):
-            """获取未来一个月的天象"""
-            # 确保year和month是整数类型
-            params = {}
-            if year is not None:
-                try:
-                    params['year'] = int(year)
-                except:
-                    params['year'] = year
-            if month is not None:
-                try:
-                    params['month'] = int(month)
-                except:
-                    params['month'] = month
-            
-            return self._call_mcp_tool(
-                "get_monthly_events", 
-                **params
-            )
-        
-        tools.append(Tool(
-            name="GetMonthlyEvents",
-            func=get_monthly_events,
-            description="获取未来一个月的天象，参数：year（年份），month（月份）"
-        ))
-        
-        logger.info(f"✅ 成功注册 {len(tools)} 个天文工具")
+        )
+
+        logger.info(f"✅ 成功注册 {len(tools)} 个高层技能工具（含RAG）")
         return tools
     
     def _build_agent(self):
@@ -728,18 +718,32 @@ Thought: {agent_scratchpad}
         """
         if not output:
             return True
-
-        # 检查输出中是否包含错误关键词
-        error_keywords = [
-            "无法", "失败", "错误", "不可用",
-            "没有", "不存在", "查询不到"
+        # 更精确地检查“工具调用失败”类错误，避免正常业务文案（如“本周没有特殊天象”）触发降级
+        error_patterns = [
+            "工具调用错误",
+            "调用工具失败",
+            "调用工具超时",
+            "无法连接到MCP服务器",
+            "MCP会话未初始化",
+            "HTTP错误",
+        ]
+        low_confidence_phrases = [
+            "当前模型服务暂时不可用",
+            "无法回答你的问题",
         ]
 
-        # 检查是否返回了工具调用失败的信息
-        for keyword in error_keywords:
-            if keyword in output and len(output) < 200:
+        condensed = output.strip()
+        if not condensed:
+            return True
+        # 检查明显的工具/基础设施错误
+        for kw in error_patterns:
+            if kw in condensed:
                 return True
-
+        # 极短且带有低置信度措辞的回复也视为失败
+        if len(condensed) < 60:
+            for kw in low_confidence_phrases:
+                if kw in condensed:
+                    return True
         return False
 
     def _format_fallback_response(self, query: str, search_result: str) -> str:
