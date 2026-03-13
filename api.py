@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from agent_langchain import AstroAgent
+from agent import AstroAgent
 import json
 import os
 import uuid
@@ -11,7 +11,7 @@ import uuid
 app = FastAPI(title="天文Agent API", description="具有短期记忆和流式输出的天文知识助手")
 
 # 上传目录（用于让回答能“返回图片URL”）
-UPLOAD_DIR = "./uploads"
+UPLOAD_DIR = os.path.abspath("./uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
@@ -55,6 +55,7 @@ async def query_with_image_endpoint(
         ext = os.path.splitext(image.filename or "")[1].lower() or ".png"
         file_id = uuid.uuid4().hex
         save_path = os.path.join(UPLOAD_DIR, f"{file_id}{ext}")
+        save_path = os.path.abspath(save_path)
         content = await image.read()
         with open(save_path, "wb") as f:
             f.write(content)

@@ -717,8 +717,8 @@ class AstronomySkillRouter:
     def _celestial_position_calculator(
         self,
         target: str,
-        datetime: str,
-        location: str,
+        datetime: Optional[str] = None,
+        location: Optional[str] = None,
         output_format: Optional[str] = None,
     ) -> str:
         """
@@ -729,10 +729,17 @@ class AstronomySkillRouter:
         if not target:
             return "天体位置计算技能需要提供目标名称（target），例如“mars”“jupiter”等。"
 
-        obs_time = self._normalize_datetime(datetime)
-        lat, lon = self._parse_location(location)
+        # 导入datetime模块作为别名，避免与参数名冲突
+        import datetime as dt_mod
+        obs_time = self._normalize_datetime(datetime) if datetime else dt_mod.datetime.now()
+
+        if location:
+            lat, lon = self._parse_location(location)
+        else:
+            lat, lon = None, None
+
         if lat is None or lon is None:
-            return "暂时无法解析 location 为经纬度，请提供“纬度,经度”形式，如“39.9,116.4”。"
+            lat, lon = 39.9, 116.4
 
         result_raw = self._call_mcp_tool(
             "get_planet_position",

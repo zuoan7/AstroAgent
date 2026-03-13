@@ -3,7 +3,7 @@
 测试agent的提示词模板是否正确工作
 """
 
-from agent_langchain import AstroAgent
+from agent import AstroAgent
 
 def test_agent_prompt():
 
