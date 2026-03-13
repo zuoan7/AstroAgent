@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
+
+import httpx
+from logger import logger
+
+MCP_SERVER_URL = "http://localhost:8001/mcp"
 
 
 class AstronomySkillRouter:
@@ -12,17 +18,17 @@ class AstronomySkillRouter:
 
     说明：
     - 对上：只暴露“技能”接口（与 skill.yaml 中的 name 一一对应）
-    - 对下：通过注入的 mcp_call 函数调用具体 MCP 工具（get_weather / get_weekly_events 等）
+    - 对下：直接通过内部 MCP 客户端调用具体工具（get_weather / get_weekly_events 等）
     - 这样可以保证上层 Agent 不再直接面向底层工具，而是通过技能完成复杂任务编排
     """
 
-    def __init__(self, mcp_call: Callable[..., str]) -> None:
-        """
-        Args:
-            mcp_call: 一个可调用对象，签名类似 mcp_call(tool_name: str, **kwargs) -> str，
-                      通常由 AstroAgent._call_mcp_tool 传入。
-        """
-        self._call_mcp_tool = mcp_call
+    def __init__(self) -> None:
+        self._mcp_session_id: Optional[str] = None
+        self._mcp_initialized = False
+        self._http_client: Optional[httpx.Client] = None
+        self._init_mcp_session_sync()
+
+        self._call_mcp_tool = self._call_mcp_tool_internal
         # 注册表：技能名 -> 具体实现函数
         self._registry: Dict[str, Callable[..., str]] = {
             "observation-planner": self._observation_planner,
@@ -103,6 +109,207 @@ class AstronomySkillRouter:
             return self._shorten_text(raw, 1200)
 
         raise ValueError(f"未知技能：{name}")
+
+    def call_mcp_tool(self, tool_name: str, **kwargs) -> str:
+        """直接调用底层 MCP 工具（绕过 Skill 路由）"""
+        return self._call_mcp_tool(tool_name, **kwargs)
+
+    # ===== MCP 通信层 =====
+
+    def _init_mcp_session_sync(self):
+        """使用同步方式初始化MCP会话"""
+        try:
+            client = httpx.Client(timeout=30.0)
+            
+            logger.info("正在建立SSE连接...")
+            sse_response = client.get(
+                MCP_SERVER_URL,
+                headers={"Accept": "text/event-stream"}
+            )
+            
+            session_id = sse_response.headers.get("mcp-session-id")
+            if not session_id:
+                raise Exception("无法获取session ID")
+            
+            logger.info(f"✅ 获取到session ID: {session_id}")
+            
+            init_request = {
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "AstroAgent-SkillRouter",
+                        "version": "1.0.0"
+                    }
+                },
+                "id": 1
+            }
+            
+            response = client.post(
+                MCP_SERVER_URL,
+                json=init_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": session_id
+                }
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"初始化失败: {response.status_code}")
+            
+            init_result = self._parse_sse_response(response.text)
+            if init_result:
+                logger.debug(f"初始化成功，服务器信息: {init_result.get('result', {}).get('serverInfo', {})}")
+            
+            notif_request = {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }
+            
+            client.post(
+                MCP_SERVER_URL,
+                json=notif_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": session_id
+                }
+            )
+            
+            logger.info("获取工具列表...")
+            list_request = {
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "id": 2
+            }
+            
+            response = client.post(
+                MCP_SERVER_URL,
+                json=list_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": session_id
+                }
+            )
+            
+            tools_result = self._parse_sse_response(response.text)
+            if tools_result:
+                tools_list = tools_result.get("result", {}).get("tools", [])
+                logger.info(f"✅ 从服务器获取到 {len(tools_list)} 个工具")
+            
+            self._mcp_session_id = session_id
+            self._mcp_initialized = True
+            self._http_client = client
+            
+            logger.info(f"✅ MCP会话初始化成功，会话ID: {session_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ MCP会话初始化失败: {e}")
+            self._mcp_initialized = False
+            self._http_client = None
+
+    def _parse_sse_response(self, response_text: str) -> Optional[dict]:
+        """解析 SSE 格式的响应"""
+        try:
+            lines = response_text.strip().split('\n')
+            for line in lines:
+                if line.startswith("data: "):
+                    json_str = line[6:]
+                    return json.loads(json_str)
+            return None
+        except Exception as e:
+            logger.error(f"解析 SSE 响应失败: {e}")
+            return None
+
+    def _call_mcp_tool_internal(self, tool_name: str, **kwargs) -> str:
+        """调用MCP工具（内部方法）"""
+        if not self._mcp_initialized or not self._mcp_session_id:
+            logger.error("❌ MCP会话未初始化")
+            return f"错误：MCP会话未初始化，请检查桥服务器是否运行"
+        
+        try:
+            processed_kwargs = {}
+            for key, value in kwargs.items():
+                if key in ['year', 'month', 'limit']:
+                    try:
+                        if isinstance(value, str) and value.isdigit():
+                            processed_kwargs[key] = int(value)
+                        elif isinstance(value, str):
+                            processed_kwargs[key] = value
+                        else:
+                            processed_kwargs[key] = value
+                    except:
+                        processed_kwargs[key] = value
+                else:
+                    processed_kwargs[key] = value
+            
+            request = {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": processed_kwargs
+                },
+                "id": int(time.time() * 1000)
+            }
+            
+            logger.debug(f"调用工具 {tool_name}，处理后的参数: {processed_kwargs}")
+            
+            response = self._http_client.post(
+                MCP_SERVER_URL,
+                json=request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": self._mcp_session_id
+                },
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                return f"HTTP错误: {response.status_code}"
+            
+            result = self._parse_sse_response(response.text)
+            if not result:
+                logger.error(f"无法解析响应: {response.text[:200]}")
+                return f"解析响应失败"
+            
+            logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:200]}")
+            
+            if "error" in result:
+                error_msg = result["error"].get("message", "未知错误")
+                error_code = result["error"].get("code", "")
+                return f"工具调用错误 [{error_code}]: {error_msg}"
+            
+            if "result" in result:
+                if "content" in result["result"]:
+                    content = result["result"]["content"]
+                    if isinstance(content, list) and len(content) > 0:
+                        for item in content:
+                            if item.get("type") == "text":
+                                return item.get("text", "")
+                
+                if isinstance(result["result"], str):
+                    return result["result"]
+                
+                return str(result["result"])
+            
+            logger.warning(f"未知响应格式: {result}")
+            return str(result)
+            
+        except httpx.TimeoutException:
+            logger.error(f"❌ MCP工具调用超时: {tool_name}")
+            return f"调用工具超时，请稍后重试"
+        except httpx.ConnectError:
+            logger.error(f"❌ 无法连接到MCP服务器: {MCP_SERVER_URL}")
+            return f"错误：无法连接到MCP服务器"
+        except Exception as e:
+            logger.error(f"❌ 调用工具 {tool_name} 失败: {e}")
+            return f"调用工具失败: {str(e)}"
 
     # ===== 具体技能实现 =====
 
@@ -651,9 +858,12 @@ class AstronomySkillRouter:
         except Exception:
             return ""
 
-        live = (data.get("live") or {}) if isinstance(data, dict) else {}
-        tips = data.get("observing_tips") or []
+        if isinstance(data, dict) and data.get("error"):
+            return ""
+
         parts = []
+
+        live = data.get("live") or {}
         if live:
             city = live.get("city")
             weather = live.get("weather")
@@ -664,9 +874,28 @@ class AstronomySkillRouter:
                 parts.append(f"{city} 当前天气：{weather}，气温约 {temp}°C，湿度 {humidity}%，风力 {wind} 级左右。")
             else:
                 parts.append(f"当前天气：{weather}，气温约 {temp}°C，湿度 {humidity}%。")
+
+        forecast = data.get("forecast") or {}
+        if forecast:
+            casts = forecast.get("casts") or []
+            if casts:
+                first_day = casts[0]
+                date = first_day.get("date", "")
+                day_weather = first_day.get("dayweather", "")
+                night_weather = first_day.get("nightweather", "")
+                day_temp = first_day.get("daytemp", "")
+                night_temp = first_day.get("nighttemp", "")
+                city = forecast.get("city", "")
+                if city:
+                    parts.append(f"{city} ({date}) 白天：{day_weather}，{day_temp}°C；夜间：{night_weather}，{night_temp}°C。")
+                else:
+                    parts.append(f"{date} 白天：{day_weather}，{day_temp}°C；夜间：{night_weather}，{night_temp}°C。")
+
+        tips = data.get("observing_tips") or []
         for t in tips:
             parts.append(f"- {t}")
-        return "\n".join(parts)
+
+        return "\n".join(parts) if parts else ""
 
     def _shorten_text(self, text: Any, max_len: int) -> str:
         """将任意对象转为字符串，并在长度超过 max_len 时截断。"""

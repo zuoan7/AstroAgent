@@ -424,6 +424,60 @@ class AstronomyTools:
         except Exception as e:
             return {'error': f'获取近地天体数据时出错: {e}'}
 
+    def _reverse_geocode(self, longitude, latitude):
+        """
+        使用高德逆地理编码 API 将经纬度转换为城市名。
+        https://restapi.amap.com/v3/geocode/regeo
+
+        Args:
+            longitude: 经度
+            latitude: 纬度
+
+        Returns:
+            str: 城市名称，失败返回 None
+        """
+        try:
+            api_key = settings.AMAP_API_KEY
+            if not api_key:
+                return None
+
+            url = "https://restapi.amap.com/v3/geocode/regeo"
+            params = {
+                "key": api_key,
+                "location": f"{longitude},{latitude}",
+                "output": "JSON",
+            }
+            resp = requests.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+            if str(data.get("status")) == "1" and data.get("regeocode"):
+                address = data["regeocode"].get("addressComponent", {})
+                city = address.get("city")
+                if not city:
+                    city = address.get("province")
+                return city if city else None
+            return None
+        except Exception:
+            return None
+
+    def _is_coordinates(self, text):
+        """
+        检测字符串是否为经纬度格式，如 "39.9,116.4" 或 "39.9042,116.4074"
+        """
+        if not text or not isinstance(text, str):
+            return False
+        text = text.strip()
+        parts = text.split(",")
+        if len(parts) != 2:
+            return False
+        try:
+            lat = float(parts[0].strip())
+            lon = float(parts[1].strip())
+            return -90 <= lat <= 90 and -180 <= lon <= 180
+        except (ValueError, AttributeError):
+            return False
+
     def get_weather(self, city=None, extensions="base"):
         """
         使用高德天气 API 查询天气。
@@ -451,6 +505,15 @@ class AstronomyTools:
                             city = obj.get("city") or obj.get("adcode") or obj.get("citycode")
                     except Exception:
                         pass
+
+            # 检测并转换经纬度为城市名
+            if city and self._is_coordinates(city):
+                parts = city.split(",")
+                lon = float(parts[1].strip())
+                lat = float(parts[0].strip())
+                city_name = self._reverse_geocode(lon, lat)
+                if city_name:
+                    city = city_name
 
             api_key = settings.AMAP_API_KEY
             if not api_key:

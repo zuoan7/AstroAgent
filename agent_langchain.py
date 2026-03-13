@@ -11,8 +11,6 @@ import traceback
 import json
 from logger import logger
 
-# HTTP 客户端库
-import httpx
 import asyncio
 import uuid
 import threading
@@ -23,13 +21,9 @@ import re
 import dashscope
 from dashscope import MultiModalConversation
 
-# MCP服务器配置 - 注意没有结尾斜杠！
-# 默认使用 8001 端口，与 FastAPI 服务错开
-MCP_SERVER_URL = "http://localhost:8001/mcp"
-
 
 class AstroAgent:
-    """基于LangChain的天文Agent - 支持HTTP调用MCP服务器（完整会话管理）"""
+    """基于LangChain的天文Agent - 通过Skill层调用MCP工具"""
     
     def __init__(self):
         # 验证API Key
@@ -41,25 +35,18 @@ class AstroAgent:
         self.memory = ShortTermMemory()
         self.llm = self._init_llm()
         
-        # MCP会话管理
-        self.mcp_session_id: Optional[str] = None
-        self.mcp_initialized = False
-        self.http_client: Optional[httpx.Client] = None
         # 工具调用跟踪
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
         
-        # 初始化MCP会话（使用同步方式）
-        self._init_mcp_session_sync()
-
-        # Skill 路由层：对上暴露“技能”，对下通过 _call_mcp_tool 访问 MCP 工具
-        self.skill_router = AstronomySkillRouter(self._call_mcp_tool)
+        # Skill 路由层：内部管理 MCP 通信
+        self.skill_router = AstronomySkillRouter()
         
         # 初始化工具
         self.tools = self._init_tools()
         self.agent_executor = self._build_agent()
         
-        logger.info("✅ AstroAgent初始化完成，使用HTTP方式调用MCP服务器工具（完整会话管理）")
+        logger.info("✅ AstroAgent初始化完成，通过Skill层调用MCP工具")
     
     def _init_llm(self):
         """初始化语言模型"""
@@ -120,239 +107,6 @@ class AstroAgent:
             logger.error(f"❌ 图片理解失败: {e}")
             return f"图片理解失败：{e}"
 
-    def _parse_sse_response(self, response_text: str) -> Optional[dict]:
-        """
-        解析 SSE 格式的响应
-        
-        Args:
-            response_text: SSE 响应文本
-            
-        Returns:
-            解析后的 JSON 字典，如果解析失败返回 None
-        """
-        try:
-            # SSE 格式通常是 "event: message\ndata: {...}\n\n"
-            lines = response_text.strip().split('\n')
-            for line in lines:
-                if line.startswith("data: "):
-                    json_str = line[6:]  # 去掉 "data: "
-                    return json.loads(json_str)
-            return None
-        except Exception as e:
-            logger.error(f"解析 SSE 响应失败: {e}")
-            return None
-
-    def _init_mcp_session_sync(self):
-        """使用同步方式初始化MCP会话"""
-        try:
-            # 使用同步HTTP客户端
-            client = httpx.Client(timeout=30.0)
-            
-            # 1. 建立SSE连接获取session ID
-            logger.info("正在建立SSE连接...")
-            sse_response = client.get(
-                MCP_SERVER_URL,
-                headers={"Accept": "text/event-stream"}
-            )
-            
-            # 修正2：使用小写的 header 名称
-            session_id = sse_response.headers.get("mcp-session-id")
-            if not session_id:
-                raise Exception("无法获取session ID")
-            
-            logger.info(f"✅ 获取到session ID: {session_id}")
-            
-            # 2. 发送初始化请求
-            logger.info("发送初始化请求...")
-            init_request = {
-                "jsonrpc": "2.0",
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {
-                        "name": "AstroAgent",
-                        "version": "1.0.0"
-                    }
-                },
-                "id": 1
-            }
-            
-            response = client.post(
-                MCP_SERVER_URL,
-                json=init_request,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": session_id
-                }
-            )
-            
-            if response.status_code != 200:
-                raise Exception(f"初始化失败: {response.status_code}")
-            
-            # 解析初始化响应（验证服务器返回）
-            init_result = self._parse_sse_response(response.text)
-            if init_result:
-                logger.debug(f"初始化成功，服务器信息: {init_result.get('result', {}).get('serverInfo', {})}")
-            else:
-                logger.warning("无法解析初始化响应")
-            
-            # 3. 发送initialized通知
-            logger.info("发送initialized通知...")
-            notif_request = {
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized"
-            }
-            
-            client.post(
-                MCP_SERVER_URL,
-                json=notif_request,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": session_id
-                }
-            )
-            
-            # 4. 获取工具列表（可选，用于验证）
-            logger.info("获取工具列表...")
-            list_request = {
-                "jsonrpc": "2.0",
-                "method": "tools/list",
-                "id": 2
-            }
-            
-            response = client.post(
-                MCP_SERVER_URL,
-                json=list_request,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": session_id
-                }
-            )
-            
-            # 解析工具列表
-            tools_result = self._parse_sse_response(response.text)
-            if tools_result:
-                tools_list = tools_result.get("result", {}).get("tools", [])
-                logger.info(f"✅ 从服务器获取到 {len(tools_list)} 个工具")
-            else:
-                logger.warning("无法解析工具列表响应")
-            
-            # 保存会话信息
-            self.mcp_session_id = session_id
-            self.mcp_initialized = True
-            self.http_client = client
-            
-            logger.info(f"✅ MCP会话初始化成功，会话ID: {session_id}")
-            
-        except Exception as e:
-            logger.error(f"❌ MCP会话初始化失败: {e}")
-            self.mcp_initialized = False
-            self.http_client = None
-    
-    def _call_mcp_tool(self, tool_name: str, **kwargs) -> str:
-        """调用MCP工具（同步方法）- 修复参数传递问题"""
-        if not self.mcp_initialized or not self.mcp_session_id:
-            logger.error("❌ MCP会话未初始化")
-            return f"错误：MCP会话未初始化，请检查桥服务器是否运行"
-        
-        try:
-            # 重要：确保参数类型正确
-            # 对于数字参数，确保它们是整数类型
-            processed_kwargs = {}
-            for key, value in kwargs.items():
-                if key in ['year', 'month', 'limit']:
-                    try:
-                        # 如果是字符串数字，转换为整数
-                        if isinstance(value, str) and value.isdigit():
-                            processed_kwargs[key] = int(value)
-                        # 如果是其他字符串（如日期），保持原样
-                        elif isinstance(value, str):
-                            processed_kwargs[key] = value
-                        # 如果是数字，直接使用
-                        else:
-                            processed_kwargs[key] = value
-                    except:
-                        processed_kwargs[key] = value
-                else:
-                    processed_kwargs[key] = value
-            
-            # 构建标准MCP工具调用请求
-            request = {
-                "jsonrpc": "2.0",
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": processed_kwargs  # 使用处理后的参数
-                },
-                "id": int(time.time() * 1000)
-            }
-            
-            logger.debug(f"调用工具 {tool_name}，处理后的参数: {processed_kwargs}")
-            
-            # 使用同步客户端发送请求
-            response = self.http_client.post(
-                MCP_SERVER_URL,
-                json=request,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": self.mcp_session_id
-                },
-                timeout=30.0
-            )
-            
-            if response.status_code != 200:
-                return f"HTTP错误: {response.status_code}"
-            
-            # 解析 SSE 格式的响应
-            result = self._parse_sse_response(response.text)
-            if not result:
-                logger.error(f"无法解析响应: {response.text[:200]}")
-                return f"解析响应失败"
-            
-            logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:200]}")
-            
-            # 检查错误
-            if "error" in result:
-                error_msg = result["error"].get("message", "未知错误")
-                error_code = result["error"].get("code", "")
-                return f"工具调用错误 [{error_code}]: {error_msg}"
-            
-            # 从标准格式中提取文本内容
-            if "result" in result:
-                # 处理标准MCP格式：result.content[0].text
-                if "content" in result["result"]:
-                    content = result["result"]["content"]
-                    if isinstance(content, list) and len(content) > 0:
-                        for item in content:
-                            if item.get("type") == "text":
-                                return item.get("text", "")
-                
-                # 处理直接返回字符串的情况
-                if isinstance(result["result"], str):
-                    return result["result"]
-                
-                # 处理其他格式
-                return str(result["result"])
-            
-            # 如果既没有error也没有result
-            logger.warning(f"未知响应格式: {result}")
-            return str(result)
-            
-        except httpx.TimeoutException:
-            logger.error(f"❌ MCP工具调用超时: {tool_name}")
-            return f"调用工具超时，请稍后重试"
-        except httpx.ConnectError:
-            logger.error(f"❌ 无法连接到MCP服务器: {MCP_SERVER_URL}")
-            return f"错误：无法连接到MCP服务器"
-        except Exception as e:
-            logger.error(f"❌ 调用工具 {tool_name} 失败: {e}")
-            return f"调用工具失败: {str(e)}"
-
     def _init_tools(self):
         """初始化工具（改造为基于 Skill 的高层接口）"""
         tools: List[Tool] = []
@@ -378,12 +132,10 @@ class AstroAgent:
             extensions: str = "all",
         ):
             """天气查询技能：包装 get_weather，用于单独查询观测相关天气"""
-            # city 与 location 二选一，优先使用 city
             target = city or location
             return self.skill_router.call(
                 "weather-lookup",
                 city=target,
-                location=target,
                 extensions=extensions,
             )
 
@@ -580,26 +332,26 @@ class AstroAgent:
         except Exception as e:
             logger.error(f"❌ 读取prompt模板文件失败：{str(e)}")
             template = '''
-你是一个专业的天文助手，帮助用户解答天文问题。
-            
-**可用工具列表**：
-{tools}
+                    你是一个专业的天文助手，帮助用户解答天文问题。
+                                
+                    **可用工具列表**：
+                    {tools}
 
-使用以下格式：
+                    使用以下格式：
 
-Question: {input}
-Thought: 我需要思考如何回答这个问题
-Action: 选择一个工具
-Action Input: 工具参数
-Observation: 工具返回结果
-Thought: 现在我知道答案了
-Final Answer: 最终答案
+                    Question: {input}
+                    Thought: 我需要思考如何回答这个问题
+                    Action: 选择一个工具
+                    Action Input: 工具参数
+                    Observation: 工具返回结果
+                    Thought: 现在我知道答案了
+                    Final Answer: 最终答案
 
-开始！
+                    开始！
 
-Question: {input}
-Thought: {agent_scratchpad}
-'''
+                    Question: {input}
+                    Thought: {agent_scratchpad}
+                    '''
             logger.info("⚠️  使用默认prompt模板")
         
         prompt = PromptTemplate.from_template(template)
@@ -635,7 +387,7 @@ Thought: {agent_scratchpad}
         """
         logger.warning("检测到工具调用可能失败，尝试使用联网搜索...")
         try:
-            search_result = self._call_mcp_tool("web_search", query=query, max_results=5)
+            search_result = self.skill_router.call_mcp_tool("web_search", query=query, max_results=5)
             logger.info("联网搜索降级方案执行成功")
             return search_result
         except Exception as e:
