@@ -18,6 +18,8 @@ class StreamingService:
         self._fallback_service = fallback_service
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
+        self._action_history: Dict[str, list] = {}
+        self._max_same_action_count = 2
 
     def _format_chat_history(self) -> str:
         messages = self._memory.get_recent_messages()
@@ -29,6 +31,77 @@ class StreamingService:
             formatted.append(f"{role}: {msg['content']}")
         return "\n".join(formatted)
 
+    def _check_repeated_action(self, request_id: str, tool_name: str, tool_input: str) -> bool:
+        if request_id not in self._action_history:
+            self._action_history[request_id] = []
+        
+        action_key = f"{tool_name}:{tool_input}"
+        history = self._action_history[request_id]
+        
+        history.append(action_key)
+        same_count = sum(1 for h in history if h == action_key)
+        
+        if same_count >= self._max_same_action_count:
+            logger.warning(
+                f"[{request_id}] ⚠️ 检测到重复操作：{tool_name} 已执行 {same_count} 次，强制终止"
+            )
+            return True
+        
+        return False
+
+    def _build_response_from_intermediate_steps(
+        self, query: str, intermediate_steps: list
+    ) -> str:
+        if not intermediate_steps:
+            return ""
+        
+        tool_results = []
+        for step in intermediate_steps:
+            if hasattr(step, '__iter__') and len(step) >= 2:
+                action, observation = step[0], step[1]
+                tool_name = getattr(action, 'tool', 'unknown')
+                tool_input = getattr(action, 'tool_input', '')
+                if observation and not str(observation).startswith('{"error"'):
+                    tool_results.append({
+                        "tool": tool_name,
+                        "input": str(tool_input)[:100],
+                        "output": str(observation)[:500]
+                    })
+        
+        if not tool_results:
+            return ""
+        
+        response_parts = [f"根据已获取的信息，为您回答「{query}」：\n"]
+        
+        for i, result in enumerate(tool_results, 1):
+            tool_name = result["tool"]
+            output = result["output"]
+            
+            try:
+                output_data = json.loads(output)
+                if isinstance(output_data, dict):
+                    if "error" in output_data:
+                        continue
+                    if "answer" in output_data:
+                        response_parts.append(f"\n{output_data['answer']}")
+                        continue
+                    if "name" in output_data:
+                        response_parts.append(f"\n目标名称：{output_data.get('name', '未知')}")
+                    if "ra" in output_data and "dec" in output_data:
+                        response_parts.append(f"位置：赤经 {output_data['ra']}°，赤纬 {output_data['dec']}°")
+                    for key, value in list(output_data.items())[:5]:
+                        if key not in ["name", "ra", "dec", "error", "answer"]:
+                            response_parts.append(f"\n{key}：{value}")
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+            
+            if len(output) > 50:
+                response_parts.append(f"\n{output}")
+        
+        response_parts.append("\n\n（注：由于处理时间限制，以上是基于已获取数据整理的信息。）")
+        return "".join(response_parts)
+
     def generate_response(self, query: str) -> Generator[str, None, None]:
         logger.info(f"\n=== 处理用户查询：{query} ===")
 
@@ -39,15 +112,25 @@ class StreamingService:
             chat_history = self._format_chat_history()
             response = self._agent_executor.invoke({"input": query, "chat_history": chat_history})
             output = response.get("output", "")
+            intermediate_steps = response.get("intermediate_steps", [])
 
             if self._fallback_service and self._fallback_service.should_use_fallback(output):
-                logger.warning("检测到工具调用可能未返回有效结果，尝试联网搜索...")
+                logger.warning("检测到工具调用可能未返回有效结果，尝试从中间步骤生成答案...")
                 tool_call_failed = True
-                search_result = self._fallback_service.try_web_search_fallback(query)
-                output = self._fallback_service.format_fallback_response(query, search_result)
-                fallback_used = True
-            else:
-                output = response.get("output", "")
+                
+                if intermediate_steps:
+                    built_response = self._build_response_from_intermediate_steps(query, intermediate_steps)
+                    if built_response:
+                        output = built_response
+                        logger.info("✅ 成功从中间步骤生成答案")
+                    else:
+                        search_result = self._fallback_service.try_web_search_fallback(query)
+                        output = self._fallback_service.format_fallback_response(query, search_result)
+                        fallback_used = True
+                else:
+                    search_result = self._fallback_service.try_web_search_fallback(query)
+                    output = self._fallback_service.format_fallback_response(query, search_result)
+                    fallback_used = True
 
             final_response = output
 
@@ -97,6 +180,7 @@ class StreamingService:
         logger.info(f"[{request_id}] 开始处理流式查询：{query}")
 
         final_chunks: list[str] = []
+        should_stop = False
 
         try:
             chat_history = self._format_chat_history()
@@ -104,6 +188,9 @@ class StreamingService:
                 {"input": query, "chat_history": chat_history},
                 version="v1",
             ):
+                if should_stop:
+                    break
+                    
                 event_type = event.get("event")
                 data = event.get("data", {}) or {}
                 run_id = event.get("run_id")
@@ -111,9 +198,18 @@ class StreamingService:
                 if event_type == "on_tool_start":
                     tool_name = data.get("name") or data.get("tool")
                     tool_input = data.get("input")
+                    tool_input_str = str(tool_input) if tool_input else ""
+                    
+                    if self._check_repeated_action(request_id, tool_name or "unknown_tool", tool_input_str):
+                        should_stop = True
+                        fallback_msg = "\n\n⚠️ 检测到重复操作，已自动终止循环。"
+                        final_chunks.append(fallback_msg)
+                        yield fallback_msg
+                        break
+                    
                     self._tool_runs[run_id] = {
                         "name": tool_name or "unknown_tool",
-                        "input": str(tool_input),
+                        "input": tool_input_str,
                         "start_time": time.time(),
                         "request_id": request_id,
                     }
@@ -191,6 +287,7 @@ class StreamingService:
         final_answer_started = False
         final_answer_extracted = False
         thinking_logged = False
+        should_stop = False
 
         try:
             chat_history = self._format_chat_history()

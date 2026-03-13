@@ -36,6 +36,9 @@ fastapi
 uvicorn
 websockets
 
+# Streamlit UI
+streamlit
+
 # Tools
 rich
 

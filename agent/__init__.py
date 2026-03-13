@@ -103,10 +103,14 @@ class AstroAgent:
             agent=agent,
             tools=tools,
             verbose=True,
-            handle_parsing_errors=True
+            handle_parsing_errors=True,
+            max_iterations=5,
+            max_execution_time=60,
+            early_stopping_method="force",
+            return_intermediate_steps=True,
         )
 
-        logger.info("✅ React Agent构建完成")
+        logger.info("✅ React Agent构建完成（最大迭代5次，超时60秒）")
         return agent_executor
 
     def generate_response(self, query: str):

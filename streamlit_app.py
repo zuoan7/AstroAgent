@@ -6,6 +6,14 @@ from datetime import datetime
 
 API_BASE_URL = "http://localhost:8000"
 
+def get_full_image_url(relative_url):
+    """将相对URL转换为完整URL"""
+    if relative_url.startswith("http"):
+        return relative_url
+    if relative_url.startswith("/"):
+        return f"{API_BASE_URL}{relative_url}"
+    return f"{API_BASE_URL}/{relative_url}"
+
 st.set_page_config(
     page_title="天文Agent测试助手",
     page_icon="🔭",
@@ -122,10 +130,11 @@ with tab1:
                                 response_placeholder.markdown(assistant_message["content"])
                             elif event_type == "image":
                                 meta = event.get("meta", {})
+                                image_url = get_full_image_url(event.get("url"))
                                 if meta.get("source") == "user_upload":
-                                    st.image(event.get("url"), caption="您上传的图片")
+                                    st.image(image_url, caption="您上传的图片")
                                 else:
-                                    st.image(event.get("url"), caption="返回的图片")
+                                    st.image(image_url, caption="返回的图片")
                             
                         st.session_state.messages.append(assistant_message)
                 except Exception as e:
@@ -179,10 +188,11 @@ with tab2:
                                 response_placeholder.markdown(assistant_message["content"])
                             elif event_type == "image":
                                 meta = event.get("meta", {})
+                                image_url = get_full_image_url(event.get("url"))
                                 if meta.get("source") == "user_upload":
-                                    st.image(event.get("url"), caption="您上传的图片")
+                                    st.image(image_url, caption="您上传的图片")
                                 else:
-                                    st.image(event.get("url"), caption="返回的图片")
+                                    st.image(image_url, caption="返回的图片")
                         
                         st.session_state.messages.append(assistant_message)
                 except Exception as e:

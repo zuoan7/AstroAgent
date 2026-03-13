@@ -37,7 +37,8 @@ def get_planet_position(planet_name: str, observation_time: str = None,
         longitude: 观测点经度，可选
     """
     try:
-        return tools.get_planet_position(planet_name, observation_time, latitude, longitude)
+        result = tools.get_planet_position(planet_name, observation_time, latitude, longitude)
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         return f"错误：{str(e)}"
 
@@ -97,9 +98,10 @@ def get_astrophysical_object_info(object_name: str) -> str:
         object_name: 天体名称
     """
     try:
-        return tools.get_astrophysical_object_info(object_name)
+        result = tools.get_astrophysical_object_info(object_name)
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def get_galaxy_data(galaxy_name: str) -> str:
@@ -110,9 +112,10 @@ def get_galaxy_data(galaxy_name: str) -> str:
         galaxy_name: 星系名称
     """
     try:
-        return tools.get_galaxy_data(galaxy_name)
+        result = tools.get_galaxy_data(galaxy_name)
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def get_nasa_apod(date: str = None, hd: bool = False) -> str:
@@ -139,9 +142,32 @@ def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) 
         limit: 返回结果数量限制，可选
     """
     try:
-        return tools.get_neo_data(start_date, end_date, limit)
+        from datetime import datetime, timedelta
+        
+        # 确保日期范围不超过7天（NASA API限制）
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        else:
+            start_dt = datetime.now()
+            start_date = start_dt.strftime("%Y-%m-%d")
+        
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        else:
+            end_dt = start_dt + timedelta(days=7)
+            end_date = end_dt.strftime("%Y-%m-%d")
+        
+        # 检查日期范围是否超过7天，如果是，则限制为7天
+        delta_days = (end_dt - start_dt).days
+        if delta_days > 7:
+            end_dt = start_dt + timedelta(days=7)
+            end_date = end_dt.strftime("%Y-%m-%d")
+        
+        result = tools.get_neo_data(start_date, end_date, limit)
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
-        return f"错误：{str(e)}"
+        error_result = {"error": f"错误：{str(e)}"}
+        return json.dumps(error_result, ensure_ascii=False)
 
 @mcp.tool()
 def get_weather(city: str = None, extensions: str = "base") -> str:

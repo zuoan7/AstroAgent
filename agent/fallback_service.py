@@ -14,6 +14,8 @@ class FallbackService:
             "无法连接到MCP服务器",
             "MCP会话未初始化",
             "HTTP错误",
+            "Agent stopped due to iteration limit",
+            "Agent stopped due to time limit",
         ]
         self._low_confidence_phrases = [
             "当前模型服务暂时不可用",

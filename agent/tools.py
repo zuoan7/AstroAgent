@@ -1,3 +1,4 @@
+import json
 from langchain_core.tools import Tool
 from typing import List, Any, Callable, Optional
 from logger import logger
@@ -130,6 +131,16 @@ class AgentTools:
         return tools
 
     def _rag_retrieve(self, query: str) -> str:
+        if isinstance(query, dict):
+            query = query.get('query', query)
+        elif isinstance(query, str):
+            try:
+                if query.strip().startswith('{'):
+                    data = json.loads(query)
+                    if isinstance(data, dict) and 'query' in data:
+                        query = data['query']
+            except:
+                pass
         return self._rag.get_relevant_context(query)
 
     def _weather_lookup_skill(
@@ -138,6 +149,21 @@ class AgentTools:
         location: str = None,
         extensions: str = "all",
     ) -> str:
+        if isinstance(city, dict):
+            data = city
+            city = data.get('city') or data.get('location')
+            location = data.get('location') or data.get('city')
+            extensions = data.get('extensions', extensions)
+        elif isinstance(city, str):
+            try:
+                if city.strip().startswith('{'):
+                    data = json.loads(city)
+                    if isinstance(data, dict):
+                        city = data.get('city') or data.get('location')
+                        location = data.get('location') or data.get('city')
+                        extensions = data.get('extensions', extensions)
+            except:
+                pass
         target = city or location
         return self._skill_router.call(
             "weather-lookup",
@@ -151,6 +177,21 @@ class AgentTools:
         location: str = None,
         duration: str = None,
     ) -> str:
+        if isinstance(date, dict):
+            data = date
+            date = data.get('date')
+            location = data.get('location')
+            duration = data.get('duration')
+        elif isinstance(date, str):
+            try:
+                if date.strip().startswith('{'):
+                    data = json.loads(date)
+                    if isinstance(data, dict):
+                        date = data.get('date')
+                        location = data.get('location')
+                        duration = data.get('duration')
+            except:
+                pass
         return self._skill_router.call(
             "observation-planner",
             date=date,
@@ -164,6 +205,21 @@ class AgentTools:
         end_date: str = None,
         event_type: str = None,
     ) -> str:
+        if isinstance(start_date, dict):
+            data = start_date
+            start_date = data.get('start_date')
+            end_date = data.get('end_date')
+            event_type = data.get('event_type')
+        elif isinstance(start_date, str):
+            try:
+                if start_date.strip().startswith('{'):
+                    data = json.loads(start_date)
+                    if isinstance(data, dict):
+                        start_date = data.get('start_date')
+                        end_date = data.get('end_date')
+                        event_type = data.get('event_type')
+            except:
+                pass
         return self._skill_router.call(
             "celestial-events-forecast",
             start_date=start_date,
@@ -178,6 +234,23 @@ class AgentTools:
         date: str = None,
         equipment: str = None,
     ) -> str:
+        if isinstance(target, dict):
+            data = target
+            target = data.get('target')
+            observer_location = data.get('observer_location')
+            date = data.get('date')
+            equipment = data.get('equipment')
+        elif isinstance(target, str):
+            try:
+                if target.strip().startswith('{'):
+                    data = json.loads(target)
+                    if isinstance(data, dict):
+                        target = data.get('target')
+                        observer_location = data.get('observer_location')
+                        date = data.get('date')
+                        equipment = data.get('equipment')
+            except:
+                pass
         return self._skill_router.call(
             "deep-sky-observing-guide",
             target=target,
@@ -193,6 +266,23 @@ class AgentTools:
         max_distance: float = None,
         observable_only: bool = None,
     ) -> str:
+        if isinstance(time_range, dict):
+            data = time_range
+            time_range = data.get('time_range')
+            min_size = data.get('min_size')
+            max_distance = data.get('max_distance')
+            observable_only = data.get('observable_only')
+        elif isinstance(time_range, str):
+            try:
+                if time_range.strip().startswith('{'):
+                    data = json.loads(time_range)
+                    if isinstance(data, dict):
+                        time_range = data.get('time_range')
+                        min_size = data.get('min_size')
+                        max_distance = data.get('max_distance')
+                        observable_only = data.get('observable_only')
+            except:
+                pass
         return self._skill_router.call(
             "neo-tracker",
             time_range=time_range,
@@ -204,12 +294,35 @@ class AgentTools:
     def _astrophotography_calculator_skill(
         self,
         target: str,
-        camera: str,
+        camera: str = None,
         telescope: str = None,
         mount: str = None,
         location: str = None,
         date: str = None,
     ) -> str:
+        if isinstance(target, dict):
+            data = target
+            target = data.get('target')
+            camera = data.get('camera')
+            telescope = data.get('telescope')
+            mount = data.get('mount')
+            location = data.get('location')
+            date = data.get('date')
+        elif isinstance(target, str):
+            try:
+                if target.strip().startswith('{'):
+                    # 移除可能的注释部分
+                    clean_target = target.split('#')[0].strip()
+                    data = json.loads(clean_target)
+                    if isinstance(data, dict):
+                        target = data.get('target')
+                        camera = data.get('camera')
+                        telescope = data.get('telescope')
+                        mount = data.get('mount')
+                        location = data.get('location')
+                        date = data.get('date')
+            except:
+                pass
         return self._skill_router.call(
             "astrophotography-calculator",
             target=target,
@@ -227,6 +340,25 @@ class AgentTools:
         location: str = None,
         output_format: str = None,
     ) -> str:
+        if isinstance(target, dict):
+            data = target
+            target = data.get('target')
+            datetime = data.get('datetime')
+            location = data.get('location')
+            output_format = data.get('output_format')
+        elif isinstance(target, str):
+            try:
+                if target.strip().startswith('{'):
+                    # 移除可能的注释部分
+                    clean_target = target.split('#')[0].strip()
+                    data = json.loads(clean_target)
+                    if isinstance(data, dict):
+                        target = data.get('target')
+                        datetime = data.get('datetime')
+                        location = data.get('location')
+                        output_format = data.get('output_format')
+            except:
+                pass
         return self._skill_router.call(
             "celestial-position-calculator",
             target=target,

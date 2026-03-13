@@ -86,12 +86,35 @@ class AstronomyTools:
         
         # 使用当前时间或指定时间
         try:
+            from datetime import datetime
             ts = load.timescale()
             if observation_time is None:
                 t = ts.now()
             else:
-                t = ts.utc(observation_time.year, observation_time.month, observation_time.day,
-                          observation_time.hour, observation_time.minute, observation_time.second)
+                # 处理字符串格式的时间（ISO 8601 或其他格式）
+                if isinstance(observation_time, str):
+                    # 尝试解析 ISO 8601 格式
+                    try:
+                        dt = datetime.fromisoformat(observation_time.replace('Z', '+00:00'))
+                    except ValueError:
+                        # 尝试其他常见格式
+                        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                            try:
+                                dt = datetime.strptime(observation_time, fmt)
+                                break
+                            except ValueError:
+                                continue
+                        else:
+                            # 如果都解析失败，使用当前时间
+                            dt = datetime.now()
+                elif isinstance(observation_time, datetime):
+                    dt = observation_time
+                else:
+                    # 其他类型，尝试转换为字符串再解析
+                    dt = datetime.now()
+                
+                t = ts.utc(dt.year, dt.month, dt.day,
+                          dt.hour, dt.minute, dt.second)
             
             # 计算行星位置
             planet_id = planet_mapping[planet_name.lower()]
@@ -270,8 +293,12 @@ class AstronomyTools:
             # 常用天体的标准名称映射
             name_mapping = {
                 'Andromeda Galaxy': 'M31',
+                '仙女座星系': 'M31',
                 'Sirius': 'Sirius',
-                'Orion Nebula': 'M42'
+                '天狼星': 'Sirius',
+                'Orion Nebula': 'M42',
+                '猎户座星云': 'M42',
+                '猎户座大星云': 'M42'
             }
             
             # 使用标准名称
@@ -286,16 +313,20 @@ class AstronomyTools:
             if result is None:
                 return {'error': f'未找到该天体: {object_name}'}
             
+            # 检查结果是否为空
+            if len(result) == 0:
+                return {'error': f'未找到该天体: {object_name}'}
+            
             # 打印所有可用的列名，以便调试
             # print(f"SIMBAD返回的列名: {result.colnames}")
             
-            # 提取关键信息
+            # 提取关键信息，安全访问
             info = {
                 'name': object_name,
-                'ra': str(result['ra'][0]) if 'ra' in result.colnames else None,
-                'dec': str(result['dec'][0]) if 'dec' in result.colnames else None,
-                'main_id': str(result['main_id'][0]) if 'main_id' in result.colnames else None,
-                'otype': str(result['otype'][0]) if 'otype' in result.colnames else None
+                'ra': str(result['ra'][0]) if 'ra' in result.colnames and len(result['ra']) > 0 else None,
+                'dec': str(result['dec'][0]) if 'dec' in result.colnames and len(result['dec']) > 0 else None,
+                'main_id': str(result['main_id'][0]) if 'main_id' in result.colnames and len(result['main_id']) > 0 else None,
+                'otype': str(result['otype'][0]) if 'otype' in result.colnames and len(result['otype']) > 0 else None
             }
             
             return info
@@ -312,8 +343,12 @@ class AstronomyTools:
             # 常用星系的标准名称映射
             name_mapping = {
                 'Milky Way': 'Milky Way Galaxy',
-                'Andromeda Galaxy': 'Andromeda Galaxy',
-                'Triangulum Galaxy': 'Triangulum Galaxy'
+                '银河系': 'Milky Way Galaxy',
+                'Andromeda Galaxy': 'M31',
+                '仙女座星系': 'M31',
+                '仙女座大星系': 'M31',
+                'Triangulum Galaxy': 'M33',
+                '三角座星系': 'M33'
             }
             
             # 使用标准名称
@@ -324,12 +359,16 @@ class AstronomyTools:
             if result is None:
                 return {'error': f'未找到该星系: {galaxy_name}'}
             
-            # 打印所有可用的列名，以便调试
-            print(f"NED返回的列名: {result.colnames}")
+            # 检查结果是否为空
+            if len(result) == 0:
+                return {'error': f'未找到该星系: {galaxy_name}'}
             
-            # 提取星等信息
+            # 打印所有可用的列名，以便调试
+            # print(f"NED返回的列名: {result.colnames}")
+            
+            # 提取星等信息，安全访问
             magnitude = None
-            if 'Magnitude and Filter' in result.colnames:
+            if 'Magnitude and Filter' in result.colnames and len(result['Magnitude and Filter']) > 0:
                 mag_str = str(result['Magnitude and Filter'][0])
                 # 尝试从字符串中提取星等值
                 import re
@@ -337,14 +376,14 @@ class AstronomyTools:
                 if mag_match:
                     magnitude = float(mag_match.group())
             
-            # 提取关键信息
+            # 提取关键信息，安全访问
             info = {
                 'name': galaxy_name,
-                'ra': str(result['RA'][0]) if 'RA' in result.colnames else None,
-                'dec': str(result['DEC'][0]) if 'DEC' in result.colnames else None,
-                'redshift': float(result['Redshift'][0]) if 'Redshift' in result.colnames else None,
+                'ra': str(result['RA'][0]) if 'RA' in result.colnames and len(result['RA']) > 0 else None,
+                'dec': str(result['DEC'][0]) if 'DEC' in result.colnames and len(result['DEC']) > 0 else None,
+                'redshift': float(result['Redshift'][0]) if 'Redshift' in result.colnames and len(result['Redshift']) > 0 else None,
                 'magnitude': magnitude,
-                'type': str(result['Type'][0]) if 'Type' in result.colnames else None
+                'type': str(result['Type'][0]) if 'Type' in result.colnames and len(result['Type']) > 0 else None
             }
             
             return info
@@ -395,23 +434,40 @@ class AstronomyTools:
         :return: 近地天体数据
         """
         try:
+            from datetime import datetime, timedelta
+            
             # NASA NEO API URL
             url = "https://api.nasa.gov/neo/rest/v1/feed"
             
             # API密钥
             api_key = settings.NASA_API_KEY
             
+            # 处理日期，确保不超过7天的API限制
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            else:
+                start_dt = datetime.now()
+                start_date = start_dt.strftime("%Y-%m-%d")
+            
+            if end_date:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            else:
+                end_dt = start_dt + timedelta(days=7)
+                end_date = end_dt.strftime("%Y-%m-%d")
+            
+            # 检查日期范围是否超过7天，如果是，则限制为7天
+            delta_days = (end_dt - start_dt).days
+            if delta_days > 7:
+                end_dt = start_dt + timedelta(days=7)
+                end_date = end_dt.strftime("%Y-%m-%d")
+            
             # 参数
             params = {
                 "api_key": api_key,
-                "limit": limit
+                "limit": limit,
+                "start_date": start_date,
+                "end_date": end_date
             }
-            
-            # 如果指定了日期
-            if start_date:
-                params["start_date"] = start_date
-            if end_date:
-                params["end_date"] = end_date
             
             # 发送请求
             response = requests.get(url, params=params)

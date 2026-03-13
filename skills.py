@@ -278,7 +278,7 @@ class AstronomySkillRouter:
                 logger.error(f"无法解析响应: {response.text[:200]}")
                 return f"解析响应失败"
             
-            logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:200]}")
+            logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:500]}")
             
             if "error" in result:
                 error_msg = result["error"].get("message", "未知错误")
@@ -286,17 +286,25 @@ class AstronomySkillRouter:
                 return f"工具调用错误 [{error_code}]: {error_msg}"
             
             if "result" in result:
-                if "content" in result["result"]:
-                    content = result["result"]["content"]
-                    if isinstance(content, list) and len(content) > 0:
-                        for item in content:
-                            if item.get("type") == "text":
-                                return item.get("text", "")
+                res = result["result"]
                 
-                if isinstance(result["result"], str):
-                    return result["result"]
+                # 尝试多种方式提取文本内容
+                if isinstance(res, dict):
+                    # 检查是否有 content 字段
+                    if "content" in res:
+                        content = res["content"]
+                        if isinstance(content, list) and len(content) > 0:
+                            for item in content:
+                                if item.get("type") == "text":
+                                    return item.get("text", "")
+                    
+                    # 如果没有找到 text 类型，尝试直接返回整个 result 的字符串表示
+                    return json.dumps(res, ensure_ascii=False)
                 
-                return str(result["result"])
+                if isinstance(res, str):
+                    return res
+                
+                return str(res)
             
             logger.warning(f"未知响应格式: {result}")
             return str(result)
@@ -444,10 +452,18 @@ class AstronomySkillRouter:
         else:
             start_dt = datetime.now()
 
+        # 检查年份是否为2026年，因为系统只存储了2026年的天象数据
+        if start_dt.year != 2026:
+            # 自动调整为2026年
+            start_dt = start_dt.replace(year=2026)
+
         end_dt: Optional[datetime] = None
         if end_date:
             try:
                 end_dt = self._normalize_date(end_date)
+                # 检查结束年份是否为2026年
+                if end_dt.year != 2026:
+                    end_dt = end_dt.replace(year=2026)
             except Exception:
                 end_dt = None
 
@@ -482,13 +498,33 @@ class AstronomySkillRouter:
                 start_date=start_dt.strftime("%Y-%m-%d"),
             )
         else:
-            year = start_dt.year
-            month = start_dt.month
-            body = self._call_mcp_tool(
-                "get_monthly_events",
-                year=year,
-                month=month,
-            )
+            # 处理跨月份的情况
+            if end_dt:
+                # 遍历从开始日期到结束日期的所有月份
+                current_dt = start_dt
+                monthly_bodies = []
+                while current_dt <= end_dt:
+                    month_body = self._call_mcp_tool(
+                        "get_monthly_events",
+                        year=current_dt.year,
+                        month=current_dt.month,
+                    )
+                    monthly_bodies.append(month_body)
+                    # 移动到下一个月
+                    if current_dt.month == 12:
+                        current_dt = current_dt.replace(year=current_dt.year + 1, month=1)
+                    else:
+                        current_dt = current_dt.replace(month=current_dt.month + 1)
+                body = "\n".join(monthly_bodies)
+            else:
+                # 未指定结束日期，只获取当前月份
+                year = start_dt.year
+                month = start_dt.month
+                body = self._call_mcp_tool(
+                    "get_monthly_events",
+                    year=year,
+                    month=month,
+                )
 
         description_prefix.append("\n下面是为你整理的天象预报：\n")
         description_prefix.append(self._shorten_text(body, 1200))
@@ -577,7 +613,25 @@ class AstronomySkillRouter:
         - max_distance: 最大距离（地月距离倍数）
         - observable_only: 是否仅返回有较大亮度、接近地球、理论上有观测价值的天体
         """
+        from datetime import datetime, timedelta
+        
+        # 解析时间范围
         start_date, end_date = self._parse_time_range(time_range)
+        
+        # 检查日期范围是否超过7天（NASA API限制）
+        warning_lines = []
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            delta_days = (end_dt - start_dt).days
+            
+            if delta_days > 7:
+                warning_lines.append(f"⚠️ 注意：NASA NEO API 最多只支持查询7天的数据。")
+                warning_lines.append(f"请求范围：{start_date} 至 {end_date}（{delta_days}天）")
+                warning_lines.append(f"将返回最近7天的数据：{start_date} 至 {(start_dt + timedelta(days=7)).strftime('%Y-%m-%d')}")
+                warning_lines.append("")
+        except Exception:
+            pass
 
         raw_json = self._call_mcp_tool(
             "get_neo_data",
@@ -586,11 +640,20 @@ class AstronomySkillRouter:
             limit=50,
         )
 
+        data = None
         try:
-            data = json.loads(raw_json)
+            # 尝试解析JSON
+            if isinstance(raw_json, str):
+                data = json.loads(raw_json)
+            else:
+                data = raw_json
         except Exception:
-            # 工具已做过错误处理，直接原样返回
+            # 如果解析失败，可能已经是字符串或其他格式
             return raw_json
+
+        # 如果有错误信息，直接返回
+        if isinstance(data, dict) and data.get("error"):
+            return data["error"]
 
         # NASA NEO feed 结构：near_earth_objects: { "YYYY-MM-DD": [ {...}, ... ] }
         neos = []
@@ -641,17 +704,29 @@ class AstronomySkillRouter:
             )
 
         if not filtered:
-            return "在给定的时间范围和筛选条件下，没有找到明显具有观测价值的近地天体飞掠事件。"
+            warning_text = "\n".join(warning_lines) if warning_lines else ""
+            return warning_text + "\n在给定的时间范围和筛选条件下，没有找到明显具有观测价值的近地天体飞掠事件。"
 
-        lines = [
-            "📡 近地天体飞掠列表（按时间排序）：",
-        ]
+        # 添加警告信息（如果有）
+        if warning_lines:
+            lines = warning_lines.copy()
+            lines.extend([
+                "",
+                "📡 近地天体飞掠列表（按时间排序）：",
+            ])
+        else:
+            lines = [
+                "📡 近地天体飞掠列表（按时间排序）：",
+            ]
+        
         filtered.sort(key=lambda x: (x["date"], x.get("miss_distance_lunar") or 1e9))
         for item in filtered[:20]:
             hazard = "⚠️ 潜在威胁小行星" if item["hazardous"] else ""
+            size_str = f"{item['size_m']:.0f} m" if item['size_m'] is not None else "未知"
+            dist_str = f"{item['miss_distance_lunar']:.2f} 个地月距离" if item['miss_distance_lunar'] is not None else "未知"
             lines.append(
                 f"- 日期 {item['date']}，目标 {item['name']}，"
-                f"估计直径约 {item['size_m']:.0f} m，最近距离约 {item['miss_distance_lunar']:.2f} 个地月距离 {hazard}"
+                f"估计直径约 {size_str}，最近距离约 {dist_str} {hazard}"
             )
 
         lines.append(
