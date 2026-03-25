@@ -10184,3 +10184,80 @@ Action Input: {"target": "Orion", "datetime": null, "location": "苏州"}看起�
 Final Answer: 图
 2026-03-24 12:08:41 - AstroAgent - INFO - [9fbacf02] Final Answer: 图...
 2026-03-24 12:08:49 - AstroAgent - INFO - [9fbacf02] ✅ 事件流完成，响应长度：191 字符
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ BM25 索引已加载: 678 个文档
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ BM25 检索已加载
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-24 13:22:25 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ 获取到session ID: f34cff060c914a4581945c83682af83d
+2026-03-24 13:22:25 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-24 13:22:25 - AstroAgent - INFO - 获取工具列表...
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: f34cff060c914a4581945c83682af83d
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ React Agent构建完成（最大迭代5次，超时60秒）
+2026-03-24 13:22:25 - AstroAgent - INFO - ✅ AstroAgent初始化完成，通过Skill层调用MCP工具
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ BM25 索引已加载: 678 个文档
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ BM25 检索已加载
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-24 13:22:27 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 获取到session ID: f5420699b7ad459f9ed935af80f70296
+2026-03-24 13:22:27 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-24 13:22:27 - AstroAgent - INFO - 获取工具列表...
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: f5420699b7ad459f9ed935af80f70296
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ React Agent构建完成（最大迭代5次，超时60秒）
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ AstroAgent初始化完成，通过Skill层调用MCP工具
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 向量检索已连接：./vector_db
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ BM25 索引已加载: 678 个文档
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ BM25 检索已加载
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 语言模型 qwen-max 初始化成功
+2026-03-24 13:22:27 - AstroAgent - INFO - 正在建立SSE连接...
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 获取到session ID: f2dc1a5f1137456daa6c31bd0ff3f1ff
+2026-03-24 13:22:27 - AstroAgent - DEBUG - 初始化成功，服务器信息: {'name': 'Astronomy Server', 'version': '3.1.0'}
+2026-03-24 13:22:27 - AstroAgent - INFO - 获取工具列表...
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 从服务器获取到 13 个工具
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ MCP会话初始化成功，会话ID: f2dc1a5f1137456daa6c31bd0ff3f1ff
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 成功从外部文件读取prompt模板
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ 成功注册 8 个高层技能工具（含RAG）
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ React Agent构建完成（最大迭代5次，超时60秒）
+2026-03-24 13:22:27 - AstroAgent - INFO - ✅ AstroAgent初始化完成，通过Skill层调用MCP工具
+2026-03-24 13:24:06 - AstroAgent - INFO - [90edb8f2] 开始处理事件流查询：今晚苏州的观星计划
+2026-03-24 13:24:16 - AstroAgent - INFO - {"type": "tool_start", "request_id": "90edb8f2", "run_id": "019d1e4d-00ce-77f1-b67a-d39152fa74d7", "tool_name": "unknown_tool", "input": "None"}
+2026-03-24 13:24:16 - AstroAgent - DEBUG - 调用工具 get_weather，处理后的参数: {'city': '苏州', 'extensions': 'all'}
+2026-03-24 13:24:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1774329856208, "result": {"content": [{"type": "text", "text": "{\"query_city\": \"苏州\", \"extensions\": \"all\", \"raw\": {\"status\": \"1\", \"count\": \"1\", \"info\": \"OK\", \"infocode\": \"10000\", \"forecasts\": [{\"city\": \"苏州市\", \"adcode\": \"320500\", \"province\": \"江苏\", \"reporttime\": \"2026-03-24 13:02:23\", \"casts\": [{\"date\": \"2026-03-24\", \"week\": \"2\", \"dayweather\": \"阴\", \"nightweather\": \"多云\", \"daytemp\": \"14\", \"nighttemp\": \"9\", 
+2026-03-24 13:24:16 - AstroAgent - DEBUG - 调用工具 get_weekly_events，处理后的参数: {'start_date': '2026-03-24'}
+2026-03-24 13:24:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1774329856277, "result": {"content": [{"type": "text", "text": "🌌 **2026-03-24 至 2026-03-30 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-24: 🌒 娥眉月\n• 2026-03-25: 🌓 上弦月\n• 2026-03-26: 🌓 上弦月\n• 2026-03-27: 🌓 上弦月\n• 2026-03-28: 🌔 盈凸月\n• 2026-03-29: 🌔 盈凸月\n• 2026-03-30: 🌔 盈凸月\n\n🪐 **本周行星可见性**\n• 土星：整夜可见，是本周最佳观测目标\n• 金星：早晨东方低空可见\n• 木星：傍晚西方低空可见\n"}], "structuredContent": {"result": "🌌 **2026-03-24 至 2026-03-30 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。
+2026-03-24 13:24:16 - AstroAgent - DEBUG - 调用工具 get_tonight_best，处理后的参数: {}
+2026-03-24 13:24:16 - AstroAgent - DEBUG - 工具响应: {"jsonrpc": "2.0", "id": 1774329856304, "result": {"content": [{"type": "text", "text": "🌙 **今晚（2026-03-24）观测指南**\n\n【月相】🌒 娥眉月\n  傍晚可见，适合观测\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:30\n  • 日出：22:10\n"}], "structuredContent": {"result": "🌙 **今晚（2026-03-24）观测指南**\n\n【月相】🌒 娥眉月\n  傍晚可见，适合观测\n\n【可见行星】今晚无明显可见行星\n\n【时间信息】\n  • 日落：10:30\n  • 日出：22:10\n"}, "isError": false}}
+2026-03-24 13:24:16 - AstroAgent - INFO - {"type": "tool_end", "request_id": "90edb8f2", "run_id": "019d1e4d-00ce-77f1-b67a-d39152fa74d7", "tool_name": "unknown_tool", "duration_sec": 0.1331334114074707, "output_preview": "📅 观测日期：2026-03-24\n📍 观测地点：苏州\n\n一、观测条件（天气概览）\n苏州市 (2026-03-24) 白天：阴，14°C；夜间：多云，9°C。\n\n二、本周重要天象（摘要）\n🌌 **2026-03-24 至 2026-03-30 一周天象预报**\n\n本周没有特殊天象。\n但你可以关注日常可见的行星和月相变化。\n\n🌙 **本周月相变化**\n• 2026-03-24: 🌒 娥眉月\n• 20"}
+2026-03-24 13:24:25 - AstroAgent - INFO - [90edb8f2] 🔍 Thinking: 用户想要了解今晚在苏州的观星计划，这属于观测条件/天气类与实时数据类问题的结合。我将优先调用ObservationPlanner技能来获取一个基于当前日期和苏州位置的完整观测建议。如果有必要，我会进一步使用CelestialEventsForecast技能来补充是否有特别值得一看的天象。
+
+Action: ObservationPlanner
+Action Input: {"location": "苏州"}我现在知道最终答案了。根据ObservationPlanner技能提供的信息，今晚苏州的天气条件不是特别理想，以多云为主，但还是有一些值得一看的天象。尤其是土星整夜都可见，是今晚的最佳观测目标。此外，还可以关注月相的变化，今晚是娥眉月，傍晚时分就可以看到月亮的身影。
+
+Final Answer:
+2026-03-24 13:24:42 - AstroAgent - INFO - [90edb8f2] ✅ 事件流完成，响应长度：203 字符
+2026-03-24 13:26:49 - AstroAgent - INFO - 尝试读取图片: /root/AstroAgent/uploads/c0010c59dd7b4e08961176010e9809bf.png
+2026-03-24 13:26:49 - AstroAgent - INFO - 图片文件存在: /root/AstroAgent/uploads/c0010c59dd7b4e08961176010e9809bf.png
+2026-03-24 13:26:57 - AstroAgent - INFO - [36586b12] 开始处理事件流查询：图片中的星座是什么
+
+[用户上传图片的视觉信息]
+这张图片展示了一片夜空，充满了星星和一些明显的天体特征。以下是对图片的详细描述：
+
+### 1. 可能的天体/星座/现象
+
+- **主要天体**：
+  - 图片中央偏右的位置有一簇明亮的蓝色星星，这可能是猎户座（Orion）的一部分，特别是猎户座的腰带（Orion's Belt），由三颗明亮的恒星组成。
+  - 在图片左侧，有一颗非常明亮的黄色星星
+2026-03-24 13:27:10 - AstroAgent - INFO - [36586b12] 🔍 Thinking: 用户上传了一张夜空图片，并希望知道图片中的星座是什么。根据提供的描述，图片中可以看到猎户座的一部分，特别是猎户座的腰带。此外，还提到了一颗非常明亮的黄色星星，可能是金星或木星。为了确认这些信息并提供更详细的解答，我将基于描述进行回答。
+
+由于这个问题主要是基于对图片内容的理解和解释，而不是需要调用特定工具来获取实时数据或位置信息，因此可以直接给出答案。
+
+Thought: 我现在知道了最终答案。
+Final Answer:
+2026-03-24 13:27:21 - AstroAgent - INFO - [36586b12] ✅ 事件流完成，响应长度：236 字符
