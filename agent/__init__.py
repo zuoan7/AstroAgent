@@ -8,6 +8,7 @@ from skills import AstronomySkillRouter
 from agent.tools import AgentTools
 from agent.fallback_service import FallbackService
 from agent.vision_service import VisionService
+from agent.speech_service import SpeechService
 from agent.streaming_service import StreamingService
 from typing import List, Optional
 import traceback
@@ -31,6 +32,7 @@ class AstroAgent:
 
         self.fallback_service = FallbackService(skill_router=self.skill_router)
         self.vision_service = VisionService()
+        self.speech_service = SpeechService()
 
         self.streaming_service = StreamingService(
             agent_executor=None,

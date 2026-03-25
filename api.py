@@ -6,6 +6,7 @@ from agent import AstroAgent
 import json
 import os
 import uuid
+import asyncio
 
 # 创建FastAPI应用
 app = FastAPI(title="天文Agent API", description="具有短期记忆和流式输出的天文知识助手")
@@ -66,6 +67,41 @@ async def query_with_image_endpoint(
             # 先把用户上传图片回显给前端（满足“回答可以返回图片”）
             yield f"data: {json.dumps({'type': 'image', 'url': image_url, 'meta': {'source': 'user_upload'}}, ensure_ascii=False)}\n\n"
             async for event in agent.generate_events(query, image_path=save_path):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/query_with_audio")
+async def query_with_audio_endpoint(
+    query: str = Form(""),
+    audio: UploadFile = File(...),
+):
+    """
+    语音查询：用户上传音频 + 可选文本 query，先转录语音再进入问答流程。
+    """
+    try:
+        # 保存上传音频到本地
+        ext = os.path.splitext(audio.filename or "")[1].lower() or ".wav"
+        file_id = uuid.uuid4().hex
+        save_path = os.path.join(UPLOAD_DIR, f"{file_id}{ext}")
+        save_path = os.path.abspath(save_path)
+        content = await audio.read()
+        with open(save_path, "wb") as f:
+            f.write(content)
+
+        # 在线程中执行阻塞的语音识别
+        augmented_query = await asyncio.to_thread(
+            agent.speech_service.build_speech_query, query, save_path
+        )
+
+        async def generate():
+            # 先将转录结果发送给前端展示
+            yield f"data: {json.dumps({'type': 'transcription', 'text': augmented_query}, ensure_ascii=False)}\n\n"
+            # 将转录文本作为普通查询进入 Agent 流程
+            async for event in agent.generate_events(augmented_query):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
         return StreamingResponse(generate(), media_type="text/event-stream")

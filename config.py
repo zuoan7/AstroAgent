@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "qwen-max"
     EMBEDDING_MODEL_NAME: str = "text-embedding-v2"
     VISION_MODEL_NAME: str = "qwen-vl-plus"
+    SPEECH_MODEL_NAME: str = "paraformer-realtime-v2"
     
     # RAG配置
     RAG_ENABLED: bool = True
