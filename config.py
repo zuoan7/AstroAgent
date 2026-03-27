@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # 记忆配置
     MEMORY_SIZE: int = 15
     MEMORY_WINDOW: int = 8
+    LONG_TERM_MEMORY_PATH: str = "./memory/long_term_memory/user_profiles.sqlite"
+    DEFAULT_USER_ID: str = "anonymous"  # 默认用户ID
     
     # API配置
     API_HOST: str = "0.0.0.0"

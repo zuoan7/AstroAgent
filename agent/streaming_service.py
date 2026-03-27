@@ -11,10 +11,14 @@ class StreamingService:
         self,
         agent_executor: Any,
         memory: Any,
+        long_term_memory: Any = None,
+        user_id: str = "anonymous",
         fallback_service: Optional[Any] = None,
     ):
         self._agent_executor = agent_executor
         self._memory = memory
+        self._long_term_memory = long_term_memory
+        self._user_id = user_id
         self._fallback_service = fallback_service
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
@@ -30,6 +34,32 @@ class StreamingService:
             role = "用户" if msg["role"] == "user" else "助手"
             formatted.append(f"{role}: {msg['content']}")
         return "\n".join(formatted)
+
+    def _format_user_profile(self) -> str:
+        """格式化用户画像"""
+        if not self._long_term_memory:
+            return "暂无用户偏好信息"
+        return self._long_term_memory.format_profile_for_prompt(self._user_id)
+
+    def _extract_and_update_long_term_memory(self, user_message: str, assistant_message: str):
+        """从对话中提取并更新长期记忆"""
+        if not self._long_term_memory:
+            return
+
+        try:
+            extracted = self._long_term_memory.extract_from_conversation(user_message, assistant_message)
+
+            has_info = (
+                extracted.get("preferences") or
+                extracted.get("habits") or
+                extracted.get("constraints")
+            )
+
+            if has_info:
+                self._long_term_memory.merge_and_update(self._user_id, extracted)
+                logger.info(f"✅ 已提取并更新长期记忆 (user_id: {self._user_id})")
+        except Exception as e:
+            logger.error(f"❌ 更新长期记忆失败: {e}")
 
     def _check_repeated_action(self, request_id: str, tool_name: str, tool_input: str) -> bool:
         if request_id not in self._action_history:
@@ -110,7 +140,12 @@ class StreamingService:
 
         try:
             chat_history = self._format_chat_history()
-            response = self._agent_executor.invoke({"input": query, "chat_history": chat_history})
+            user_profile = self._format_user_profile()
+            response = self._agent_executor.invoke({
+                "input": query,
+                "chat_history": chat_history,
+                "user_profile": user_profile
+            })
             output = response.get("output", "")
             intermediate_steps = response.get("intermediate_steps", [])
 
@@ -142,6 +177,9 @@ class StreamingService:
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", final_response, time.time())
 
+            # 提取并更新长期记忆
+            self._extract_and_update_long_term_memory(query, final_response)
+
             if fallback_used:
                 logger.info(f"✅ 使用联网搜索降级 | 助手响应长度：{len(final_response)} 字符")
             else:
@@ -164,6 +202,10 @@ class StreamingService:
 
                     self._memory.add_message("user", query, time.time())
                     self._memory.add_message("assistant", fallback_response, time.time())
+
+                    # 提取并更新长期记忆
+                    self._extract_and_update_long_term_memory(query, fallback_response)
+
                     logger.info(f"✅ 降级搜索成功 | 助手响应长度：{len(fallback_response)} 字符")
                     return
                 except Exception as fallback_error:
@@ -173,6 +215,9 @@ class StreamingService:
             yield default_response
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", default_response, time.time())
+
+            # 提取并更新长期记忆
+            self._extract_and_update_long_term_memory(query, default_response)
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
         request_id = uuid.uuid4().hex[:8]
@@ -184,8 +229,13 @@ class StreamingService:
 
         try:
             chat_history = self._format_chat_history()
+            user_profile = self._format_user_profile()
             async for event in self._agent_executor.astream_events(
-                {"input": query, "chat_history": chat_history},
+                {
+                    "input": query,
+                    "chat_history": chat_history,
+                    "user_profile": user_profile
+                },
                 version="v1",
             ):
                 if should_stop:
@@ -266,10 +316,17 @@ class StreamingService:
             yield fallback
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", fallback, time.time())
+
+            # 提取并更新长期记忆
+            self._extract_and_update_long_term_memory(query, fallback)
         else:
             final_response = "".join(final_chunks)
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", final_response, time.time())
+
+            # 提取并更新长期记忆
+            self._extract_and_update_long_term_memory(query, final_response)
+
             logger.info(f"[{request_id}] ✅ 流式对话完成，响应长度：{len(final_response)} 字符")
         finally:
             self._current_request_id = None
@@ -291,8 +348,13 @@ class StreamingService:
 
         try:
             chat_history = self._format_chat_history()
+            user_profile = self._format_user_profile()
             async for event in self._agent_executor.astream_events(
-                {"input": query, "chat_history": chat_history},
+                {
+                    "input": query,
+                    "chat_history": chat_history,
+                    "user_profile": user_profile
+                },
                 version="v1",
             ):
                 event_type = event.get("event")
@@ -411,10 +473,17 @@ class StreamingService:
             yield {"type": "text", "content": fallback}
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", fallback, time.time())
+
+            # 提取并更新长期记忆
+            self._extract_and_update_long_term_memory(query, fallback)
         else:
             final_response = "".join(final_chunks)
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", final_response, time.time())
+
+            # 提取并更新长期记忆
+            self._extract_and_update_long_term_memory(query, final_response)
+
             if not thinking_logged and thinking_buffer:
                 logger.info(f"[{request_id}] 🔍 Thinking: {''.join(thinking_buffer)}")
             logger.info(f"[{request_id}] ✅ 事件流完成，响应长度：{len(final_response)} 字符")

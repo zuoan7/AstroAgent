@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from typing import Optional
 from agent import AstroAgent
 import json
 import os
@@ -9,9 +10,9 @@ import uuid
 import asyncio
 
 # 创建FastAPI应用
-app = FastAPI(title="天文Agent API", description="具有短期记忆和流式输出的天文知识助手")
+app = FastAPI(title="天文Agent API", description="具有短期记忆、长期记忆和流式输出的天文知识助手")
 
-# 上传目录（用于让回答能“返回图片URL”）
+# 上传目录（用于让回答能"返回图片URL"）
 UPLOAD_DIR = os.path.abspath("./uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
@@ -23,17 +24,28 @@ agent = AstroAgent()
 class QueryRequest(BaseModel):
     """查询请求"""
     query: str
+    user_id: Optional[str] = None  # 可选的用户ID
 
 
 class KnowledgeRequest(BaseModel):
     """知识添加请求"""
     knowledge: list[str]
+    user_id: Optional[str] = None
+
+
+class UserProfileRequest(BaseModel):
+    """用户画像请求"""
+    user_id: Optional[str] = None
 
 
 @app.post("/query")
 async def query_endpoint(request: QueryRequest):
-    """查询接口，支持流式输出"""
+    """查询接口，支持流式输出和用户ID"""
     try:
+        # 如果提供了用户ID，需要创建新的Agent实例（或使用用户会话管理）
+        # 这里简化处理：每次查询使用默认用户ID，实际项目中应实现会话管理
+        user_id = request.user_id or agent.user_id
+
         async def generate():
             async for event in agent.generate_events(request.query):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -64,7 +76,7 @@ async def query_with_image_endpoint(
         image_url = f"/uploads/{file_id}{ext}"
 
         async def generate():
-            # 先把用户上传图片回显给前端（满足“回答可以返回图片”）
+            # 先把用户上传图片回显给前端（满足"回答可以返回图片"）
             yield f"data: {json.dumps({'type': 'image', 'url': image_url, 'meta': {'source': 'user_upload'}}, ensure_ascii=False)}\n\n"
             async for event in agent.generate_events(query, image_path=save_path):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -115,6 +127,49 @@ async def add_knowledge_endpoint(request: KnowledgeRequest):
     try:
         agent.add_astronomy_knowledge(request.knowledge)
         return {"status": "success", "message": "知识添加成功"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/profile")
+async def get_profile_endpoint(user_id: Optional[str] = None):
+    """获取用户画像"""
+    try:
+        user_id = user_id or agent.user_id
+        profile = agent.long_term_memory.load_profile(user_id)
+        if profile:
+            return {
+                "status": "success",
+                "user_id": profile.user_id,
+                "preferences": profile.preferences,
+                "habits": profile.habits,
+                "constraints": profile.constraints,
+                "created_at": profile.created_at,
+                "updated_at": profile.updated_at
+            }
+        else:
+            return {
+                "status": "success",
+                "message": "暂无用户画像信息",
+                "user_id": user_id,
+                "preferences": {},
+                "habits": {},
+                "constraints": []
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/profile")
+async def delete_profile_endpoint(user_id: Optional[str] = None):
+    """删除用户画像"""
+    try:
+        user_id = user_id or agent.user_id
+        deleted = agent.long_term_memory.delete_profile(user_id)
+        if deleted:
+            return {"status": "success", "message": "用户画像已删除", "user_id": user_id}
+        else:
+            return {"status": "success", "message": "用户画像不存在或已被删除", "user_id": user_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

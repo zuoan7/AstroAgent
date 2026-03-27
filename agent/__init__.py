@@ -3,7 +3,7 @@ from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 from config import settings
 from rag.online_retriever import OnlineRetriever
-from memory import ShortTermMemory
+from memory.memory import ShortTermMemory, LongTermMemory
 from skills import AstronomySkillRouter
 from agent.tools import AgentTools
 from agent.fallback_service import FallbackService
@@ -16,12 +16,15 @@ from logger import logger
 
 
 class AstroAgent:
-    def __init__(self):
+    def __init__(self, user_id: str = None):
+        self.user_id = user_id or settings.DEFAULT_USER_ID
+
         if not settings.DASHSCOPE_API_KEY:
             raise ValueError("❌ DashScope API Key未配置！请在settings中设置DASHSCOPE_API_KEY")
 
         self.rag = OnlineRetriever()
         self.memory = ShortTermMemory()
+        self.long_term_memory = LongTermMemory(settings.LONG_TERM_MEMORY_PATH)
         self.llm = self._init_llm()
         self.skill_router = AstronomySkillRouter()
 
@@ -37,6 +40,8 @@ class AstroAgent:
         self.streaming_service = StreamingService(
             agent_executor=None,
             memory=self.memory,
+            long_term_memory=self.long_term_memory,
+            user_id=self.user_id,
             fallback_service=self.fallback_service,
         )
 
