@@ -4,8 +4,7 @@ from langchain_core.prompts import PromptTemplate
 from config import settings
 from rag.online_retriever import OnlineRetriever
 from memory.memory import ShortTermMemory, LongTermMemory
-from skills import AstronomySkillRouter
-from agent.tools import AgentTools
+from agent.skill_manager import SkillManager
 from agent.fallback_service import FallbackService
 from agent.vision_service import VisionService
 from agent.speech_service import SpeechService
@@ -26,14 +25,10 @@ class AstroAgent:
         self.memory = ShortTermMemory()
         self.long_term_memory = LongTermMemory(settings.LONG_TERM_MEMORY_PATH)
         self.llm = self._init_llm()
-        self.skill_router = AstronomySkillRouter()
 
-        self.tools_manager = AgentTools(
-            rag_retriever=self.rag,
-            skill_router=self.skill_router,
-        )
+        self.skill_manager = SkillManager(rag_retriever=self.rag)
 
-        self.fallback_service = FallbackService(skill_router=self.skill_router)
+        self.fallback_service = FallbackService(skill_manager=self.skill_manager)
         self.vision_service = VisionService()
         self.speech_service = SpeechService()
 
@@ -48,7 +43,7 @@ class AstroAgent:
         self._agent_executor = self._build_agent()
         self.streaming_service._agent_executor = self._agent_executor
 
-        logger.info("✅ AstroAgent初始化完成，通过Skill层调用MCP工具")
+        logger.info("✅ AstroAgent初始化完成，使用统一的SkillManager")
 
     def _init_llm(self):
         try:
@@ -98,7 +93,7 @@ class AstroAgent:
 
         prompt = PromptTemplate.from_template(template)
 
-        tools = self.tools_manager.get_tools()
+        tools = self.skill_manager.get_langchain_tools()
 
         agent = create_react_agent(
             llm=self.llm,

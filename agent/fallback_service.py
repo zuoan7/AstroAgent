@@ -5,8 +5,8 @@ from logger import logger
 
 
 class FallbackService:
-    def __init__(self, skill_router: Any):
-        self._skill_router = skill_router
+    def __init__(self, skill_manager: Any):
+        self._skill_manager = skill_manager
         self._error_patterns = [
             "工具调用错误",
             "调用工具失败",
@@ -40,7 +40,7 @@ class FallbackService:
     def try_web_search_fallback(self, query: str) -> str:
         logger.warning("检测到工具调用可能失败，尝试使用联网搜索...")
         try:
-            search_result = self._skill_router.call_mcp_tool("web_search", query=query, max_results=5)
+            search_result = self._skill_manager.call_mcp_tool("web_search", query=query, max_results=5)
             logger.info("联网搜索降级方案执行成功")
             return search_result
         except Exception as e:
