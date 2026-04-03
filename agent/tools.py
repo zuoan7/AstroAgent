@@ -1,7 +1,8 @@
 import json
 from langchain_core.tools import Tool
-from typing import List, Any, Callable, Optional
+from typing import List, Any, Optional
 from logger import logger
+from agent.param_parser import ParamParser
 
 
 class AgentTools:
@@ -131,17 +132,9 @@ class AgentTools:
         return tools
 
     def _rag_retrieve(self, query: str) -> str:
-        if isinstance(query, dict):
-            query = query.get('query', query)
-        elif isinstance(query, str):
-            try:
-                if query.strip().startswith('{'):
-                    data = json.loads(query)
-                    if isinstance(data, dict) and 'query' in data:
-                        query = data['query']
-            except:
-                pass
-        return self._rag.get_relevant_context(query)
+        params = ParamParser.parse_tool_input(query, primary_param="query")
+        query_text = params.get("query", query)
+        return self._rag.get_relevant_context(query_text)
 
     def _weather_lookup_skill(
         self,
@@ -149,26 +142,15 @@ class AgentTools:
         location: str = None,
         extensions: str = "all",
     ) -> str:
-        if isinstance(city, dict):
-            data = city
-            city = data.get('city') or data.get('location')
-            location = data.get('location') or data.get('city')
-            extensions = data.get('extensions', extensions)
-        elif isinstance(city, str):
-            try:
-                if city.strip().startswith('{'):
-                    data = json.loads(city)
-                    if isinstance(data, dict):
-                        city = data.get('city') or data.get('location')
-                        location = data.get('location') or data.get('city')
-                        extensions = data.get('extensions', extensions)
-            except:
-                pass
-        target = city or location
+        params = ParamParser.parse_tool_input(
+            city if isinstance(city, dict) else {"city": city, "location": location, "extensions": extensions},
+            expected_params={"city": None, "location": None, "extensions": extensions}
+        )
+        target = params.get("city") or params.get("location")
         return self._skill_router.call(
             "weather-lookup",
             city=target,
-            extensions=extensions,
+            extensions=params.get("extensions", extensions),
         )
 
     def _observation_planner_skill(
@@ -177,26 +159,15 @@ class AgentTools:
         location: str = None,
         duration: str = None,
     ) -> str:
-        if isinstance(date, dict):
-            data = date
-            date = data.get('date')
-            location = data.get('location')
-            duration = data.get('duration')
-        elif isinstance(date, str):
-            try:
-                if date.strip().startswith('{'):
-                    data = json.loads(date)
-                    if isinstance(data, dict):
-                        date = data.get('date')
-                        location = data.get('location')
-                        duration = data.get('duration')
-            except:
-                pass
+        params = ParamParser.parse_tool_input(
+            date if isinstance(date, dict) else {"date": date, "location": location, "duration": duration},
+            expected_params={"date": None, "location": None, "duration": None}
+        )
         return self._skill_router.call(
             "observation-planner",
-            date=date,
-            location=location,
-            duration=duration,
+            date=params.get("date"),
+            location=params.get("location"),
+            duration=params.get("duration"),
         )
 
     def _celestial_events_forecast_skill(
@@ -205,26 +176,15 @@ class AgentTools:
         end_date: str = None,
         event_type: str = None,
     ) -> str:
-        if isinstance(start_date, dict):
-            data = start_date
-            start_date = data.get('start_date')
-            end_date = data.get('end_date')
-            event_type = data.get('event_type')
-        elif isinstance(start_date, str):
-            try:
-                if start_date.strip().startswith('{'):
-                    data = json.loads(start_date)
-                    if isinstance(data, dict):
-                        start_date = data.get('start_date')
-                        end_date = data.get('end_date')
-                        event_type = data.get('event_type')
-            except:
-                pass
+        params = ParamParser.parse_tool_input(
+            start_date if isinstance(start_date, dict) else {"start_date": start_date, "end_date": end_date, "event_type": event_type},
+            expected_params={"start_date": None, "end_date": None, "event_type": None}
+        )
         return self._skill_router.call(
             "celestial-events-forecast",
-            start_date=start_date,
-            end_date=end_date,
-            event_type=event_type,
+            start_date=params.get("start_date"),
+            end_date=params.get("end_date"),
+            event_type=params.get("event_type"),
         )
 
     def _deep_sky_observing_guide_skill(
@@ -234,29 +194,16 @@ class AgentTools:
         date: str = None,
         equipment: str = None,
     ) -> str:
-        if isinstance(target, dict):
-            data = target
-            target = data.get('target')
-            observer_location = data.get('observer_location')
-            date = data.get('date')
-            equipment = data.get('equipment')
-        elif isinstance(target, str):
-            try:
-                if target.strip().startswith('{'):
-                    data = json.loads(target)
-                    if isinstance(data, dict):
-                        target = data.get('target')
-                        observer_location = data.get('observer_location')
-                        date = data.get('date')
-                        equipment = data.get('equipment')
-            except:
-                pass
+        params = ParamParser.parse_tool_input(
+            target if isinstance(target, dict) else {"target": target, "observer_location": observer_location, "date": date, "equipment": equipment},
+            expected_params={"target": None, "observer_location": None, "date": None, "equipment": None}
+        )
         return self._skill_router.call(
             "deep-sky-observing-guide",
-            target=target,
-            observer_location=observer_location,
-            date=date,
-            equipment=equipment,
+            target=params.get("target"),
+            observer_location=params.get("observer_location"),
+            date=params.get("date"),
+            equipment=params.get("equipment"),
         )
 
     def _neo_tracker_skill(
@@ -266,29 +213,16 @@ class AgentTools:
         max_distance: float = None,
         observable_only: bool = None,
     ) -> str:
-        if isinstance(time_range, dict):
-            data = time_range
-            time_range = data.get('time_range')
-            min_size = data.get('min_size')
-            max_distance = data.get('max_distance')
-            observable_only = data.get('observable_only')
-        elif isinstance(time_range, str):
-            try:
-                if time_range.strip().startswith('{'):
-                    data = json.loads(time_range)
-                    if isinstance(data, dict):
-                        time_range = data.get('time_range')
-                        min_size = data.get('min_size')
-                        max_distance = data.get('max_distance')
-                        observable_only = data.get('observable_only')
-            except:
-                pass
+        params = ParamParser.parse_tool_input(
+            time_range if isinstance(time_range, dict) else {"time_range": time_range, "min_size": min_size, "max_distance": max_distance, "observable_only": observable_only},
+            expected_params={"time_range": None, "min_size": None, "max_distance": None, "observable_only": None}
+        )
         return self._skill_router.call(
             "neo-tracker",
-            time_range=time_range,
-            min_size=min_size,
-            max_distance=max_distance,
-            observable_only=observable_only,
+            time_range=params.get("time_range"),
+            min_size=ParamParser.safe_float(params.get("min_size"), default=None),
+            max_distance=ParamParser.safe_float(params.get("max_distance"), default=None),
+            observable_only=ParamParser.safe_bool(params.get("observable_only"), default=None),
         )
 
     def _astrophotography_calculator_skill(
@@ -300,37 +234,18 @@ class AgentTools:
         location: str = None,
         date: str = None,
     ) -> str:
-        if isinstance(target, dict):
-            data = target
-            target = data.get('target')
-            camera = data.get('camera')
-            telescope = data.get('telescope')
-            mount = data.get('mount')
-            location = data.get('location')
-            date = data.get('date')
-        elif isinstance(target, str):
-            try:
-                if target.strip().startswith('{'):
-                    # 移除可能的注释部分
-                    clean_target = target.split('#')[0].strip()
-                    data = json.loads(clean_target)
-                    if isinstance(data, dict):
-                        target = data.get('target')
-                        camera = data.get('camera')
-                        telescope = data.get('telescope')
-                        mount = data.get('mount')
-                        location = data.get('location')
-                        date = data.get('date')
-            except:
-                pass
+        params = ParamParser.parse_tool_input(
+            target if isinstance(target, dict) else {"target": target, "camera": camera, "telescope": telescope, "mount": mount, "location": location, "date": date},
+            expected_params={"target": None, "camera": None, "telescope": None, "mount": None, "location": None, "date": None}
+        )
         return self._skill_router.call(
             "astrophotography-calculator",
-            target=target,
-            camera=camera,
-            telescope=telescope,
-            mount=mount,
-            location=location,
-            date=date,
+            target=params.get("target"),
+            camera=params.get("camera"),
+            telescope=params.get("telescope"),
+            mount=params.get("mount"),
+            location=params.get("location"),
+            date=params.get("date"),
         )
 
     def _celestial_position_calculator_skill(
@@ -340,29 +255,14 @@ class AgentTools:
         location: str = None,
         output_format: str = None,
     ) -> str:
-        if isinstance(target, dict):
-            data = target
-            target = data.get('target')
-            datetime = data.get('datetime')
-            location = data.get('location')
-            output_format = data.get('output_format')
-        elif isinstance(target, str):
-            try:
-                if target.strip().startswith('{'):
-                    # 移除可能的注释部分
-                    clean_target = target.split('#')[0].strip()
-                    data = json.loads(clean_target)
-                    if isinstance(data, dict):
-                        target = data.get('target')
-                        datetime = data.get('datetime')
-                        location = data.get('location')
-                        output_format = data.get('output_format')
-            except:
-                pass
+        params = ParamParser.parse_tool_input(
+            target if isinstance(target, dict) else {"target": target, "datetime": datetime, "location": location, "output_format": output_format},
+            expected_params={"target": None, "datetime": None, "location": None, "output_format": None}
+        )
         return self._skill_router.call(
             "celestial-position-calculator",
-            target=target,
-            datetime=datetime,
-            location=location,
-            output_format=output_format,
+            target=params.get("target"),
+            datetime=params.get("datetime"),
+            location=params.get("location"),
+            output_format=params.get("output_format"),
         )

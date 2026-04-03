@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, Optional
 
 import httpx
 from logger import logger
+from core.errors import AgentError, ErrorHandler, ErrorCode
+from agent.param_parser import ParamParser
 
 MCP_SERVER_URL = "http://localhost:8001/mcp"
 
@@ -335,51 +337,22 @@ class AstronomySkillRouter:
         - location: 观测地点（城市名称或经纬度），可选；未提供时给出一般性观测建议
         - duration: 观测时段，如“整晚”“前半夜”“后半夜”
         """
-        # 兼容 ReAct 工具解析可能把城市名误塞到 date 的情况：
-        # 若 location 为空且 date 看起来不像日期，则将其视为地点。
         if not location and date:
             text = str(date).strip()
-            # 简单判断是否“像日期”：包含数字日期或典型日期关键词
             if not self._is_date_like(text):
                 location = text
                 date = None
 
         obs_date = self._normalize_date(date)
-
-        # 统一规范化地点信息，避免出现 {"location": "铁岭"} 这类结构透传到底层工具
-        display_location: Optional[str] = None
-        query_city: Optional[str] = None
+        
+        display_location = ParamParser.normalize_location(location)
+        query_city = None
         if location is not None:
-            # dict 形式：优先 location/city/adcode/citycode
             if isinstance(location, dict):
-                display_location = (
-                    location.get("location")
-                    or location.get("city")
-                    or location.get("adcode")
-                    or location.get("citycode")
-                )
                 query_city = location.get("city") or display_location
             else:
-                text = str(location).strip()
-                # 字符串恰好是 JSON 对象
-                if text.startswith("{") and text.endswith("}"):
-                    try:
-                        obj = json.loads(text)
-                        display_location = (
-                            obj.get("location")
-                            or obj.get("city")
-                            or obj.get("adcode")
-                            or obj.get("citycode")
-                        )
-                        query_city = obj.get("city") or display_location
-                    except Exception:
-                        display_location = text
-                        query_city = text
-                else:
-                    display_location = text
-                    query_city = text
+                query_city = display_location
 
-        # 1) 查询天气（如果提供了可用城市信息）
         weather_brief = ""
         if query_city:
             weather_raw = self._call_mcp_tool(
@@ -389,13 +362,11 @@ class AstronomySkillRouter:
             )
             weather_brief = self._summarize_weather(weather_raw)
 
-        # 2) 查询一周天象（用于给出当日附近的天象背景）
         weekly_events = self._call_mcp_tool(
             "get_weekly_events",
             start_date=obs_date.strftime("%Y-%m-%d"),
         )
 
-        # 3) 今晚推荐（仅当观测日期是今天时）
         tonight_best = ""
         today_str = datetime.now().strftime("%Y-%m-%d")
         if obs_date.strftime("%Y-%m-%d") == today_str:

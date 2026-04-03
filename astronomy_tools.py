@@ -11,6 +11,8 @@ from astroquery.ned import Ned
 import requests
 import json
 from config import settings
+from core.errors import AgentError, ErrorHandler, ErrorCode
+from agent.param_parser import ParamParser
 
 class AstronomyTools:
     def __init__(self):
@@ -35,69 +37,67 @@ class AstronomyTools:
         :param longitude: 观测点经度（度）
         :return: 行星位置（赤经、赤纬）
         """
-        # 检查数据是否加载
         if not self.data_loaded:
-            raise Exception("行星数据未加载，无法计算行星位置")
+            error = ErrorHandler.create_tool_error(
+                "get_planet_position",
+                "行星数据未加载，无法计算行星位置"
+            )
+            return error.to_dict()
         
-        # 处理字典格式的输入（来自LangChain agent）
-        if isinstance(planet_name, dict):
-            # 从字典中提取行星名称
-            planet_name = planet_name.get('planet_name', planet_name)
-        # 处理字符串格式的输入（来自LangChain agent，如 "planet_name='mars'" 或 '{"planet_name": "mars"}'）
-        elif isinstance(planet_name, str):
-            import re
-            import json
-            # 尝试从JSON字符串中提取行星名称
-            try:
-                # 尝试解析为JSON
-                json_data = json.loads(planet_name)
-                if isinstance(json_data, dict) and 'planet_name' in json_data:
-                    planet_name = json_data['planet_name']
-            except:
-                # 尝试从普通字符串中提取行星名称
-                match = re.search(r'planet_name=[\'"]([^\'\"]+)[\'" ]', planet_name)
-                if match:
-                    planet_name = match.group(1)
-                # 也处理没有引号的情况
-                elif '=' in planet_name:
-                    parts = planet_name.split('=')
-                    if len(parts) == 2:
-                        planet_name = parts[1].strip().strip("'\"").strip()
-        
-        # 确保行星名称是字符串
-        if not isinstance(planet_name, str):
-            planet_name = str(planet_name)
-        
-        # 检查行星名称是否有效
-        valid_planets = {'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'}
-        if planet_name.lower() not in valid_planets:
-            raise ValueError(f"无效的行星名称。有效行星: {', '.join(valid_planets)}")
-        
-        # 行星名称映射到de421.bsp中的正确名称或ID
-        planet_mapping = {
-            'mercury': 199,  # MERCURY
-            'venus': 299,    # VENUS
-            'mars': 499,     # MARS
-            'jupiter': 5,    # JUPITER BARYCENTER
-            'saturn': 6,     # SATURN BARYCENTER
-            'uranus': 7,     # URANUS BARYCENTER
-            'neptune': 8     # NEPTUNE BARYCENTER
-        }
-        
-        # 使用当前时间或指定时间
         try:
+            if isinstance(planet_name, dict):
+                params = ParamParser.parse_tool_input(
+                    planet_name,
+                    expected_params={
+                        "planet_name": None,
+                        "observation_time": None,
+                        "latitude": None,
+                        "longitude": None
+                    }
+                )
+                planet_name = params.get("planet_name")
+                observation_time = params.get("observation_time", observation_time)
+                latitude = params.get("latitude", latitude)
+                longitude = params.get("longitude", longitude)
+            elif isinstance(planet_name, str):
+                parsed = ParamParser.parse_json_string(planet_name)
+                if parsed and 'planet_name' in parsed:
+                    planet_name = parsed['planet_name']
+                    observation_time = parsed.get('observation_time', observation_time)
+                    latitude = parsed.get('latitude', latitude)
+                    longitude = parsed.get('longitude', longitude)
+            
+            if not isinstance(planet_name, str):
+                planet_name = str(planet_name)
+            
+            valid_planets = {'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'}
+            if planet_name.lower() not in valid_planets:
+                error = ErrorHandler.create_tool_error(
+                    "get_planet_position",
+                    f"无效的行星名称。有效行星: {', '.join(valid_planets)}",
+                    {"planet_name": planet_name}
+                )
+                return error.to_dict()
+            
+            planet_mapping = {
+                'mercury': 199,
+                'venus': 299,
+                'mars': 499,
+                'jupiter': 5,
+                'saturn': 6,
+                'uranus': 7,
+                'neptune': 8
+            }
+            
             from datetime import datetime
             ts = load.timescale()
             if observation_time is None:
                 t = ts.now()
             else:
-                # 处理字符串格式的时间（ISO 8601 或其他格式）
                 if isinstance(observation_time, str):
-                    # 尝试解析 ISO 8601 格式
                     try:
                         dt = datetime.fromisoformat(observation_time.replace('Z', '+00:00'))
                     except ValueError:
-                        # 尝试其他常见格式
                         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
                             try:
                                 dt = datetime.strptime(observation_time, fmt)
@@ -105,27 +105,21 @@ class AstronomyTools:
                             except ValueError:
                                 continue
                         else:
-                            # 如果都解析失败，使用当前时间
                             dt = datetime.now()
                 elif isinstance(observation_time, datetime):
                     dt = observation_time
                 else:
-                    # 其他类型，尝试转换为字符串再解析
                     dt = datetime.now()
                 
-                t = ts.utc(dt.year, dt.month, dt.day,
-                          dt.hour, dt.minute, dt.second)
+                t = ts.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
             
-            # 计算行星位置
             planet_id = planet_mapping[planet_name.lower()]
             planet = self.planets[planet_id]
             if latitude is not None and longitude is not None:
-                # 在指定地点观测
                 observer = self.earth + wgs84.latlon(latitude, longitude)
                 astrometric = observer.at(t).observe(planet)
                 ra, dec, distance = astrometric.radec()
             else:
-                # 地心观测
                 astrometric = self.earth.at(t).observe(planet)
                 ra, dec, distance = astrometric.radec()
             
@@ -135,7 +129,8 @@ class AstronomyTools:
                 'distance_au': distance.au
             }
         except Exception as e:
-            raise Exception(f"计算行星位置时出错: {e}")
+            error = ErrorHandler.handle(e, {"tool": "get_planet_position", "planet_name": planet_name})
+            return error.to_dict()
     
     def coordinate_transformation(self, ra, dec, epoch='J2000', target_system='fk5'):
         """
@@ -547,22 +542,19 @@ class AstronomyTools:
             dict：包含原始字段 + 适合观测的简要建议
         """
         try:
-            # 兼容 agent 传 dict / json 字符串
             if isinstance(city, dict):
-                extensions = city.get("extensions", extensions)
-                city = city.get("city") or city.get("adcode") or city.get("citycode")
+                params = ParamParser.parse_tool_input(
+                    city,
+                    expected_params={"city": None, "extensions": extensions}
+                )
+                city = params.get("city")
+                extensions = params.get("extensions", extensions)
             elif isinstance(city, str):
-                c = city.strip()
-                if c.startswith("{") and c.endswith("}"):
-                    try:
-                        obj = json.loads(c)
-                        if isinstance(obj, dict):
-                            extensions = obj.get("extensions", extensions)
-                            city = obj.get("city") or obj.get("adcode") or obj.get("citycode")
-                    except Exception:
-                        pass
-
-            # 检测并转换经纬度为城市名
+                parsed = ParamParser.parse_json_string(city)
+                if parsed:
+                    city = parsed.get("city") or parsed.get("adcode") or parsed.get("citycode")
+                    extensions = parsed.get("extensions", extensions)
+            
             if city and self._is_coordinates(city):
                 parts = city.split(",")
                 lon = float(parts[1].strip())
@@ -573,7 +565,11 @@ class AstronomyTools:
 
             api_key = settings.AMAP_API_KEY
             if not api_key:
-                return {"error": "AMAP_API_KEY 未配置，无法查询天气"}
+                error = ErrorHandler.create_tool_error(
+                    "get_weather",
+                    "AMAP_API_KEY 未配置，无法查询天气"
+                )
+                return error.to_dict()
 
             if not city:
                 city = settings.AMAP_DEFAULT_CITY
@@ -590,7 +586,12 @@ class AstronomyTools:
             data = resp.json()
 
             if str(data.get("status")) != "1":
-                return {"error": data.get("info") or "高德天气查询失败", "raw": data}
+                error = ErrorHandler.create_tool_error(
+                    "get_weather",
+                    data.get("info") or "高德天气查询失败",
+                    {"raw": data}
+                )
+                return error.to_dict()
 
             lives = data.get("lives") or []
             forecasts = data.get("forecasts") or []
@@ -601,7 +602,6 @@ class AstronomyTools:
                 "raw": data,
             }
 
-            # 实时
             if lives:
                 live = lives[0]
                 weather = live.get("weather")
@@ -618,7 +618,6 @@ class AstronomyTools:
                     "reporttime": reporttime,
                 }
 
-                # 面向观测的粗略建议（不做过度承诺）
                 tips = []
                 if weather and any(k in weather for k in ["雨", "雪", "雷", "雾", "霾"]):
                     tips.append("天气现象不佳（雨雪雷雾霾等），不建议深空观测；可改观测月亮/行星或室内学习。")
@@ -633,7 +632,6 @@ class AstronomyTools:
                         pass
                 if windpower is not None:
                     try:
-                        # windpower 常见为字符串数字
                         wp = float(str(windpower).replace("级", "").strip())
                         if wp >= 4:
                             tips.append("风力偏大，三脚架需加重，长曝光拍摄成功率下降。")
@@ -641,13 +639,13 @@ class AstronomyTools:
                         pass
                 result["observing_tips"] = tips
 
-            # 预报（all）
             if forecasts:
                 result["forecast"] = forecasts[0]
 
             return result
         except Exception as e:
-            return {"error": f"获取天气信息时出错: {e}"}
+            error = ErrorHandler.handle(e, {"tool": "get_weather", "city": city})
+            return error.to_dict()
 
     def web_search(self, query: str, max_results: int = 5):
         """
