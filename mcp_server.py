@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # streamable_mcp_server.py - Streamable HTTP MCP服务器
 # 使用FastMCP框架，完整支持标准MCP协议和HTTP传输
 
@@ -11,16 +12,44 @@ from astronomy_tools import AstronomyTools, AstronomyEventsPredictor
 
 # ========== 初始化工具类（服务器启动时只初始化一次） ==========
 print("🚀 正在初始化天文工具...")
+tools = None
+events_predictor = None
+
 try:
     tools = AstronomyTools()
-    events_predictor = AstronomyEventsPredictor()
-    print("✅ 天文工具初始化完成")
+    print("✅ AstronomyTools 初始化完成")
 except Exception as e:
-    print(f"❌ 初始化失败: {e}")
+    print(f"⚠️  AstronomyTools 初始化失败: {e}")
+    print("   部分功能可能无法使用")
+
+try:
+    events_predictor = AstronomyEventsPredictor()
+    print("✅ AstronomyEventsPredictor 初始化完成")
+except Exception as e:
+    print(f"⚠️  AstronomyEventsPredictor 初始化失败: {e}")
+    print("   天象预测功能可能无法使用")
+
+if tools is None and events_predictor is None:
+    print("❌ 所有工具初始化失败，服务器无法启动")
     sys.exit(1)
+
+print("✅ 天文工具初始化完成（部分功能可能受限）")
 
 # ========== 创建FastMCP服务器实例 ==========
 mcp = FastMCP(name="Astronomy Server")
+
+# ========== 辅助函数 ==========
+def check_tools_available():
+    """检查工具是否可用"""
+    if tools is None:
+        return False, "AstronomyTools 未初始化，请检查星历数据文件 de421.bsp 是否存在"
+    return True, None
+
+def check_events_predictor_available():
+    """检查天象预测器是否可用"""
+    if events_predictor is None:
+        return False, "AstronomyEventsPredictor 未初始化，请检查星历数据文件 de421.bsp 是否存在"
+    return True, None
 
 # ========== 注册所有工具 ==========
 
@@ -36,11 +65,15 @@ def get_planet_position(planet_name: str, observation_time: str = None,
         latitude: 观测点纬度，可选
         longitude: 观测点经度，可选
     """
+    available, error_msg = check_tools_available()
+    if not available:
+        return json.dumps({"error": error_msg}, ensure_ascii=False)
+    
     try:
         result = tools.get_planet_position(planet_name, observation_time, latitude, longitude)
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5") -> str:
@@ -53,10 +86,14 @@ def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", targe
         epoch: 历元，默认为J2000
         target_system: 目标坐标系，默认为fk5
     """
+    available, error_msg = check_tools_available()
+    if not available:
+        return json.dumps({"error": error_msg}, ensure_ascii=False)
+    
     try:
-        return tools.coordinate_transformation(ra, dec, epoch, target_system)
+        return json.dumps(tools.coordinate_transformation(ra, dec, epoch, target_system), ensure_ascii=False)
     except Exception as e:
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def get_rise_set_times(body_name: str, latitude: float, longitude: float, date: str = None) -> str:
@@ -178,11 +215,15 @@ def get_weather(city: str = None, extensions: str = "base") -> str:
         city: 城市名称或城市 adcode（可选）
         extensions: "base"(实时) 或 "all"(预报)
     """
+    available, error_msg = check_tools_available()
+    if not available:
+        return json.dumps({"error": error_msg}, ensure_ascii=False)
+    
     try:
         result = tools.get_weather(city=city, extensions=extensions)
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def web_search(query: str, max_results: int = 5) -> str:
@@ -193,21 +234,29 @@ def web_search(query: str, max_results: int = 5) -> str:
         query: 搜索查询内容
         max_results: 最大结果数，默认5
     """
+    available, error_msg = check_tools_available()
+    if not available:
+        return json.dumps({"error": error_msg}, ensure_ascii=False)
+    
     try:
         result = tools.web_search(query=query, max_results=max_results)
         return json.dumps(result, ensure_ascii=False)
     except Exception as e:
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def get_tonight_best() -> str:
     """
     获取今晚最佳观测目标
     """
+    available, error_msg = check_events_predictor_available()
+    if not available:
+        return json.dumps({"error": error_msg}, ensure_ascii=False)
+    
     try:
         return events_predictor.get_tonight_best()
     except Exception as e:
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def get_weekly_events(start_date: Optional[str] = None) -> str:
@@ -265,13 +314,17 @@ def get_weekly_events(start_date: Optional[str] = None) -> str:
                     processed_start_date = None
 
         # 调用业务逻辑函数
+        available, error_msg = check_events_predictor_available()
+        if not available:
+            return json.dumps({"error": error_msg}, ensure_ascii=False)
+        
         result = events_predictor.get_weekly_events(processed_start_date)
         return result
     except Exception as e:
         import traceback
         print(f"错误详情: {e}")
         print(traceback.format_exc())
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
 def get_monthly_events(year: Optional[Union[int, str, dict]] = None, 
@@ -350,13 +403,17 @@ def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
                         processed_month = None
 
         # 调用业务逻辑函数
+        available, error_msg = check_events_predictor_available()
+        if not available:
+            return json.dumps({"error": error_msg}, ensure_ascii=False)
+        
         result = events_predictor.get_monthly_events(processed_year, processed_month)
         return result
     except Exception as e:
         import traceback
         print(f"错误详情: {e}")
         print(traceback.format_exc())
-        return f"错误：{str(e)}"
+        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 # ========== 资源端点 ==========
 
