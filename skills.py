@@ -10,6 +10,7 @@ import httpx
 from logger import logger
 from core.errors import AgentError, ErrorHandler, ErrorCode
 from agent.param_parser import ParamParser
+from utils.helpers import parse_date
 
 MCP_SERVER_URL = "http://localhost:8001/mcp"
 
@@ -343,7 +344,7 @@ class AstronomySkillRouter:
                 location = text
                 date = None
 
-        obs_date = self._normalize_date(date)
+        obs_date = parse_date(date)
         
         display_location = ParamParser.normalize_location(location)
         query_city = None
@@ -419,7 +420,7 @@ class AstronomySkillRouter:
         - event_type 暂时仅用于在文案层提示筛选意图，不做严格机器过滤
         """
         if start_date:
-            start_dt = self._normalize_date(start_date)
+            start_dt = parse_date(start_date)
         else:
             start_dt = datetime.now()
 
@@ -431,7 +432,7 @@ class AstronomySkillRouter:
         end_dt: Optional[datetime] = None
         if end_date:
             try:
-                end_dt = self._normalize_date(end_date)
+                end_dt = parse_date(end_date)
                 # 检查结束年份是否为2026年
                 if end_dt.year != 2026:
                     end_dt = end_dt.replace(year=2026)
@@ -515,7 +516,7 @@ class AstronomySkillRouter:
         if not target:
             return "深空观测指导技能需要提供目标名称（target），例如“M31”或“猎户座大星云”。"
 
-        obs_date = self._normalize_date(date) if date else datetime.now()
+        obs_date = parse_date(date) if date else datetime.now()
 
         # 1) 查询天体基本信息
         obj_info_raw = self._call_mcp_tool(
@@ -719,7 +720,7 @@ class AstronomySkillRouter:
         计算天文摄影参数。
         当前实现主要为经验规则型计算，不依赖 MCP 工具。
         """
-        obs_date = self._normalize_date(date) if date else datetime.now()
+        obs_date = parse_date(date) if date else datetime.now()
 
         lines = [
             f"📷 天文摄影参数建议",
@@ -777,7 +778,7 @@ class AstronomySkillRouter:
 
         # 导入datetime模块作为别名，避免与参数名冲突
         import datetime as dt_mod
-        obs_time = self._normalize_datetime(datetime) if datetime else dt_mod.datetime.now()
+        obs_time = parse_date(datetime) if datetime else dt_mod.datetime.now()
 
         if location:
             lat, lon = self._parse_location(location)
@@ -810,35 +811,6 @@ class AstronomySkillRouter:
         return header + "\n原始计算结果（来自底层工具）：\n" + body
 
     # ===== 辅助方法 =====
-
-    def _normalize_date(self, date_str: Optional[str]) -> datetime:
-        """将“今天/明天/2026-03-14”等统一为 datetime.date。"""
-        today = datetime.now()
-        if not date_str:
-            return today
-        text = str(date_str).strip()
-        if text in ("今天", "今日", "today"):
-            return today
-        if text in ("明天", "次日", "tomorrow"):
-            return today + timedelta(days=1)
-        # 尝试从文本中提取类似 YYYY-MM-DD 或 YYYY/MM/DD 的日期片段，
-        # 以兼容诸如“2026-08-01 天象预报范围：...”之类的复合字符串。
-        m = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", text)
-        if m:
-            candidate = m.group(1).replace("/", "-")
-            try:
-                return datetime.strptime(candidate, "%Y-%m-%d")
-            except Exception:
-                pass
-        # 兜底：直接尝试常见格式解析
-        for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
-            try:
-                return datetime.strptime(text, fmt)
-            except Exception:
-                continue
-        # 最后兜底当前日期
-        return today
-
     def _is_date_like(self, text: str) -> bool:
         """判断一个字符串是否“像日期”，用于纠正常被误塞入 date 的地点名称。"""
         t = text.strip()
@@ -849,19 +821,6 @@ class AstronomySkillRouter:
         if re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", t):
             return True
         return False
-
-    def _normalize_datetime(self, dt_str: str) -> datetime:
-        """尽量把时间字符串解析成 datetime，失败则使用当前时间。"""
-        if not dt_str:
-            return datetime.now()
-        text = str(dt_str).strip()
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(text, fmt)
-            except Exception:
-                continue
-        return datetime.now()
-
     def _parse_location(self, location: str) -> tuple[Optional[float], Optional[float]]:
         """
         解析 location 为 (lat, lon)。

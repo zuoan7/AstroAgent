@@ -9,6 +9,7 @@ import json
 from typing import Optional, Union
 from fastmcp import FastMCP
 from astronomy import AstronomyTools, AstronomyEventsPredictor
+from agent.param_parser import ParamParser
 
 # ========== 初始化工具类（服务器启动时只初始化一次） ==========
 print("🚀 正在初始化天文工具...")
@@ -270,50 +271,15 @@ def get_weekly_events(start_date: Optional[str] = None) -> str:
             - JSON字符串: '{"start_date": "2026-03-09"}' 或 '{}'
     """
     try:
-        processed_start_date = start_date
-
-        # 处理字符串参数
-        if isinstance(start_date, str):
-            # 检查是否是JSON格式
-            if start_date.strip().startswith('{'):
-                try:
-                    data = json.loads(start_date)
-                    if isinstance(data, dict):
-                        # 处理 {} 或 {"start_date": null} 的情况
-                        if not data:  # 空字典 {}
-                            processed_start_date = None
-                        elif 'start_date' in data:
-                            if data['start_date'] is None:
-                                processed_start_date = None
-                            else:
-                                processed_start_date = data['start_date']
-                except json.JSONDecodeError:
-                    # 不是有效的JSON，可能是普通日期字符串
-                    # 检查是否是有效的日期格式
-                    if start_date.strip() and start_date != "null":
-                        # 验证日期格式
-                        try:
-                            from datetime import datetime
-                            datetime.strptime(start_date, "%Y-%m-%d")
-                            processed_start_date = start_date
-                        except ValueError:
-                            # 无效的日期格式，使用None
-                            processed_start_date = None
-                    else:
-                        processed_start_date = None
-            elif start_date == "" or start_date == "null":
-                processed_start_date = None
-            else:
-                # 普通字符串，验证日期格式
-                try:
-                    from datetime import datetime
-                    datetime.strptime(start_date, "%Y-%m-%d")
-                    processed_start_date = start_date
-                except ValueError:
-                    # 无效的日期格式，使用None
-                    processed_start_date = None
-
-        # 调用业务逻辑函数
+        params = ParamParser.parse_tool_input(
+            start_date,
+            expected_params={"start_date": None}
+        )
+        processed_start_date = ParamParser.normalize_date(params.get("start_date"))
+        
+        if processed_start_date:
+            processed_start_date = processed_start_date.strftime("%Y-%m-%d")
+        
         available, error_msg = check_events_predictor_available()
         if not available:
             return json.dumps({"error": error_msg}, ensure_ascii=False)
@@ -341,68 +307,14 @@ def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
         month: 月份，可以是整数、字符串或None
     """
     try:
-        # --- 智能参数解析层 ---
-        processed_year = None
-        processed_month = None
-
-        # 1. 解析 year 参数
-        if year is None:
-            processed_year = None
-        elif isinstance(year, int):
-            processed_year = year
-        elif isinstance(year, dict):
-            processed_year = year.get('year')
-            # 如果 month 还没处理，尝试从同一字典中获取
-            if month is None and 'month' in year:
-                processed_month = year.get('month')
-        elif isinstance(year, str):
-            # 检查是否是JSON格式
-            if year.strip().startswith('{'):
-                try:
-                    data = json.loads(year)
-                    if isinstance(data, dict):
-                        processed_year = data.get('year')
-                        if month is None and 'month' in data:
-                            processed_month = data.get('month')
-                except json.JSONDecodeError:
-                    # 不是有效的JSON，尝试直接转为整数
-                    try:
-                        processed_year = int(year)
-                    except ValueError:
-                        processed_year = None
-            else:
-                # 普通字符串，尝试转为整数
-                try:
-                    processed_year = int(year)
-                except ValueError:
-                    processed_year = None
-
-        # 2. 解析 month 参数 (如果尚未被解析)
-        if processed_month is None:
-            if month is None:
-                processed_month = None
-            elif isinstance(month, int):
-                processed_month = month
-            elif isinstance(month, dict):
-                processed_month = month.get('month')
-            elif isinstance(month, str):
-                if month.strip().startswith('{'):
-                    try:
-                        data = json.loads(month)
-                        if isinstance(data, dict):
-                            processed_month = data.get('month')
-                    except json.JSONDecodeError:
-                        try:
-                            processed_month = int(month)
-                        except ValueError:
-                            processed_month = None
-                else:
-                    try:
-                        processed_month = int(month)
-                    except ValueError:
-                        processed_month = None
-
-        # 调用业务逻辑函数
+        params = ParamParser.parse_tool_input(
+            {"year": year, "month": month},
+            expected_params={"year": None, "month": None}
+        )
+        
+        processed_year = ParamParser.safe_int(params.get("year"), default=None)
+        processed_month = ParamParser.safe_int(params.get("month"), default=None)
+        
         available, error_msg = check_events_predictor_available()
         if not available:
             return json.dumps({"error": error_msg}, ensure_ascii=False)

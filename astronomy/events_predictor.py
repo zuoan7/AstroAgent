@@ -11,6 +11,7 @@ from typing import Optional
 from skyfield import almanac
 from skyfield.api import wgs84
 from .base import EphemerisManager
+from agent.param_parser import ParamParser
 from utils.helpers import (
     parse_date,
     get_direction_from_azimuth,
@@ -320,30 +321,20 @@ class EventsPredictor:
         try:
             now = datetime.now()
             
-            # 解析年份参数
-            if year is None:
-                year_val = now.year
-            elif isinstance(year, dict):
-                year_val = year.get('year', now.year)
-                month_val = year.get('month', now.month)
-                return self.get_monthly_events(year_val, month_val)
-            else:
-                try:
-                    if isinstance(year, str):
-                        if year.startswith('{') and year.endswith('}'):
-                            data = json.loads(year)
-                            year_val = data.get('year', now.year)
-                            month_val = data.get('month', now.month)
-                            return self.get_monthly_events(year_val, month_val)
-                        else:
-                            year_val = int(year)
-                    else:
-                        year_val = int(year)
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    year_val = now.year
+            # 使用 ParamParser 统一解析参数
+            now = datetime.now()
             
-            # 解析月份参数
-            if month is None:
+            # 解析年份和月份参数
+            params = ParamParser.parse_tool_input(
+                {"year": year, "month": month},
+                expected_params={"year": None, "month": None}
+            )
+            
+            year_val = ParamParser.safe_int(params.get("year"), default=now.year)
+            month_val = ParamParser.safe_int(params.get("month"), default=None)
+            
+            # 如果没有指定月份，使用当前月份的下一月
+            if month_val is None:
                 if year_val == now.year:
                     month_val = now.month + 1
                     if month_val > 12:
@@ -351,20 +342,6 @@ class EventsPredictor:
                         year_val += 1
                 else:
                     month_val = 1
-            elif isinstance(month, dict):
-                month_val = month.get('month', now.month)
-            else:
-                try:
-                    if isinstance(month, str):
-                        if month.startswith('{') and month.endswith('}'):
-                            data = json.loads(month)
-                            month_val = data.get('month', now.month)
-                        else:
-                            month_val = int(month)
-                    else:
-                        month_val = int(month)
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    month_val = now.month
             
             # 确保月份有效
             if month_val < 1 or month_val > 12:

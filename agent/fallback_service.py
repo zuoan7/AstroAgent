@@ -2,6 +2,7 @@ import json
 import re
 from typing import Any, Generator, Optional
 from logger import logger
+from utils.helpers import extract_image_url
 
 
 class FallbackService:
@@ -79,5 +80,4 @@ class FallbackService:
             return f"抱歉，处理搜索结果时出现问题。请稍后再试。"
 
     def extract_image_url(self, text: str) -> Optional[str]:
-        m = re.search(r"(https?://\S+\.(?:png|jpg|jpeg|webp))", text, re.IGNORECASE)
-        return m.group(1) if m else None
+        return extract_image_url(text)

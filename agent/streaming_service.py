@@ -4,6 +4,7 @@ import time
 import uuid
 from typing import Any, AsyncGenerator, Dict, Generator, Optional
 from logger import logger
+from utils.helpers import extract_image_url
 
 
 class StreamingService:
@@ -417,7 +418,7 @@ class StreamingService:
                     if not extracted_url and self._fallback_service:
                         extracted_url = self._fallback_service.extract_image_url(tool_output_str)
                     elif not extracted_url:
-                        extracted_url = self._extract_image_url_fallback(tool_output_str)
+                        extracted_url = extract_image_url(tool_output_str)
 
                     if extracted_url:
                         yield {
@@ -489,8 +490,3 @@ class StreamingService:
             logger.info(f"[{request_id}] ✅ 事件流完成，响应长度：{len(final_response)} 字符")
         finally:
             self._current_request_id = None
-
-    def _extract_image_url_fallback(self, text: str) -> Optional[str]:
-        import re
-        m = re.search(r"(https?://\S+\.(?:png|jpg|jpeg|webp))", text, re.IGNORECASE)
-        return m.group(1) if m else None

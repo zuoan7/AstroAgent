@@ -355,3 +355,21 @@ def get_direction_from_azimuth(az_degrees: float) -> str:
         return "南"
     else:
         return "西"
+
+
+def extract_image_url(text: str) -> Optional[str]:
+    """
+    从文本中提取图片URL
+    
+    Args:
+        text: 包含URL的文本
+        
+    Returns:
+        图片URL或None
+    """
+    if not text or not isinstance(text, str):
+        return None
+    
+    pattern = r"(https?://\S+\.(?:png|jpg|jpeg|webp))"
+    match = re.search(pattern, text, re.IGNORECASE)
+    return match.group(1) if match else None
