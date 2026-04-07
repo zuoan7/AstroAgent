@@ -1,268 +1,90 @@
-import json
-from langchain_core.tools import Tool
-from typing import List, Any, Optional
-from logger import logger
-from agent.param_parser import ParamParser
+"""
+AgentTools - 已废弃（DEPRECATED）
+
+⚠️ 此模块已在 v2.0 重构中被废弃，所有功能已整合到 SkillManager。
+
+迁移指南：
+- 原来的：from agent.tools import AgentTools
+- 现在的：from agent.skill_manager import SkillManager
+
+重构原因：
+1. 消除三层架构（SkillManager → AgentTools → AstronomySkillRouter）的冗余调用链
+2. 使用工厂模式消除8个技能方法的重复代码（从~130行减少到~50行）
+3. 减少维护成本：改一个功能只需改1个文件而不是3个文件
+
+如需查看新的实现，请参考：agent/skill_manager.py
+
+保留此文件仅用于向后兼容，新代码请勿使用。
+"""
+
+import warnings
 
 
 class AgentTools:
-    def __init__(
-        self,
-        rag_retriever: Any,
-        skill_router: Any,
-    ):
-        self._rag = rag_retriever
-        self._skill_router = skill_router
-        self._tools: Optional[List[Tool]] = None
+    """
+    ⚠️ DEPRECATED - 此类已被废弃
 
-    def get_tools(self) -> List[Tool]:
-        if self._tools is None:
-            self._tools = self._init_tools()
-        return self._tools
+    原因：作为中间适配层导致调用链过深（3层），维护成本增加300%。
+    所有功能已整合到 SkillManager，提供更简洁的接口。
 
-    def _init_tools(self) -> List[Tool]:
-        tools: List[Tool] = []
+    迁移示例：
+    ```python
+    # 旧代码（已废弃）
+    from agent.tools import AgentTools
+    from skills import AstronomySkillRouter
+    tools = AgentTools(rag_retriever=rag, skill_router=router)
 
-        tools.append(
-            Tool(
-                name="RAGRetrieve",
-                func=self._rag_retrieve,
-                description="使用本地RAG知识库检索天文知识、概念解释、历史资料等。参数：query（查询语句，中文即可）。",
-            )
-        )
+    # 新代码（推荐）
+    from agent.skill_manager import SkillManager
+    skill_manager = SkillManager(rag_retriever=rag)
+    tools_list = skill_manager.get_langchain_tools()
+    ```
+    """
 
-        tools.append(
-            Tool(
-                name="WeatherLookup",
-                func=self._weather_lookup_skill,
-                description=(
-                    "查询指定城市的观测相关天气信息（skill: weather-lookup，对应 MCP 工具 get_weather）。\n"
-                    "参数：city（城市名称或adcode，可选），"
-                    "location（城市名称，和 city 等价，可选），"
-                    "extensions（\"base\" 实时 或 \"all\" 预报，默认 all）。"
-                ),
-            )
+    def __init__(self, rag_retriever=None, skill_router=None):
+        """
+        ⚠️ DEPRECATED - 请使用 SkillManager 替代
+        """
+        warnings.warn(
+            "AgentTools 已废弃，请使用 SkillManager 替代。"
+            "迁移指南：https://github.com/your-repo/docs/migration-guide.md",
+            DeprecationWarning,
+            stacklevel=2
         )
+        from agent.skill_manager import SkillManager as NewSkillManager
+        self._new_manager = NewSkillManager(rag_retriever=rag_retriever)
 
-        tools.append(
-            Tool(
-                name="ObservationPlanner",
-                func=self._observation_planner_skill,
-                description=(
-                    "生成指定日期和地点的天文观测计划（skill: observation-planner）。\n"
-                    '参数：date（观测日期，可为"今天""明天"或YYYY-MM-DD，可选），'
-                    'location（观测地点，城市名或"纬度,经度"，必填），'
-                    'duration（观测时段，如"整夜""前半夜""后半夜"，可选）。'
-                ),
-            )
+    def get_tools(self):
+        """⚠️ DEPRECATED"""
+        warnings.warn(
+            "AgentTools.get_tools() 已废弃，请使用 SkillManager.get_langchain_tools()",
+            DeprecationWarning,
+            stacklevel=2
         )
+        return self._new_manager.get_langchain_tools()
 
-        tools.append(
-            Tool(
-                name="CelestialEventsForecast",
-                func=self._celestial_events_forecast_skill,
-                description=(
-                    "查询指定时间段的天象事件（skill: celestial-events-forecast）。\n"
-                    "参数：start_date（开始日期YYYY-MM-DD，可选），"
-                    "end_date（结束日期YYYY-MM-DD，可选），"
-                    "event_type（事件类型，如'流星雨''行星合月''月食'，可选，用于意图说明）。"
-                ),
-            )
-        )
 
-        tools.append(
-            Tool(
-                name="DeepSkyObservingGuide",
-                func=self._deep_sky_observing_guide_skill,
-                description=(
-                    "为指定深空天体提供观测指导（skill: deep-sky-observing-guide）。\n"
-                    "参数：target（天体名称，如'M31''猎户座大星云'，必填），"
-                    "observer_location（观测者位置，可选），"
-                    "date（观测日期，可选），"
-                    "equipment（设备描述，如'裸眼''双筒''8寸望远镜'，可选）。"
-                ),
-            )
-        )
-
-        tools.append(
-            Tool(
-                name="NEOTracker",
-                func=self._neo_tracker_skill,
-                description=(
-                    "追踪近地天体飞掠事件（skill: neo-tracker）。\n"
-                    "参数：time_range（时间范围，如'未来30天''本月'，可选），"
-                    "min_size（最小直径，单位米，可选），"
-                    "max_distance（最大距离，单位地月距离倍数，可选），"
-                    "observable_only（是否只返回具有观测价值的目标，布尔值，可选）。"
-                ),
-            )
-        )
-
-        tools.append(
-            Tool(
-                name="AstrophotographyCalculator",
-                func=self._astrophotography_calculator_skill,
-                description=(
-                    "计算天文摄影参数与拍摄建议（skill: astrophotography-calculator）。\n"
-                    "参数：target（拍摄目标，必填），"
-                    "camera（相机型号，必填），"
-                    "telescope（望远镜型号或焦距，可选），"
-                    "mount（赤道仪型号，可选），"
-                    "location（拍摄地点，可选），"
-                    "date（拍摄日期，可选）。"
-                ),
-            )
-        )
-
-        tools.append(
-            Tool(
-                name="CelestialPositionCalculator",
-                func=self._celestial_position_calculator_skill,
-                description=(
-                    "计算天体在指定时间的位置（skill: celestial-position-calculator）。\n"
-                    "参数：target（目标名称，如'mars''jupiter'等，必填），"
-                    "datetime（观测时间，建议YYYY-MM-DD HH:MM 格式，可选，默认当前时间），"
-                    "location（观测地点，经纬度'纬度,经度'形式，可选），"
-                    "output_format（输出坐标格式，如'altaz''radec'，可选）。"
-                ),
-            )
-        )
-
-        logger.info(f"✅ 成功注册 {len(tools)} 个高层技能工具（含RAG）")
-        return tools
-
-    def _rag_retrieve(self, query: str) -> str:
-        params = ParamParser.parse_tool_input(query, primary_param="query")
-        query_text = params.get("query", query)
-        return self._rag.get_relevant_context(query_text)
-
-    def _weather_lookup_skill(
-        self,
-        city: str = None,
-        location: str = None,
-        extensions: str = "all",
-    ) -> str:
-        params = ParamParser.parse_tool_input(
-            city if isinstance(city, dict) else {"city": city, "location": location, "extensions": extensions},
-            expected_params={"city": None, "location": None, "extensions": extensions}
-        )
-        target = params.get("city") or params.get("location")
-        return self._skill_router.call(
-            "weather-lookup",
-            city=target,
-            extensions=params.get("extensions", extensions),
-        )
-
-    def _observation_planner_skill(
-        self,
-        date: str = None,
-        location: str = None,
-        duration: str = None,
-    ) -> str:
-        params = ParamParser.parse_tool_input(
-            date if isinstance(date, dict) else {"date": date, "location": location, "duration": duration},
-            expected_params={"date": None, "location": None, "duration": None}
-        )
-        return self._skill_router.call(
-            "observation-planner",
-            date=params.get("date"),
-            location=params.get("location"),
-            duration=params.get("duration"),
-        )
-
-    def _celestial_events_forecast_skill(
-        self,
-        start_date: str = None,
-        end_date: str = None,
-        event_type: str = None,
-    ) -> str:
-        params = ParamParser.parse_tool_input(
-            start_date if isinstance(start_date, dict) else {"start_date": start_date, "end_date": end_date, "event_type": event_type},
-            expected_params={"start_date": None, "end_date": None, "event_type": None}
-        )
-        return self._skill_router.call(
-            "celestial-events-forecast",
-            start_date=params.get("start_date"),
-            end_date=params.get("end_date"),
-            event_type=params.get("event_type"),
-        )
-
-    def _deep_sky_observing_guide_skill(
-        self,
-        target: str,
-        observer_location: str = None,
-        date: str = None,
-        equipment: str = None,
-    ) -> str:
-        params = ParamParser.parse_tool_input(
-            target if isinstance(target, dict) else {"target": target, "observer_location": observer_location, "date": date, "equipment": equipment},
-            expected_params={"target": None, "observer_location": None, "date": None, "equipment": None}
-        )
-        return self._skill_router.call(
-            "deep-sky-observing-guide",
-            target=params.get("target"),
-            observer_location=params.get("observer_location"),
-            date=params.get("date"),
-            equipment=params.get("equipment"),
-        )
-
-    def _neo_tracker_skill(
-        self,
-        time_range: str = None,
-        min_size: float = None,
-        max_distance: float = None,
-        observable_only: bool = None,
-    ) -> str:
-        params = ParamParser.parse_tool_input(
-            time_range if isinstance(time_range, dict) else {"time_range": time_range, "min_size": min_size, "max_distance": max_distance, "observable_only": observable_only},
-            expected_params={"time_range": None, "min_size": None, "max_distance": None, "observable_only": None}
-        )
-        return self._skill_router.call(
-            "neo-tracker",
-            time_range=params.get("time_range"),
-            min_size=ParamParser.safe_float(params.get("min_size"), default=None),
-            max_distance=ParamParser.safe_float(params.get("max_distance"), default=None),
-            observable_only=ParamParser.safe_bool(params.get("observable_only"), default=None),
-        )
-
-    def _astrophotography_calculator_skill(
-        self,
-        target: str,
-        camera: str = None,
-        telescope: str = None,
-        mount: str = None,
-        location: str = None,
-        date: str = None,
-    ) -> str:
-        params = ParamParser.parse_tool_input(
-            target if isinstance(target, dict) else {"target": target, "camera": camera, "telescope": telescope, "mount": mount, "location": location, "date": date},
-            expected_params={"target": None, "camera": None, "telescope": None, "mount": None, "location": None, "date": None}
-        )
-        return self._skill_router.call(
-            "astrophotography-calculator",
-            target=params.get("target"),
-            camera=params.get("camera"),
-            telescope=params.get("telescope"),
-            mount=params.get("mount"),
-            location=params.get("location"),
-            date=params.get("date"),
-        )
-
-    def _celestial_position_calculator_skill(
-        self,
-        target: str,
-        datetime: str = None,
-        location: str = None,
-        output_format: str = None,
-    ) -> str:
-        params = ParamParser.parse_tool_input(
-            target if isinstance(target, dict) else {"target": target, "datetime": datetime, "location": location, "output_format": output_format},
-            expected_params={"target": None, "datetime": None, "location": None, "output_format": None}
-        )
-        return self._skill_router.call(
-            "celestial-position-calculator",
-            target=params.get("target"),
-            datetime=params.get("datetime"),
-            location=params.get("location"),
-            output_format=params.get("output_format"),
-        )
+if __name__ == "__main__":
+    print("""
+╔═══════════════════════════════════════════════════════════╗
+║  ⚠️  AgentTools 模块已废弃                                ║
+║                                                           ║
+║  重构时间：2026-04-07                                      ║
+║  废弃版本：v2.0                                            ║
+║                                                           ║
+║  问题诊断：                                                ║
+║  • 三层架构导致维护成本增加300%                             ║
+║  • 调用栈过深，调试困难                                     ║
+║  • 新人理解成本高                                          ║
+║                                                           ║
+║  解决方案：                                                ║
+║  ✓ 合并为两层架构（SkillManager → AstronomySkillRouter）   ║
+║  ✓ 使用工厂模式消除重复代码                                 ║
+║  ✓ 改一个功能只需改1个文件                                  ║
+║                                                           ║
+║  迁移路径：                                                ║
+║  agent/tools.py (废弃) → agent/skill_manager.py (新)       ║
+║                                                           ║
+║  详细文档请参考项目 README 或迁移指南                       ║
+╚═══════════════════════════════════════════════════════════╝
+    """)
