@@ -8,7 +8,7 @@ import sys
 import json
 from typing import Optional, Union
 from fastmcp import FastMCP
-from astronomy_tools import AstronomyTools, AstronomyEventsPredictor
+from astronomy import AstronomyTools, AstronomyEventsPredictor
 
 # ========== 初始化工具类（服务器启动时只初始化一次） ==========
 print("🚀 正在初始化天文工具...")
