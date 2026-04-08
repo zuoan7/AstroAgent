@@ -1,0 +1,37 @@
+{
+  "report_info": {
+    "timestamp": "2026-04-08 16:47:15",
+    "project": "AstroAgent",
+    "version": "1.0.0"
+  },
+  "summary": {
+    "total_suites": 3,
+    "passed_suites": 3,
+    "failed_suites": 0,
+    "total_duration_sec": 20.58,
+    "pass_rate": "100.0%"
+  },
+  "suites": [
+    {
+      "name": "集成测试",
+      "command": "/usr/bin/python3 -m pytest tests/integration/ -v --tb=short --junitxml=/root/AstroAgent/test_reports/integration_junit.xml --cov=src --cov-report=xml:/root/AstroAgent/test_reports/integration_coverage.xml --cov-report=term-missing -x",
+      "success": true,
+      "return_code": 0,
+      "duration_sec": 3.41
+    },
+    {
+      "name": "性能测试",
+      "command": "/usr/bin/python3 -m pytest tests/performance/ -v --tb=short --junitxml=/root/AstroAgent/test_reports/performance_junit.xml -x",
+      "success": true,
+      "return_code": 0,
+      "duration_sec": 12.72
+    },
+    {
+      "name": "边界测试",
+      "command": "/usr/bin/python3 -m pytest tests/boundary/ -v --tb=short --junitxml=/root/AstroAgent/test_reports/boundary_junit.xml --cov=src --cov-report=xml:/root/AstroAgent/test_reports/boundary_coverage.xml --cov-report=term-missing -x",
+      "success": true,
+      "return_code": 0,
+      "duration_sec": 4.45
+    }
+  ]
+}

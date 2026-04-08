@@ -4,7 +4,7 @@
 通过自然语言直接测试各个技能的使用效果
 """
 
-from agent import AstroAgent
+from src.agent import AstroAgent
 
 
 def test_agent_skills():

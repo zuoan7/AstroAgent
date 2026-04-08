@@ -15,7 +15,7 @@ from src.core.logger import logger
 
 
 class AstroAgent:
-    def __init__(self, user_id: str = None):
+    def __init__(self, user_id: Optional[str] = None):
         self.user_id = user_id or settings.DEFAULT_USER_ID
 
         if not settings.DASHSCOPE_API_KEY:

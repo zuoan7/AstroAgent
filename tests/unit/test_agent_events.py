@@ -3,7 +3,7 @@
 测试agent的天象预测工具
 """
 
-from agent import AstroAgent
+from src.agent import AstroAgent
 
 def test_agent_events():
     """测试agent的天象预测工具"""

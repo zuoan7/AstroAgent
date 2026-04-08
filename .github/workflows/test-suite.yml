@@ -1,0 +1,114 @@
+name: AstroAgent Test Suite
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run Integration Tests
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
+          AMAP_API_KEY: ${{ secrets.AMAP_API_KEY }}
+        run: |
+          python -m pytest tests/integration/ -v \
+            --tb=short \
+            --junitxml=test_reports/integration_junit.xml \
+            --cov=src \
+            --cov-report=xml:test_reports/integration_coverage.xml \
+            --cov-report=term-missing
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: test_reports/
+
+  performance-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run Performance Tests
+        run: |
+          python -m pytest tests/performance/ -v \
+            --tb=short \
+            --junitxml=test_reports/performance_junit.xml
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-results
+          path: test_reports/
+
+  boundary-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run Boundary Tests
+        run: |
+          python -m pytest tests/boundary/ -v \
+            --tb=short \
+            --junitxml=test_reports/boundary_junit.xml \
+            --cov=src \
+            --cov-report=xml:test_reports/boundary_coverage.xml \
+            --cov-report=term-missing
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boundary-test-results
+          path: test_reports/
+
+  generate-report:
+    needs: [integration-tests, performance-tests, boundary-tests]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: test_reports/
+      - name: Generate Combined Report
+        run: python scripts/run_all_tests.py
+      - name: Upload Final Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-test-report
+          path: test_reports/
