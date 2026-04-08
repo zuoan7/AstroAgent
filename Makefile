@@ -44,10 +44,10 @@ clean: ## Clean build artifacts
 	find . -type f -name "*.pyc" -delete
 
 run-api: ## Run API server
-	cd src && python -m api.main
+	python -m src.api.main
 
 run-mcp: ## Run MCP server
-	cd src && python -m services.mcp_server
+	python -m src.services.mcp_server
 
 run-ui: ## Run Streamlit UI
 	streamlit run src/services/streamlit_app.py
