@@ -9,7 +9,7 @@ import logging
 from astroquery.simbad import Simbad
 from astroquery.ned import Ned
 
-from config import settings
+from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 

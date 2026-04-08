@@ -23,8 +23,8 @@ from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from config import settings
-from logger import logger
+from src.core.config import settings
+from src.core.logger import logger
 
 
 def _safe_read_text(path: str) -> str:

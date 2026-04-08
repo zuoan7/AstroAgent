@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from config import settings
+from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler
 
 logger = logging.getLogger(__name__)

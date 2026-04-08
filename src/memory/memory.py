@@ -1,11 +1,11 @@
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
-from config import settings
+from src.core.config import settings
 import sqlite3
 import json
 import os
 from datetime import datetime
-from logger import logger
+from src.core.logger import logger
 
 
 @dataclass

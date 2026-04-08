@@ -7,7 +7,7 @@ import logging
 
 import requests
 
-from config import settings
+from src.core.config import settings
 from src.core.errors import ErrorHandler, ErrorCode
 from src.utils.helpers import (
     parse_mixed_input,

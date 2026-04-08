@@ -10,7 +10,7 @@ from astropy.coordinates import ICRS, FK5, SkyCoord
 import ephem
 
 from .base import EphemerisManager
-from config import settings
+from src.core.config import settings
 from src.utils.helpers import (
     parse_mixed_input,
     parse_date,

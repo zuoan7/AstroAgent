@@ -211,10 +211,32 @@ def observation_guide(target: str) -> str:
 """
 
 
-if __name__ == "__main__":
+def main():
+    """MCP服务器主函数"""
     print("\n" + "="*60)
     print("🌌 天文MCP服务器 - Streamable HTTP模式")
     print("="*60)
+
+    host = os.environ.get("FASTMCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("FASTMCP_PORT", "8001"))
+
+    print(f"📡 监听地址: http://{host}:{port}/mcp/")
+    print(f"📦 已注册工具: 13个")
+    print(f"💡 按 Ctrl+C 停止服务器")
+    print("="*60 + "\n")
+
+    try:
+        mcp.run(transport="streamable-http", host=host, port=port)
+    except KeyboardInterrupt:
+        print("\n👋 服务器已停止")
+    except Exception as e:
+        print(f"❌ 服务器启动失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    main()
 
     host = os.environ.get("FASTMCP_HOST", "0.0.0.0")
     port = int(os.environ.get("FASTMCP_PORT", "8001"))

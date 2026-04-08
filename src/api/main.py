@@ -163,7 +163,7 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    from config import settings
+    from src.core.config import settings
     uvicorn.run(
         "api:app",
         host=settings.API_HOST,

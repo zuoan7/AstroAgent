@@ -1,6 +1,6 @@
 import json
 from typing import Any, Optional
-from logger import logger
+from src.core.logger import logger
 from src.core.errors import ErrorCode, ErrorHandler
 from src.utils.helpers import extract_image_url
 

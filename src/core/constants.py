@@ -6,7 +6,7 @@
 新代码应直接从 config.settings 导入配置项。
 """
 
-from config import settings
+from src.core.config import settings
 
 # ========== 行星相关常量 ==========
 PLANET_MAPPING: dict = settings.PLANET_MAPPING

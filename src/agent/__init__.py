@@ -60,7 +60,7 @@ class AstroAgent:
 
     def _build_agent(self):
         try:
-            with open('prompt_template.txt', 'r', encoding='utf-8') as f:
+            with open('config/prompts/main.txt', 'r', encoding='utf-8') as f:
                 template = f.read()
             logger.info("✅ 成功从外部文件读取prompt模板")
         except Exception as e:

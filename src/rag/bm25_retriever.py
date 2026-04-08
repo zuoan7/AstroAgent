@@ -11,8 +11,8 @@ from typing import Any, Optional
 
 from rank_bm25 import BM25Okapi
 
-from config import settings
-from logger import logger
+from src.core.config import settings
+from src.core.logger import logger
 
 
 class BM25Retriever:

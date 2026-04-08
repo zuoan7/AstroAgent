@@ -2,8 +2,8 @@ import dashscope
 from dashscope import MultiModalConversation
 from pathlib import Path
 from typing import Optional
-from config import settings
-from logger import logger
+from src.core.config import settings
+from src.core.logger import logger
 from src.core.errors import AgentError, ErrorCode, ErrorHandler
 
 
