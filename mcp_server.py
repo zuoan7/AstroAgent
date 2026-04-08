@@ -10,8 +10,8 @@ from typing import Optional, Union
 from fastmcp import FastMCP
 from astronomy import AstronomyTools, AstronomyEventsPredictor
 from agent.param_parser import ParamParser
+from core.errors import AgentError, ErrorCode, ErrorHandler, safe_tool_call
 
-# ========== 初始化工具类（服务器启动时只初始化一次） ==========
 print("🚀 正在初始化天文工具...")
 tools = None
 events_predictor = None
@@ -36,318 +36,171 @@ if tools is None and events_predictor is None:
 
 print("✅ 天文工具初始化完成（部分功能可能受限）")
 
-# ========== 创建FastMCP服务器实例 ==========
 mcp = FastMCP(name="Astronomy Server")
 
-# ========== 辅助函数 ==========
-def check_tools_available():
-    """检查工具是否可用"""
+
+def _require_tools():
     if tools is None:
-        return False, "AstronomyTools 未初始化，请检查星历数据文件 de421.bsp 是否存在"
-    return True, None
+        raise AgentError(
+            code=ErrorCode.TOOL_CALL_FAILED,
+            message="AstronomyTools 未初始化，请检查星历数据文件 de421.bsp 是否存在"
+        )
 
-def check_events_predictor_available():
-    """检查天象预测器是否可用"""
+
+def _require_events_predictor():
     if events_predictor is None:
-        return False, "AstronomyEventsPredictor 未初始化，请检查星历数据文件 de421.bsp 是否存在"
-    return True, None
+        raise AgentError(
+            code=ErrorCode.TOOL_CALL_FAILED,
+            message="AstronomyEventsPredictor 未初始化，请检查星历数据文件 de421.bsp 是否存在"
+        )
 
-# ========== 注册所有工具 ==========
 
 @mcp.tool()
-def get_planet_position(planet_name: str, observation_time: str = None, 
+@safe_tool_call
+def get_planet_position(planet_name: str, observation_time: str = None,
                        latitude: float = None, longitude: float = None) -> str:
-    """
-    获取行星位置
-    
-    Args:
-        planet_name: 行星名称，如 'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'
-        observation_time: 观测时间，可选
-        latitude: 观测点纬度，可选
-        longitude: 观测点经度，可选
-    """
-    available, error_msg = check_tools_available()
-    if not available:
-        return json.dumps({"error": error_msg}, ensure_ascii=False)
-    
-    try:
-        result = tools.get_planet_position(planet_name, observation_time, latitude, longitude)
-        return json.dumps(result, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
+    _require_tools()
+    result = tools.get_planet_position(planet_name, observation_time, latitude, longitude)
+    return json.dumps(result, ensure_ascii=False)
+
 
 @mcp.tool()
+@safe_tool_call
 def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5") -> str:
-    """
-    天体坐标转换
-    
-    Args:
-        ra: 赤经，小时
-        dec: 赤纬，度
-        epoch: 历元，默认为J2000
-        target_system: 目标坐标系，默认为fk5
-    """
-    available, error_msg = check_tools_available()
-    if not available:
-        return json.dumps({"error": error_msg}, ensure_ascii=False)
-    
-    try:
-        return json.dumps(tools.coordinate_transformation(ra, dec, epoch, target_system), ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
+    _require_tools()
+    return json.dumps(tools.coordinate_transformation(ra, dec, epoch, target_system), ensure_ascii=False)
+
 
 @mcp.tool()
+@safe_tool_call
 def get_rise_set_times(body_name: str, latitude: float, longitude: float, date: str = None) -> str:
-    """
-    获取天体升起和落下时间
-    
-    Args:
-        body_name: 天体名称，如 'sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn'
-        latitude: 观测点纬度
-        longitude: 观测点经度
-        date: 日期，可选，格式 YYYY-MM-DD
-    """
-    try:
-        return tools.get_rise_set_times(body_name, latitude, longitude, date)
-    except Exception as e:
-        return f"错误：{str(e)}"
+    _require_tools()
+    return tools.get_rise_set_times(body_name, latitude, longitude, date)
+
 
 @mcp.tool()
+@safe_tool_call
 def get_current_sky_objects(latitude: float, longitude: float, date: str = None) -> str:
-    """
-    获取当前天空中的主要天体
-    
-    Args:
-        latitude: 观测点纬度
-        longitude: 观测点经度
-        date: 日期，可选，格式 YYYY-MM-DD
-    """
-    try:
-        return tools.get_current_sky_objects(latitude, longitude, date)
-    except Exception as e:
-        return f"错误：{str(e)}"
+    _require_tools()
+    return tools.get_current_sky_objects(latitude, longitude, date)
+
 
 @mcp.tool()
+@safe_tool_call
 def get_astrophysical_object_info(object_name: str) -> str:
-    """
-    查询天体基本信息
-    
-    Args:
-        object_name: 天体名称
-    """
-    try:
-        result = tools.get_astrophysical_object_info(object_name)
-        return json.dumps(result, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
+    _require_tools()
+    result = tools.get_astrophysical_object_info(object_name)
+    return json.dumps(result, ensure_ascii=False)
+
 
 @mcp.tool()
+@safe_tool_call
 def get_galaxy_data(galaxy_name: str) -> str:
-    """
-    星系数据查询
-    
-    Args:
-        galaxy_name: 星系名称
-    """
-    try:
-        result = tools.get_galaxy_data(galaxy_name)
-        return json.dumps(result, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
+    _require_tools()
+    result = tools.get_galaxy_data(galaxy_name)
+    return json.dumps(result, ensure_ascii=False)
+
 
 @mcp.tool()
+@safe_tool_call
 def get_nasa_apod(date: str = None, hd: bool = False) -> str:
-    """
-    获取NASA每日天文图
-    
-    Args:
-        date: 日期，格式为YYYY-MM-DD，可选
-        hd: 是否获取高清图像，可选
-    """
-    try:
-        return tools.get_nasa_apod(date, hd)
-    except Exception as e:
-        return f"错误：{str(e)}"
+    _require_tools()
+    return tools.get_nasa_apod(date, hd)
+
 
 @mcp.tool()
+@safe_tool_call
 def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) -> str:
-    """
-    获取近地天体数据
-    
-    Args:
-        start_date: 开始日期，格式为YYYY-MM-DD，可选
-        end_date: 结束日期，格式为YYYY-MM-DD，可选
-        limit: 返回结果数量限制，可选
-    """
-    try:
-        from datetime import datetime, timedelta
-        
-        # 确保日期范围不超过7天（NASA API限制）
-        if start_date:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        else:
-            start_dt = datetime.now()
-            start_date = start_dt.strftime("%Y-%m-%d")
-        
-        if end_date:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-        else:
-            end_dt = start_dt + timedelta(days=7)
-            end_date = end_dt.strftime("%Y-%m-%d")
-        
-        # 检查日期范围是否超过7天，如果是，则限制为7天
-        delta_days = (end_dt - start_dt).days
-        if delta_days > 7:
-            end_dt = start_dt + timedelta(days=7)
-            end_date = end_dt.strftime("%Y-%m-%d")
-        
-        result = tools.get_neo_data(start_date, end_date, limit)
-        return json.dumps(result, ensure_ascii=False)
-    except Exception as e:
-        error_result = {"error": f"错误：{str(e)}"}
-        return json.dumps(error_result, ensure_ascii=False)
+    _require_tools()
+    from datetime import datetime, timedelta
+
+    if start_date:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    else:
+        start_dt = datetime.now()
+        start_date = start_dt.strftime("%Y-%m-%d")
+
+    if end_date:
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    else:
+        end_dt = start_dt + timedelta(days=7)
+        end_date = end_dt.strftime("%Y-%m-%d")
+
+    delta_days = (end_dt - start_dt).days
+    if delta_days > 7:
+        end_dt = start_dt + timedelta(days=7)
+        end_date = end_dt.strftime("%Y-%m-%d")
+
+    result = tools.get_neo_data(start_date, end_date, limit)
+    return json.dumps(result, ensure_ascii=False)
+
 
 @mcp.tool()
+@safe_tool_call
 def get_weather(city: str = None, extensions: str = "base") -> str:
-    """
-    使用高德天气 API 查询天气（实时/预报），并给出观测建议。
+    _require_tools()
+    result = tools.get_weather(city=city, extensions=extensions)
+    return json.dumps(result, ensure_ascii=False)
 
-    Args:
-        city: 城市名称或城市 adcode（可选）
-        extensions: "base"(实时) 或 "all"(预报)
-    """
-    available, error_msg = check_tools_available()
-    if not available:
-        return json.dumps({"error": error_msg}, ensure_ascii=False)
-    
-    try:
-        result = tools.get_weather(city=city, extensions=extensions)
-        return json.dumps(result, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
+@safe_tool_call
 def web_search(query: str, max_results: int = 5) -> str:
-    """
-    联网搜索工具 - 当其他工具不可用时的降级方案
+    _require_tools()
+    result = tools.web_search(query=query, max_results=max_results)
+    return json.dumps(result, ensure_ascii=False)
 
-    Args:
-        query: 搜索查询内容
-        max_results: 最大结果数，默认5
-    """
-    available, error_msg = check_tools_available()
-    if not available:
-        return json.dumps({"error": error_msg}, ensure_ascii=False)
-    
-    try:
-        result = tools.web_search(query=query, max_results=max_results)
-        return json.dumps(result, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
 
 @mcp.tool()
+@safe_tool_call
 def get_tonight_best() -> str:
-    """
-    获取今晚最佳观测目标
-    """
-    available, error_msg = check_events_predictor_available()
-    if not available:
-        return json.dumps({"error": error_msg}, ensure_ascii=False)
-    
-    try:
-        return events_predictor.get_tonight_best()
-    except Exception as e:
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
+    _require_events_predictor()
+    return events_predictor.get_tonight_best()
+
 
 @mcp.tool()
+@safe_tool_call
 def get_weekly_events(start_date: Optional[str] = None) -> str:
-    """
-    获取未来一周的天象 - 增强版，支持多种参数格式
-    
-    Args:
-        start_date: 起始日期，可以是：
-            - None: 使用当前日期
-            - 字符串: "YYYY-MM-DD" 格式
-            - JSON字符串: '{"start_date": "2026-03-09"}' 或 '{}'
-    """
-    try:
-        params = ParamParser.parse_tool_input(
-            start_date,
-            expected_params={"start_date": None}
-        )
-        processed_start_date = ParamParser.normalize_date(params.get("start_date"))
-        
-        if processed_start_date:
-            processed_start_date = processed_start_date.strftime("%Y-%m-%d")
-        
-        available, error_msg = check_events_predictor_available()
-        if not available:
-            return json.dumps({"error": error_msg}, ensure_ascii=False)
-        
-        result = events_predictor.get_weekly_events(processed_start_date)
-        return result
-    except Exception as e:
-        import traceback
-        print(f"错误详情: {e}")
-        print(traceback.format_exc())
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
+    params = ParamParser.parse_tool_input(
+        start_date,
+        expected_params={"start_date": None}
+    )
+    processed_start_date = ParamParser.normalize_date(params.get("start_date"))
+
+    if processed_start_date:
+        processed_start_date = processed_start_date.strftime("%Y-%m-%d")
+
+    _require_events_predictor()
+    return events_predictor.get_weekly_events(processed_start_date)
+
 
 @mcp.tool()
-def get_monthly_events(year: Optional[Union[int, str, dict]] = None, 
+@safe_tool_call
+def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
                        month: Optional[Union[int, str]] = None) -> str:
-    """
-    获取未来一个月的天象 - 增强版，支持多种参数格式
-    
-    Args:
-        year: 年份，可以是：
-            - None: 使用当前年份
-            - 整数: 2026
-            - 字符串: "2026" 或 '{"year": 2026, "month": 8}'
-            - 字典: {"year": 2026, "month": 8}
-        month: 月份，可以是整数、字符串或None
-    """
-    try:
-        params = ParamParser.parse_tool_input(
-            {"year": year, "month": month},
-            expected_params={"year": None, "month": None}
-        )
-        
-        processed_year = ParamParser.safe_int(params.get("year"), default=None)
-        processed_month = ParamParser.safe_int(params.get("month"), default=None)
-        
-        available, error_msg = check_events_predictor_available()
-        if not available:
-            return json.dumps({"error": error_msg}, ensure_ascii=False)
-        
-        result = events_predictor.get_monthly_events(processed_year, processed_month)
-        return result
-    except Exception as e:
-        import traceback
-        print(f"错误详情: {e}")
-        print(traceback.format_exc())
-        return json.dumps({"error": f"错误：{str(e)}"}, ensure_ascii=False)
+    params = ParamParser.parse_tool_input(
+        {"year": year, "month": month},
+        expected_params={"year": None, "month": None}
+    )
 
-# ========== 资源端点 ==========
+    processed_year = ParamParser.safe_int(params.get("year"), default=None)
+    processed_month = ParamParser.safe_int(params.get("month"), default=None)
+
+    _require_events_predictor()
+    return events_predictor.get_monthly_events(processed_year, processed_month)
+
 
 @mcp.resource("status://server")
 def get_server_status() -> str:
-    """获取服务器状态"""
     return json.dumps({
         "status": "running",
         "mode": "streamable-http",
         "version": "1.0.0"
     }, ensure_ascii=False)
 
-# ========== 提示模板 ==========
 
 @mcp.prompt()
 def observation_guide(target: str) -> str:
-    """
-    生成观测指南
-    
-    Args:
-        target: 观测目标名称
-    """
     return f"""
 请帮我制定一个观测 {target} 的计划，包含以下内容：
 1. 目标的基本信息（类型、距离、视星等）
@@ -357,23 +210,20 @@ def observation_guide(target: str) -> str:
 5. 可以拍摄的天体特征
 """
 
-# ========== 启动服务器 ==========
+
 if __name__ == "__main__":
     print("\n" + "="*60)
     print("🌌 天文MCP服务器 - Streamable HTTP模式")
     print("="*60)
-    
-    # 使用环境变量或默认值设置主机和端口
+
     host = os.environ.get("FASTMCP_HOST", "0.0.0.0")
-    # 默认端口改为 8001，避免与 FastAPI 冲突
     port = int(os.environ.get("FASTMCP_PORT", "8001"))
-    
+
     print(f"📡 监听地址: http://{host}:{port}/mcp/")
     print(f"📦 已注册工具: 13个")
     print(f"💡 按 Ctrl+C 停止服务器")
     print("="*60 + "\n")
-    
-    # 启动服务器
+
     try:
         mcp.run(transport="streamable-http", host=host, port=port)
     except KeyboardInterrupt:

@@ -1,41 +1,73 @@
 import json
-import re
-from typing import Any, Generator, Optional
+from typing import Any, Optional
 from logger import logger
+from core.errors import ErrorCode, ErrorHandler
 from utils.helpers import extract_image_url
+
+
+_FALLBACK_ERROR_CODES = {
+    ErrorCode.TOOL_CALL_FAILED.value,
+    ErrorCode.MCP_SESSION_ERROR.value,
+    ErrorCode.MCP_CONNECTION_ERROR.value,
+    ErrorCode.MCP_TIMEOUT_ERROR.value,
+    ErrorCode.API_ERROR.value,
+    ErrorCode.NASA_API_ERROR.value,
+    ErrorCode.WEATHER_API_ERROR.value,
+    ErrorCode.LLM_ERROR.value,
+}
+
+_FALLBACK_ERROR_KEYWORDS = [
+    "工具调用错误",
+    "调用工具失败",
+    "调用工具超时",
+    "无法连接到MCP服务器",
+    "MCP会话未初始化",
+    "HTTP错误",
+    "Agent stopped due to iteration limit",
+    "Agent stopped due to time limit",
+]
+
+_LOW_CONFIDENCE_PHRASES = [
+    "当前模型服务暂时不可用",
+    "无法回答你的问题",
+]
 
 
 class FallbackService:
     def __init__(self, skill_manager: Any):
         self._skill_manager = skill_manager
-        self._error_patterns = [
-            "工具调用错误",
-            "调用工具失败",
-            "调用工具超时",
-            "无法连接到MCP服务器",
-            "MCP会话未初始化",
-            "HTTP错误",
-            "Agent stopped due to iteration limit",
-            "Agent stopped due to time limit",
-        ]
-        self._low_confidence_phrases = [
-            "当前模型服务暂时不可用",
-            "无法回答你的问题",
-        ]
 
-    def should_use_fallback(self, output: str) -> bool:
+    def should_use_fallback(self, output: Any) -> bool:
         if not output:
             return True
-        condensed = output.strip()
-        if not condensed:
-            return True
-        for kw in self._error_patterns:
-            if kw in condensed:
+
+        if isinstance(output, dict):
+            if ErrorHandler.is_error_response(output):
+                code = ErrorHandler.extract_error_code(output)
+                if code and code in _FALLBACK_ERROR_CODES:
+                    return True
+            return False
+
+        if isinstance(output, str):
+            condensed = output.strip()
+            if not condensed:
                 return True
-        if len(condensed) < 60:
-            for kw in self._low_confidence_phrases:
+            for kw in _FALLBACK_ERROR_KEYWORDS:
                 if kw in condensed:
                     return True
+            if len(condensed) < 60:
+                for kw in _LOW_CONFIDENCE_PHRASES:
+                    if kw in condensed:
+                        return True
+            try:
+                parsed = json.loads(condensed)
+                if isinstance(parsed, dict) and ErrorHandler.is_error_response(parsed):
+                    code = ErrorHandler.extract_error_code(parsed)
+                    if code and code in _FALLBACK_ERROR_CODES:
+                        return True
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         return False
 
     def try_web_search_fallback(self, query: str) -> str:
@@ -46,14 +78,16 @@ class FallbackService:
             return search_result
         except Exception as e:
             logger.error(f"联网搜索降级也失败: {e}")
-            return json.dumps({"error": f"降级搜索失败: {str(e)}"}, ensure_ascii=False)
+            error = ErrorHandler.handle(e, {"fallback_query": query})
+            return error.to_json()
 
     def format_fallback_response(self, query: str, search_result: str) -> str:
         try:
             result_data = json.loads(search_result)
 
-            if "error" in result_data:
-                return f"抱歉，我在处理您的查询「{query}」时遇到了问题：{result_data['error']}。请稍后再试或尝试其他问题。"
+            if ErrorHandler.is_error_response(result_data):
+                msg = result_data.get("message", str(result_data))
+                return f"抱歉，我在处理您的查询「{query}」时遇到了问题：{msg}。请稍后再试或尝试其他问题。"
 
             answer = result_data.get("answer", "")
             results = result_data.get("results", [])

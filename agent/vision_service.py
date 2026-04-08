@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 from config import settings
 from logger import logger
+from core.errors import AgentError, ErrorCode, ErrorHandler
 
 
 class VisionService:
@@ -15,17 +16,21 @@ class VisionService:
         try:
             logger.info(f"尝试读取图片: {image_path}")
             p = Path(image_path).resolve()
-            
+
             if not p.exists():
-                error_msg = f"图片文件不存在: {image_path}"
-                logger.error(f"❌ {error_msg}")
-                return f"图片读取失败：{error_msg}"
-            
+                raise AgentError(
+                    code=ErrorCode.FILE_NOT_FOUND,
+                    message=f"图片文件不存在: {image_path}",
+                    details={"image_path": image_path}
+                )
+
             if not p.is_file():
-                error_msg = f"路径不是文件: {image_path}"
-                logger.error(f"❌ {error_msg}")
-                return f"图片读取失败：{error_msg}"
-            
+                raise AgentError(
+                    code=ErrorCode.FILE_NOT_FOUND,
+                    message=f"路径不是文件: {image_path}",
+                    details={"image_path": image_path}
+                )
+
             logger.info(f"图片文件存在: {p}")
             image_uri = f"file://{p}"
             messages = [
@@ -56,11 +61,18 @@ class VisionService:
                                 texts.append(str(item["text"]))
                         return "\n".join(texts).strip()
             return str(resp)
+        except AgentError:
+            raise
         except Exception as e:
             logger.error(f"❌ 图片理解失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return f"图片理解失败：{e}"
+            raise AgentError(
+                code=ErrorCode.VISION_ERROR,
+                message=f"图片理解失败: {e}",
+                details={"image_path": image_path},
+                original_error=e
+            )
 
     def build_vision_query(self, original_query: str, image_path: str, custom_prompt: Optional[str] = None) -> str:
         prompt = custom_prompt or (
@@ -68,5 +80,8 @@ class VisionService:
             "1) 可能的天体/星座/现象；2) 光害/天空质量线索；3) 设备与拍摄参数线索；"
             "4) 适合的后续观测或拍摄建议。"
         )
-        vision_desc = self.describe_image(image_path=image_path, prompt=prompt)
+        try:
+            vision_desc = self.describe_image(image_path=image_path, prompt=prompt)
+        except AgentError as e:
+            vision_desc = f"图片理解失败: {e.message}"
         return f"{original_query}\n\n[用户上传图片的视觉信息]\n{vision_desc}"

@@ -4,6 +4,7 @@ import time
 import uuid
 from typing import Any, AsyncGenerator, Dict, Generator, Optional
 from logger import logger
+from core.errors import ErrorHandler
 from utils.helpers import extract_image_url
 
 
@@ -92,7 +93,13 @@ class StreamingService:
                 action, observation = step[0], step[1]
                 tool_name = getattr(action, 'tool', 'unknown')
                 tool_input = getattr(action, 'tool_input', '')
-                if observation and not str(observation).startswith('{"error"'):
+                if observation and not ErrorHandler.is_error_response(observation):
+                    try:
+                        obs_data = json.loads(str(observation))
+                        if isinstance(obs_data, dict) and obs_data.get("error"):
+                            continue
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                     tool_results.append({
                         "tool": tool_name,
                         "input": str(tool_input)[:100],

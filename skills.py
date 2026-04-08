@@ -229,11 +229,14 @@ class AstronomySkillRouter:
             return None
 
     def _call_mcp_tool_internal(self, tool_name: str, **kwargs) -> str:
-        """调用MCP工具（内部方法）"""
         if not self._mcp_initialized or not self._mcp_session_id:
             logger.error("❌ MCP会话未初始化")
-            return f"错误：MCP会话未初始化，请检查桥服务器是否运行"
-        
+            return json.dumps(AgentError(
+                code=ErrorCode.MCP_SESSION_ERROR,
+                message="MCP会话未初始化，请检查桥服务器是否运行",
+                details={"tool_name": tool_name}
+            ).to_dict(), ensure_ascii=False)
+
         try:
             processed_kwargs = {}
             for key, value in kwargs.items():
@@ -245,11 +248,11 @@ class AstronomySkillRouter:
                             processed_kwargs[key] = value
                         else:
                             processed_kwargs[key] = value
-                    except:
+                    except Exception:
                         processed_kwargs[key] = value
                 else:
                     processed_kwargs[key] = value
-            
+
             request = {
                 "jsonrpc": "2.0",
                 "method": "tools/call",
@@ -259,9 +262,9 @@ class AstronomySkillRouter:
                 },
                 "id": int(time.time() * 1000)
             }
-            
+
             logger.debug(f"调用工具 {tool_name}，处理后的参数: {processed_kwargs}")
-            
+
             response = self._http_client.post(
                 MCP_SERVER_URL,
                 json=request,
@@ -272,55 +275,84 @@ class AstronomySkillRouter:
                 },
                 timeout=30.0
             )
-            
+
             if response.status_code != 200:
-                return f"HTTP错误: {response.status_code}"
-            
+                return json.dumps(AgentError(
+                    code=ErrorCode.MCP_SESSION_ERROR,
+                    message=f"MCP服务器返回HTTP错误: {response.status_code}",
+                    details={"tool_name": tool_name, "status_code": response.status_code}
+                ).to_dict(), ensure_ascii=False)
+
             result = self._parse_sse_response(response.text)
             if not result:
                 logger.error(f"无法解析响应: {response.text[:200]}")
-                return f"解析响应失败"
-            
+                return json.dumps(AgentError(
+                    code=ErrorCode.MCP_SESSION_ERROR,
+                    message="MCP响应解析失败",
+                    details={"tool_name": tool_name}
+                ).to_dict(), ensure_ascii=False)
+
             logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:500]}")
-            
+
             if "error" in result:
                 error_msg = result["error"].get("message", "未知错误")
                 error_code = result["error"].get("code", "")
-                return f"工具调用错误 [{error_code}]: {error_msg}"
-            
+                return json.dumps(AgentError(
+                    code=ErrorCode.TOOL_CALL_FAILED,
+                    message=f"工具调用错误 [{error_code}]: {error_msg}",
+                    details={"tool_name": tool_name, "mcp_error_code": error_code}
+                ).to_dict(), ensure_ascii=False)
+
             if "result" in result:
                 res = result["result"]
-                
-                # 尝试多种方式提取文本内容
+
                 if isinstance(res, dict):
-                    # 检查是否有 content 字段
                     if "content" in res:
                         content = res["content"]
                         if isinstance(content, list) and len(content) > 0:
                             for item in content:
                                 if item.get("type") == "text":
-                                    return item.get("text", "")
-                    
-                    # 如果没有找到 text 类型，尝试直接返回整个 result 的字符串表示
+                                    text = item.get("text", "")
+                                    try:
+                                        parsed = json.loads(text)
+                                        if isinstance(parsed, dict) and parsed.get("error"):
+                                            return json.dumps(AgentError(
+                                                code=ErrorCode.TOOL_CALL_FAILED,
+                                                message=parsed.get("message", text),
+                                                details={"tool_name": tool_name}
+                                            ).to_dict(), ensure_ascii=False)
+                                    except (json.JSONDecodeError, TypeError):
+                                        pass
+                                    return text
+
                     return json.dumps(res, ensure_ascii=False)
-                
+
                 if isinstance(res, str):
                     return res
-                
+
                 return str(res)
-            
+
             logger.warning(f"未知响应格式: {result}")
             return str(result)
-            
+
         except httpx.TimeoutException:
             logger.error(f"❌ MCP工具调用超时: {tool_name}")
-            return f"调用工具超时，请稍后重试"
+            return json.dumps(AgentError(
+                code=ErrorCode.MCP_TIMEOUT_ERROR,
+                message=f"工具 '{tool_name}' 调用超时",
+                details={"tool_name": tool_name}
+            ).to_dict(), ensure_ascii=False)
         except httpx.ConnectError:
             logger.error(f"❌ 无法连接到MCP服务器: {MCP_SERVER_URL}")
-            return f"错误：无法连接到MCP服务器"
+            return json.dumps(AgentError(
+                code=ErrorCode.MCP_CONNECTION_ERROR,
+                message="无法连接到MCP服务器",
+                details={"tool_name": tool_name, "server_url": MCP_SERVER_URL}
+            ).to_dict(), ensure_ascii=False)
         except Exception as e:
             logger.error(f"❌ 调用工具 {tool_name} 失败: {e}")
-            return f"调用工具失败: {str(e)}"
+            error = ErrorHandler.handle(e, {"tool_name": tool_name})
+            return json.dumps(error.to_dict(), ensure_ascii=False)
 
     # ===== 具体技能实现 =====
 

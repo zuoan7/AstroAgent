@@ -125,7 +125,7 @@ def test_error_handling_integration():
     except Exception as e:
         error = ErrorHandler.handle(e, {"context": "测试上下文"})
         print(f"1. 异常转换: {error}")
-        assert error.code == ErrorCode.UNKNOWN_ERROR
+        assert error.code == ErrorCode.VALIDATION_ERROR
         assert "测试异常" in error.message
         print("   ✅ 异常转换测试通过")
 
