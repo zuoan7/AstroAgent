@@ -7,6 +7,10 @@ import os
 import sys
 import json
 from typing import Optional, Union
+
+# 确保src在Python路径中
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastmcp import FastMCP
 from src.astronomy import AstronomyTools, AstronomyEventsPredictor
 from src.agent.param_parser import ParamParser
