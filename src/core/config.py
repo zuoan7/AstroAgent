@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     )
     
     # ========== 天文数据配置 ==========
-    EPHEMERIS_FILE: str = Field("de421.bsp", description="星历数据文件名")
+    EPHEMERIS_FILE: str = Field("./data/ephemeris/de421.bsp", description="星历数据文件路径")
     DEFAULT_LOCATION: Tuple[float, float] = Field(
         (39.9, 116.4),
         description="默认观测位置（纬度, 经度），默认为北京"

@@ -47,7 +47,7 @@ def _require_tools():
     if tools is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
-            message="AstronomyTools 未初始化，请检查星历数据文件 de421.bsp 是否存在"
+            message=f"AstronomyTools 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
         )
 
 
@@ -55,7 +55,7 @@ def _require_events_predictor():
     if events_predictor is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
-            message="AstronomyEventsPredictor 未初始化，请检查星历数据文件 de421.bsp 是否存在"
+            message=f"AstronomyEventsPredictor 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
         )
 
 

@@ -44,7 +44,7 @@ class EphemerisManager:
         """加载星历数据"""
         try:
             logger.info("正在加载星历数据...")
-            self.planets = load('de421.bsp')
+            self.planets = load(settings.EPHEMERIS_FILE)
             self.earth = self.planets['earth']
             self.timescale = load.timescale()
             self.is_loaded = True
@@ -60,7 +60,7 @@ class EphemerisManager:
     def check_loaded(self):
         """检查星历数据是否已加载"""
         if not self.is_loaded:
-            raise RuntimeError("星历数据未加载，无法执行计算。请确保 de421.bsp 文件存在。")
+            raise RuntimeError(f"星历数据未加载，无法执行计算。请确保 {settings.EPHEMERIS_FILE} 文件存在。")
         return True
 
 
