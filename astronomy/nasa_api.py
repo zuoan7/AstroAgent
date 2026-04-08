@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 import requests
 
 from config import settings
-from constants import NASA_APOD_URL, NASA_NEO_URL, NASA_NEO_MAX_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ class NASAAPIService:
             if date:
                 params["date"] = date
             
-            response = requests.get(NASA_APOD_URL, params=params, timeout=30)
+            response = requests.get(settings.NASA_APOD_URL, params=params, timeout=30)
             response.raise_for_status()
             
             return response.json()
@@ -81,9 +80,9 @@ class NASAAPIService:
             
             # 确保不超过API限制
             delta_days = (end_dt - start_dt).days
-            if delta_days > NASA_NEO_MAX_DAYS:
-                logger.warning(f"请求的日期范围({delta_days}天)超过限制({NASA_NEO_MAX_DAYS}天)，将截断")
-                end_dt = start_dt + timedelta(days=NASA_NEO_MAX_DAYS)
+            if delta_days > settings.NASA_NEO_MAX_DAYS:
+                logger.warning(f"请求的日期范围({delta_days}天)超过限制({settings.NASA_NEO_MAX_DAYS}天)，将截断")
+                end_dt = start_dt + timedelta(days=settings.NASA_NEO_MAX_DAYS)
                 end_date = end_dt.strftime("%Y-%m-%d")
             
             # 构建请求
@@ -94,7 +93,7 @@ class NASAAPIService:
                 "end_date": end_date
             }
             
-            response = requests.get(NASA_NEO_URL, params=params, timeout=30)
+            response = requests.get(settings.NASA_NEO_URL, params=params, timeout=30)
             response.raise_for_status()
             
             return response.json()

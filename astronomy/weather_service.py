@@ -13,7 +13,6 @@ from utils.helpers import (
     parse_mixed_input,
     is_coordinates,
 )
-from constants import AMAP_WEATHER_URL, AMAP_GEOCODE_URL, OBSERVING_TIPS_TEMPLATES
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,7 @@ class WeatherService:
                 "output": "JSON",
             }
             
-            resp = requests.get(AMAP_GEOCODE_URL, params=params, timeout=10)
+            resp = requests.get(settings.AMAP_GEOCODE_URL, params=params, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             
@@ -113,7 +112,7 @@ class WeatherService:
                 "output": "JSON",
             }
             
-            resp = requests.get(AMAP_WEATHER_URL, params=params, timeout=15)
+            resp = requests.get(settings.AMAP_WEATHER_URL, params=params, timeout=15)
             resp.raise_for_status()
             data = resp.json()
             
@@ -181,16 +180,16 @@ class WeatherService:
         
         # 天气现象判断
         if weather and any(k in weather for k in ["雨", "雪", "雷", "雾", "霾"]):
-            tips.append(OBSERVING_TIPS_TEMPLATES['bad_weather'])
+            tips.append(settings.OBSERVING_TIPS_TEMPLATES['bad_weather'])
         else:
-            tips.append(OBSERVING_TIPS_TEMPLATES['good_weather'])
+            tips.append(settings.OBSERVING_TIPS_TEMPLATES['good_weather'])
         
         # 湿度判断
         if humidity is not None:
             try:
                 h = float(humidity)
                 if h >= 80:
-                    tips.append(OBSERVING_TIPS_TEMPLATES['high_humidity'])
+                    tips.append(settings.OBSERVING_TIPS_TEMPLATES['high_humidity'])
             except (ValueError, TypeError):
                 pass
         
@@ -199,7 +198,7 @@ class WeatherService:
             try:
                 wp = float(str(windpower).replace("级", "").strip())
                 if wp >= 4:
-                    tips.append(OBSERVING_TIPS_TEMPLATES['high_wind'])
+                    tips.append(settings.OBSERVING_TIPS_TEMPLATES['high_wind'])
             except (ValueError, TypeError):
                 pass
         

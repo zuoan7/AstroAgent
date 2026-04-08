@@ -6,7 +6,7 @@
 import logging
 from skyfield.api import load
 from skyfield import almanac
-from constants import DEFAULT_LOCATION
+from config import settings
 
 logger = logging.getLogger(__name__)
 

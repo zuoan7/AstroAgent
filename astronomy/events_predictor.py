@@ -11,18 +11,11 @@ from typing import Optional
 from skyfield import almanac
 from skyfield.api import wgs84
 from .base import EphemerisManager
+from config import settings
 from agent.param_parser import ParamParser
 from utils.helpers import (
     parse_date,
     get_direction_from_azimuth,
-)
-from constants import (
-    PLANET_MAPPING,
-    PLANET_NAMES_CN,
-    PLANET_MAX_MAGNITUDE,
-    DEFAULT_LOCATION,
-    MOON_PHASE_THRESHOLDS,
-    PLANET_VISIBILITY_BY_MONTH,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +36,7 @@ class EventsPredictor:
         if location:
             self.lat, self.lon = location
         else:
-            self.lat, self.lon = DEFAULT_LOCATION
+            self.lat, self.lon = settings.DEFAULT_LOCATION
         
         # 创建观测点
         if self.ephemeris.is_loaded:
@@ -167,11 +160,11 @@ class EventsPredictor:
         phase_angle = ra_diff
         
         # 根据角度判断月相
-        for threshold, name, desc in MOON_PHASE_THRESHOLDS:
+        for threshold, name, desc in settings.MOON_PHASE_THRESHOLDS:
             if phase_angle < threshold:
                 return (name, desc)
         
-        return (MOON_PHASE_THRESHOLDS[0][1], MOON_PHASE_THRESHOLDS[0][2])
+        return (settings.MOON_PHASE_THRESHOLDS[0][1], settings.MOON_PHASE_THRESHOLDS[0][2])
     
     def get_sunrise_sunset(self, date) -> tuple:
         """
@@ -219,8 +212,8 @@ class EventsPredictor:
         t = self.ephemeris.timescale.utc(date.year, date.month, date.day, 20)
         
         planets_info = [
-            {"name_cn": PLANET_NAMES_CN.get(p, p), 
-             "obj": self.ephemeris.planets[PLANET_MAPPING[p]]}
+            {"name_cn": settings.PLANET_NAMES_CN.get(p, p), 
+             "obj": self.ephemeris.planets[settings.PLANET_MAPPING[p]]}
             for p in ['mercury', 'venus', 'mars', 'jupiter', 'saturn']
         ]
         
@@ -287,7 +280,7 @@ class EventsPredictor:
             # 添加行星可见性建议
             forecast += "\n🪐 **本周行星可见性**\n"
             month = current_date.month
-            visibility = PLANET_VISIBILITY_BY_MONTH.get(month, {})
+            visibility = settings.PLANET_VISIBILITY_BY_MONTH.get(month, {})
             
             if visibility.get('best'):
                 forecast += f"• {visibility['best']}：整夜可见，是本周最佳观测目标\n"
@@ -371,7 +364,7 @@ class EventsPredictor:
             
             # 添加行星可见性建议
             forecast += "🪐 **本月行星可见性**\n"
-            visibility = PLANET_VISIBILITY_BY_MONTH.get(month_val, {})
+            visibility = settings.PLANET_VISIBILITY_BY_MONTH.get(month_val, {})
             
             if visibility.get('best'):
                 forecast += f"• {visibility['best']}：整夜可见，是本月最佳观测目标\n"
@@ -435,11 +428,10 @@ class EventsPredictor:
         response += f"  • 日出：{sunrise.strftime('%H:%M') if sunrise else '未知'}\n"
         
         # 根据月相给出建议
-        from constants import OBSERVING_TIPS_TEMPLATES
         if "新月" in moon_phase:
-            response += f"\n💡 {OBSERVING_TIPS_TEMPLATES['new_moon']}"
+            response += f"\n💡 {settings.OBSERVING_TIPS_TEMPLATES['new_moon']}"
         elif "满月" in moon_phase:
-            response += f"\n💡 {OBSERVING_TIPS_TEMPLATES['full_moon']}"
+            response += f"\n💡 {settings.OBSERVING_TIPS_TEMPLATES['full_moon']}"
         
         return response
 

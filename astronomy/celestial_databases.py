@@ -9,7 +9,7 @@ import logging
 from astroquery.simbad import Simbad
 from astroquery.ned import Ned
 
-from constants import CELESTIAL_NAME_MAPPING, GALAXY_NAME_MAPPING
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class CelestialDatabaseService:
         """
         try:
             # 使用标准名称映射
-            query_name = CELESTIAL_NAME_MAPPING.get(object_name, object_name)
+            query_name = settings.CELESTIAL_NAME_MAPPING.get(object_name, object_name)
             
             # 配置Simbad查询
             custom_simbad = Simbad()
@@ -78,7 +78,7 @@ class CelestialDatabaseService:
         """
         try:
             # 使用标准名称映射
-            query_name = GALAXY_NAME_MAPPING.get(galaxy_name, galaxy_name)
+            query_name = settings.GALAXY_NAME_MAPPING.get(galaxy_name, galaxy_name)
             
             # 执行NED查询
             result = Ned.query_object(query_name)

@@ -10,15 +10,11 @@ from astropy.coordinates import ICRS, FK5, SkyCoord
 import ephem
 
 from .base import EphemerisManager
+from config import settings
 from utils.helpers import (
     parse_mixed_input,
     parse_date,
     parse_coordinate_string,
-)
-from constants import (
-    PLANET_MAPPING,
-    VALID_PLANETS,
-    SUPPORTED_BODIES,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,11 +71,11 @@ class PlanetaryCalculator:
                 planet_name = str(planet_name)
             
             # 验证行星名称
-            if planet_name.lower() not in VALID_PLANETS:
+            if planet_name.lower() not in settings.VALID_PLANETS:
                 from core.errors import ErrorHandler
                 error = ErrorHandler.create_tool_error(
                     "get_planet_position",
-                    f"无效的行星名称。有效行星: {', '.join(VALID_PLANETS)}",
+                    f"无效的行星名称。有效行星: {', '.join(settings.VALID_PLANETS)}",
                     {"planet_name": planet_name}
                 )
                 return error.to_dict()
@@ -93,7 +89,7 @@ class PlanetaryCalculator:
                 t = ts.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
             
             # 获取行星对象
-            planet_id = PLANET_MAPPING[planet_name.lower()]
+            planet_id = settings.PLANET_MAPPING[planet_name.lower()]
             planet = self.ephemeris.planets[planet_id]
             
             # 计算位置
@@ -196,7 +192,7 @@ class PlanetaryCalculator:
         elif body_name_lower in ['mercury', 'venus', 'mars', 'jupiter', 'saturn']:
             body = getattr(ephem, body_name.capitalize())()
         else:
-            raise ValueError(f"不支持的天体名称: {body_name}。支持的天体: {', '.join(SUPPORTED_BODIES)}")
+            raise ValueError(f"不支持的天体名称: {body_name}。支持的天体: {', '.join(settings.SUPPORTED_BODIES)}")
         
         # 计算升起落下时间
         try:
