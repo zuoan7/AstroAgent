@@ -192,11 +192,11 @@ class OfflineIndexer:
             return
 
         supported = {".txt", ".md", ".pdf", ".json", ".jsonl"}
-        files = [
-            os.path.join(data_dir, fn)
-            for fn in os.listdir(data_dir)
-            if os.path.splitext(fn)[1].lower() in supported
-        ]
+        files = []
+        for root, dirs, filenames in os.walk(data_dir):
+            for fn in filenames:
+                if os.path.splitext(fn)[1].lower() in supported:
+                    files.append(os.path.join(root, fn))
 
         logger.info(f"=== 离线索引开始：扫描到 {len(files)} 个文件 ===")
 

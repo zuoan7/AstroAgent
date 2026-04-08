@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
-from rag.bm25_retriever import BM25Retriever
+from src.rag.bm25_retriever import BM25Retriever
 from src.core.config import settings
 from src.core.logger import logger
 

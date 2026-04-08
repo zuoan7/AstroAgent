@@ -63,7 +63,7 @@ class OnlineRetriever:
         self.bm25_retriever = None
         if use_hybrid:
             try:
-                from rag.bm25_retriever import BM25Retriever
+                from src.rag.bm25_retriever import BM25Retriever
                 self.bm25_retriever = BM25Retriever(
                     index_path=vector_db_path + "/bm25_index.pkl",
                     top_k=top_k
