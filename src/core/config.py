@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     API_HOST: str = Field("0.0.0.0", description="FastAPI 服务监听地址")
     API_PORT: int = Field(8000, description="FastAPI 服务端口")
     MCP_PORT: int = Field(8001, description="MCP 服务端口（避免与 FastAPI 冲突）")
+    MCP_SERVER_URL: str = Field(
+        "http://localhost:8001/mcp",
+        description="MCP Server URL，可通过环境变量覆盖"
+    )
     
     # ========== NASA API 配置 ==========
     NASA_API_KEY: Optional[str] = Field(None, description="NASA API 密钥")

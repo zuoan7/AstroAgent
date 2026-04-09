@@ -7,6 +7,7 @@ import json
 import re
 from typing import Any, Dict, Optional, List
 from src.core.errors import ErrorHandler
+from src.utils.helpers import safe_float, safe_int, parse_json_string, normalize_location
 
 
 class ParamParser:
@@ -101,55 +102,8 @@ class ParamParser:
             )
     
     @staticmethod
-    def parse_json_string(text: str) -> Optional[Dict[str, Any]]:
-        """尝试解析JSON字符串"""
-        if not isinstance(text, str):
-            return None
-        
-        text = text.strip()
-        if not text.startswith('{'):
-            return None
-        
-        try:
-            clean_text = text.split('#')[0].strip()
-            data = json.loads(clean_text)
-            if isinstance(data, dict):
-                return data
-        except (json.JSONDecodeError, ValueError):
-            pass
-        
-        return None
-    
-    @staticmethod
     def normalize_location(location: Any) -> Optional[str]:
-        """规范化位置信息"""
-        if location is None:
-            return None
-        
-        if isinstance(location, dict):
-            return (
-                location.get("location") or
-                location.get("city") or
-                location.get("adcode") or
-                location.get("citycode")
-            )
-        
-        if isinstance(location, str):
-            text = location.strip()
-            if text.startswith('{') and text.endswith('}'):
-                try:
-                    obj = json.loads(text)
-                    return (
-                        obj.get("location") or
-                        obj.get("city") or
-                        obj.get("adcode") or
-                        obj.get("citycode")
-                    )
-                except:
-                    pass
-            return text
-        
-        return str(location)
+        return normalize_location(location)
     
     @staticmethod
     def normalize_date(date_str: Any) -> Optional[str]:
@@ -182,40 +136,10 @@ class ParamParser:
     
     @staticmethod
     def safe_int(value: Any, default: int = 0) -> int:
-        """安全地转换为整数"""
-        if value is None:
-            return default
-        
-        if isinstance(value, int):
-            return value
-        
-        if isinstance(value, str):
-            try:
-                return int(value)
-            except ValueError:
-                return default
-        
-        try:
-            return int(value)
-        except:
-            return default
+        result = safe_int(value, default=None)
+        return result if result is not None else default
     
     @staticmethod
     def safe_float(value: Any, default: float = 0.0) -> float:
-        """安全地转换为浮点数"""
-        if value is None:
-            return default
-        
-        if isinstance(value, (int, float)):
-            return float(value)
-        
-        if isinstance(value, str):
-            try:
-                return float(value)
-            except ValueError:
-                return default
-        
-        try:
-            return float(value)
-        except:
-            return default
+        result = safe_float(value, default=None)
+        return result if result is not None else default

@@ -194,10 +194,7 @@ class StreamingService:
 
             final_response = output
 
-            for i in range(0, len(final_response), 50):
-                chunk = final_response[i:i+50]
-                yield chunk
-                time.sleep(0.1)
+            yield final_response
 
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", final_response, time.time())
@@ -219,10 +216,7 @@ class StreamingService:
                     fallback_response = self._fallback_service.format_fallback_response(query, search_result)
                     fallback_used = True
 
-                    for i in range(0, len(fallback_response), 50):
-                        chunk = fallback_response[i:i+50]
-                        yield chunk
-                        time.sleep(0.1)
+                    yield fallback_response
 
                     self._memory.add_message("user", query, time.time())
                     self._memory.add_message("assistant", fallback_response, time.time())

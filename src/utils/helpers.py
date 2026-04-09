@@ -36,28 +36,20 @@ def parse_mixed_input(value: Any, expected_params: Optional[Dict] = None) -> Dic
 
 
 def parse_json_string(text: str) -> Optional[Dict]:
-    """
-    解析JSON格式的字符串
-    
-    Args:
-        text: JSON字符串
-        
-    Returns:
-        解析后的字典，失败返回None
-    """
     if not text or not isinstance(text, str):
         return None
     
     text = text.strip()
     
-    if not (text.startswith('{') and text.endswith('}')):
+    if not text.startswith('{'):
         return None
     
     try:
-        data = json.loads(text)
+        clean_text = text.split('#')[0].strip()
+        data = json.loads(clean_text)
         if isinstance(data, dict):
             return data
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, ValueError, TypeError):
         pass
     
     return None
@@ -318,23 +310,35 @@ def shorten_text(text: Any, max_len: int = 1200) -> str:
     return s[:max_len - 3] + "..."
 
 
-def normalize_location(location: Optional[str]) -> Optional[str]:
-    """
-    标准化位置描述
-    
-    Args:
-        location: 位置信息
-        
-    Returns:
-        标准化后的位置字符串
-    """
+def normalize_location(location: Any) -> Optional[str]:
     if location is None:
         return None
     
     if isinstance(location, dict):
-        return location.get('city') or location.get('location')
+        return (
+            location.get("location") or
+            location.get("city") or
+            location.get("adcode") or
+            location.get("citycode")
+        )
     
-    return str(location).strip()
+    if isinstance(location, str):
+        text = location.strip()
+        if text.startswith('{') and text.endswith('}'):
+            try:
+                obj = json.loads(text)
+                if isinstance(obj, dict):
+                    return (
+                        obj.get("location") or
+                        obj.get("city") or
+                        obj.get("adcode") or
+                        obj.get("citycode")
+                    )
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return text
+    
+    return str(location)
 
 
 def get_direction_from_azimuth(az_degrees: float) -> str:

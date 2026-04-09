@@ -10,10 +10,9 @@ from typing import Any, Callable, Dict, Optional
 import httpx
 from src.core.logger import logger
 from src.core.errors import AgentError, ErrorHandler, ErrorCode
+from src.core.config import settings
 from src.agent.param_parser import ParamParser
-from src.utils.helpers import parse_date
-
-MCP_SERVER_URL = "http://localhost:8001/mcp"
+from src.utils.helpers import parse_date, shorten_text
 
 MCP_RECONNECT_MAX_RETRIES = 3
 MCP_RECONNECT_DELAY = 2.0
@@ -86,7 +85,7 @@ class AstronomySkillRouter:
                 tool_key = mapping.get(k, k)
                 tool_kwargs[tool_key] = v
             raw = self._call_mcp_tool(tool_name, **tool_kwargs)
-            return self._shorten_text(raw, 1200)
+            return shorten_text(raw, 1200)
 
         raise ValueError(f"未知技能：{name}")
 
@@ -101,7 +100,7 @@ class AstronomySkillRouter:
 
             logger.info("正在建立SSE连接...")
             sse_response = client.get(
-                MCP_SERVER_URL,
+                settings.MCP_SERVER_URL,
                 headers={"Accept": "text/event-stream"}
             )
 
@@ -126,7 +125,7 @@ class AstronomySkillRouter:
             }
 
             response = client.post(
-                MCP_SERVER_URL,
+                settings.MCP_SERVER_URL,
                 json=init_request,
                 headers={
                     "Content-Type": "application/json",
@@ -148,7 +147,7 @@ class AstronomySkillRouter:
             }
 
             client.post(
-                MCP_SERVER_URL,
+                settings.MCP_SERVER_URL,
                 json=notif_request,
                 headers={
                     "Content-Type": "application/json",
@@ -165,7 +164,7 @@ class AstronomySkillRouter:
             }
 
             response = client.post(
-                MCP_SERVER_URL,
+                settings.MCP_SERVER_URL,
                 json=list_request,
                 headers={
                     "Content-Type": "application/json",
@@ -217,7 +216,7 @@ class AstronomySkillRouter:
                 client = httpx.AsyncClient(timeout=30.0)
 
                 sse_response = await client.get(
-                    MCP_SERVER_URL,
+                    settings.MCP_SERVER_URL,
                     headers={"Accept": "text/event-stream"}
                 )
 
@@ -240,7 +239,7 @@ class AstronomySkillRouter:
                 }
 
                 response = await client.post(
-                    MCP_SERVER_URL,
+                    settings.MCP_SERVER_URL,
                     json=init_request,
                     headers={
                         "Content-Type": "application/json",
@@ -258,7 +257,7 @@ class AstronomySkillRouter:
                 }
 
                 await client.post(
-                    MCP_SERVER_URL,
+                    settings.MCP_SERVER_URL,
                     json=notif_request,
                     headers={
                         "Content-Type": "application/json",
@@ -351,7 +350,7 @@ class AstronomySkillRouter:
             logger.debug(f"调用工具 {tool_name}，处理后的参数: {processed_kwargs}")
 
             response = await self._http_client.post(
-                MCP_SERVER_URL,
+                settings.MCP_SERVER_URL,
                 json=request,
                 headers={
                     "Content-Type": "application/json",
@@ -431,12 +430,12 @@ class AstronomySkillRouter:
                 details={"tool_name": tool_name}
             ).to_dict(), ensure_ascii=False)
         except httpx.ConnectError:
-            logger.error(f"❌ 无法连接到MCP服务器: {MCP_SERVER_URL}")
+            logger.error(f"❌ 无法连接到MCP服务器: {settings.MCP_SERVER_URL}")
             self._mcp_initialized = False
             return json.dumps(AgentError(
                 code=ErrorCode.MCP_CONNECTION_ERROR,
                 message="无法连接到MCP服务器",
-                details={"tool_name": tool_name, "server_url": MCP_SERVER_URL}
+                details={"tool_name": tool_name, "server_url": settings.MCP_SERVER_URL}
             ).to_dict(), ensure_ascii=False)
         except Exception as e:
             logger.error(f"❌ 调用工具 {tool_name} 失败: {e}")
@@ -506,11 +505,11 @@ class AstronomySkillRouter:
             plan_lines.append("暂时无法获取指定地点的天气信息，请根据当地实际情况或天气预报应用调整计划。")
 
         plan_lines.append("\n二、本周重要天象（摘要）")
-        plan_lines.append(self._shorten_text(weekly_events, 600))
+        plan_lines.append(shorten_text(weekly_events, 600))
 
         if tonight_best:
             plan_lines.append("\n三、系统给出的\"今晚最佳观测目标\"参考")
-            plan_lines.append(self._shorten_text(tonight_best, 600))
+            plan_lines.append(shorten_text(tonight_best, 600))
 
         plan_lines.append("\n四、实用建议")
         plan_lines.append(
@@ -598,7 +597,7 @@ class AstronomySkillRouter:
                 )
 
         description_prefix.append("\n下面是为你整理的天象预报：\n")
-        description_prefix.append(self._shorten_text(body, 1200))
+        description_prefix.append(shorten_text(body, 1200))
         return "\n".join(description_prefix)
 
     def _deep_sky_observing_guide(
@@ -644,10 +643,10 @@ class AstronomySkillRouter:
             lines.append(f"🔭 计划使用设备：{equipment}")
 
         lines.append("\n一、目标基础信息（基于专业数据库）")
-        lines.append(self._shorten_text(obj_info_raw, 600))
+        lines.append(shorten_text(obj_info_raw, 600))
         if galaxy_info_raw:
             lines.append("\n补充：星系数据摘要")
-            lines.append(self._shorten_text(galaxy_info_raw, 400))
+            lines.append(shorten_text(galaxy_info_raw, 400))
 
         if weather_brief:
             lines.append("\n二、观测条件（天气简要）")
@@ -857,7 +856,7 @@ class AstronomySkillRouter:
             longitude=lon,
         )
 
-        body = self._shorten_text(result_raw, 600)
+        body = shorten_text(result_raw, 600)
         fmt = (output_format or "radec").lower()
 
         header = (
@@ -959,11 +958,3 @@ class AstronomySkillRouter:
             parts.append(f"- {t}")
 
         return "\n".join(parts) if parts else ""
-
-    def _shorten_text(self, text: Any, max_len: int) -> str:
-        if text is None:
-            return ""
-        s = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
-        if len(s) <= max_len:
-            return s
-        return s[: max_len - 3] + "..."
