@@ -13,6 +13,11 @@ class VisionService:
         dashscope.api_key = self._api_key
 
     def describe_image(self, image_path: str, prompt: str) -> str:
+        if not self._api_key:
+            raise AgentError(
+                code=ErrorCode.VISION_ERROR,
+                message="DASHSCOPE_API_KEY 未配置，无法使用视觉服务",
+            )
         try:
             logger.info(f"尝试读取图片: {image_path}")
             p = Path(image_path).resolve()

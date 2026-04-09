@@ -84,7 +84,7 @@ class AstronomyTools:
     
     def _is_coordinates(self, text):
         """检测是否为坐标格式（兼容接口）"""
-        from utils.helpers import is_coordinates
+        from src.utils.helpers import is_coordinates
         return is_coordinates(text)
     
     def get_weather(self, city=None, extensions="base"):
@@ -129,7 +129,7 @@ class AstronomyEventsPredictor:
     
     def _get_direction(self, az_degrees):
         """获取方向（兼容接口）"""
-        from utils.helpers import get_direction_from_azimuth
+        from src.utils.helpers import get_direction_from_azimuth
         return get_direction_from_azimuth(az_degrees)
     
     def get_weekly_events(self, start_date=None):

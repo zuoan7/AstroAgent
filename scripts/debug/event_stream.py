@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """调试事件流 - 查看API返回的实际事件格式"""
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from src.agent import AstroAgent
 from pathlib import Path
 import asyncio

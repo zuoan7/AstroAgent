@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 构建 BM25 索引脚本
 从 Chroma 向量库中提取文档并构建 BM25 索引
 """
-import sys
 import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings

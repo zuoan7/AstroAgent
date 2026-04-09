@@ -1,0 +1,9 @@
+Requirement already satisfied: setuptools in /usr/lib/python3/dist-packages (59.6.0)
+Collecting setuptools
+  Using cached setuptools-82.0.1-py3-none-any.whl (1.0 MB)
+Installing collected packages: setuptools
+  Attempting uninstall: setuptools
+    Found existing installation: setuptools 59.6.0
+    Not uninstalling setuptools at /usr/lib/python3/dist-packages, outside environment /usr
+    Can't uninstall 'setuptools'. No files were found to uninstall.
+Successfully installed setuptools-82.0.1

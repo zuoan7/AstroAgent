@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import time
 import tempfile
@@ -8,8 +7,6 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime
 
 import pytest
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()

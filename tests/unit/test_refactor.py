@@ -14,13 +14,13 @@ def load_module(name, path):
     return module
 
 # 加载 core.errors
-errors_module = load_module('core.errors', os.path.join(os.path.dirname(__file__), '..', 'core', 'errors.py'))
+errors_module = load_module('src.core.errors', os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'core', 'errors.py'))
 AgentError = errors_module.AgentError
 ErrorHandler = errors_module.ErrorHandler
 ErrorCode = errors_module.ErrorCode
 
 # 加载 agent.param_parser
-param_parser_module = load_module('agent.param_parser', os.path.join(os.path.dirname(__file__), '..', 'agent', 'param_parser.py'))
+param_parser_module = load_module('src.agent.param_parser', os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'agent', 'param_parser.py'))
 ParamParser = param_parser_module.ParamParser
 
 

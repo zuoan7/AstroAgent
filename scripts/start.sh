@@ -68,7 +68,7 @@ start_services() {
         warn "端口 8001 已被占用，跳过 MCP Server 启动"
     else
         info "启动 MCP Server (port 8001) ..."
-        nohup python3 "$PROJECT_DIR/src/services/mcp_server.py" \
+        nohup env PYTHONPATH="$PROJECT_DIR" python3 "$PROJECT_DIR/src/services/mcp_server.py" \
             > "$LOG_DIR/mcp_server.log" 2>&1 &
         echo $! > "$PID_DIR/mcp_server.pid"
         sleep 2
@@ -85,7 +85,7 @@ start_services() {
         warn "端口 8000 已被占用，跳过 API Backend 启动"
     else
         info "启动 API Backend (port 8000) ..."
-        nohup python3 "$PROJECT_DIR/src/api/main.py" \
+        nohup env PYTHONPATH="$PROJECT_DIR" python3 "$PROJECT_DIR/src/api/main.py" \
             > "$LOG_DIR/api.log" 2>&1 &
         echo $! > "$PID_DIR/api.pid"
         sleep 3

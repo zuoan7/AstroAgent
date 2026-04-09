@@ -8,12 +8,10 @@ import sys
 import json
 from typing import Optional, Union
 
-# 确保src在Python路径中
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from fastmcp import FastMCP
 from src.astronomy import AstronomyTools, AstronomyEventsPredictor
 from src.agent.param_parser import ParamParser
+from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler, safe_tool_call
 
 print("🚀 正在初始化天文工具...")
@@ -241,20 +239,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    host = os.environ.get("FASTMCP_HOST", "0.0.0.0")
-    port = int(os.environ.get("FASTMCP_PORT", "8001"))
-
-    print(f"📡 监听地址: http://{host}:{port}/mcp/")
-    print(f"📦 已注册工具: 13个")
-    print(f"💡 按 Ctrl+C 停止服务器")
-    print("="*60 + "\n")
-
-    try:
-        mcp.run(transport="streamable-http", host=host, port=port)
-    except KeyboardInterrupt:
-        print("\n👋 服务器已停止")
-    except Exception as e:
-        print(f"❌ 服务器启动失败: {e}")
-        import traceback
-        traceback.print_exc()

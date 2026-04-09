@@ -154,9 +154,11 @@ class AstroAgent:
             traceback.print_exc()
 
     def __del__(self):
-        if hasattr(self, 'http_client') and self.http_client:
-            try:
-                self.http_client.close()
-                logger.info("✅ HTTP客户端已关闭")
-            except:
-                pass
+        try:
+            if hasattr(self, 'skill_manager') and self.skill_manager:
+                router = getattr(self.skill_manager, '_skill_router', None)
+                if router and hasattr(router, '_http_client') and router._http_client:
+                    router._http_client.close()
+                    logger.info("✅ MCP HTTP客户端已关闭")
+        except Exception:
+            pass

@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     """项目统一配置管理"""
     
     # ========== 千问模型配置 ==========
-    DASHSCOPE_API_KEY: str = Field(..., description="千问模型 API Key")
+    DASHSCOPE_API_KEY: Optional[str] = Field(None, description="千问模型 API Key")
     MODEL_NAME: str = Field("qwen-max", description="主模型名称")
     EMBEDDING_MODEL_NAME: str = Field("text-embedding-v2", description="嵌入模型名称")
     VISION_MODEL_NAME: str = Field("qwen-vl-plus", description="视觉模型名称")
@@ -32,14 +32,14 @@ class Settings(BaseSettings):
     MCP_PORT: int = Field(8001, description="MCP 服务端口（避免与 FastAPI 冲突）")
     
     # ========== NASA API 配置 ==========
-    NASA_API_KEY: str = Field(..., description="NASA API 密钥")
+    NASA_API_KEY: Optional[str] = Field(None, description="NASA API 密钥")
     NASA_BASE_URL: str = Field("https://api.nasa.gov", description="NASA API 基础 URL")
     NASA_APOD_URL: str = Field("https://api.nasa.gov/planetary/apod", description="NASA APOD 接口地址")
     NASA_NEO_URL: str = Field("https://api.nasa.gov/neo/rest/v1/feed", description="NASA NEO 接口地址")
     NASA_NEO_MAX_DAYS: int = Field(7, description="NEO API 最大查询天数限制")
     
     # ========== 高德地图 API 配置 ==========
-    AMAP_API_KEY: str = Field(..., description="高德地图 API Key")
+    AMAP_API_KEY: Optional[str] = Field(None, description="高德地图 API Key")
     AMAP_DEFAULT_CITY: str = Field("北京", description="默认城市")
     AMAP_WEATHER_URL: str = Field(
         "https://restapi.amap.com/v3/weather/weatherInfo",

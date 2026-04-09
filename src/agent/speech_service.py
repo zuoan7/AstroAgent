@@ -37,6 +37,11 @@ class SpeechService:
         return _FORMAT_MAP.get(ext, "wav")
 
     def transcribe_audio(self, audio_path: str) -> str:
+        if not self._api_key:
+            raise AgentError(
+                code=ErrorCode.SPEECH_ERROR,
+                message="DASHSCOPE_API_KEY 未配置，无法使用语音服务",
+            )
         try:
             p = Path(audio_path).resolve()
 

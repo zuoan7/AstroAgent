@@ -44,7 +44,7 @@ class PlanetaryCalculator:
             包含赤经、赤纬和距离的字典
         """
         if not self.ephemeris.is_loaded:
-            from core.errors import ErrorHandler
+            from src.core.errors import ErrorHandler
             error = ErrorHandler.create_tool_error(
                 "get_planet_position",
                 "行星数据未加载，无法计算行星位置"
@@ -72,7 +72,7 @@ class PlanetaryCalculator:
             
             # 验证行星名称
             if planet_name.lower() not in settings.VALID_PLANETS:
-                from core.errors import ErrorHandler
+                from src.core.errors import ErrorHandler
                 error = ErrorHandler.create_tool_error(
                     "get_planet_position",
                     f"无效的行星名称。有效行星: {', '.join(settings.VALID_PLANETS)}",
@@ -108,7 +108,7 @@ class PlanetaryCalculator:
             }
             
         except Exception as e:
-            from core.errors import ErrorHandler
+            from src.core.errors import ErrorHandler
             error = ErrorHandler.handle(e, {"tool": "get_planet_position", "planet_name": planet_name})
             return error.to_dict()
     
@@ -135,7 +135,7 @@ class PlanetaryCalculator:
                     raise ValueError("无效的输入格式，需要包含ra和dec键")
                     
             elif isinstance(ra, str):
-                from utils.helpers import extract_key_value_pairs
+                from src.utils.helpers import extract_key_value_pairs
                 coords = extract_key_value_pairs(ra, ['ra', 'dec'])
                 if 'ra' in coords and 'dec' in coords:
                     ra = coords['ra']

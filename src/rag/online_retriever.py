@@ -40,11 +40,14 @@ class OnlineRetriever:
         self.vector_weight = vector_weight
         self.bm25_weight = bm25_weight
 
-        if not self.enabled:
+        if not self.enabled or not settings.DASHSCOPE_API_KEY:
             self.db = None
             self.embeddings = None
             self.bm25_retriever = None
-            logger.warning("⚠️  RAG_ENABLED=False，在线检索已禁用")
+            if not settings.DASHSCOPE_API_KEY:
+                logger.warning("⚠️  DASHSCOPE_API_KEY 未配置，在线检索已禁用")
+            else:
+                logger.warning("⚠️  RAG_ENABLED=False，在线检索已禁用")
             return
 
         # 初始化向量检索

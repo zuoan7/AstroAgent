@@ -16,6 +16,12 @@ class NASAAPIService:
         self.api_key = settings.NASA_API_KEY
 
     def get_apod(self, date=None, hd=False) -> dict:
+        if not self.api_key:
+            raise AgentError(
+                code=ErrorCode.NASA_API_ERROR,
+                message="NASA_API_KEY 未配置，无法查询 NASA 数据",
+                details={"api": "APOD"}
+            )
         try:
             params = {
                 "api_key": self.api_key,
@@ -42,6 +48,12 @@ class NASAAPIService:
             )
 
     def get_neo_data(self, start_date=None, end_date=None, limit=20) -> dict:
+        if not self.api_key:
+            raise AgentError(
+                code=ErrorCode.NASA_API_ERROR,
+                message="NASA_API_KEY 未配置，无法查询近地天体数据",
+                details={"api": "NEO"}
+            )
         try:
             if start_date:
                 start_dt = datetime.strptime(start_date, "%Y-%m-%d")
