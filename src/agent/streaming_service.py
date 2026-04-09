@@ -2,10 +2,13 @@ import json
 import re
 import time
 import uuid
+from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, Generator, Optional
 from src.core.logger import logger
 from src.core.errors import ErrorHandler
 from src.utils.helpers import extract_image_url
+
+MAX_ACTION_HISTORY_ENTRIES = 100
 
 
 class StreamingService:
@@ -24,8 +27,24 @@ class StreamingService:
         self._fallback_service = fallback_service
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
-        self._action_history: Dict[str, list] = {}
+        self._action_history: OrderedDict[str, list] = OrderedDict()
         self._max_same_action_count = 2
+
+    def _cleanup_action_history(self, request_id: Optional[str] = None):
+        if request_id and request_id in self._action_history:
+            del self._action_history[request_id]
+            logger.debug(f"已清理请求 {request_id} 的操作历史")
+
+        while len(self._action_history) > MAX_ACTION_HISTORY_ENTRIES:
+            oldest_key, _ = self._action_history.popitem(last=False)
+            logger.debug(f"LRU淘汰最旧的操作历史: {oldest_key}")
+
+    def _log_memory_usage(self):
+        total_entries = len(self._action_history)
+        total_actions = sum(len(v) for v in self._action_history.values())
+        logger.debug(
+            f"操作历史内存状态: {total_entries} 个请求, 共 {total_actions} 条动作记录"
+        )
 
     def _format_chat_history(self) -> str:
         messages = self._memory.get_recent_messages()
@@ -38,13 +57,11 @@ class StreamingService:
         return "\n".join(formatted)
 
     def _format_user_profile(self) -> str:
-        """格式化用户画像"""
         if not self._long_term_memory:
             return "暂无用户偏好信息"
         return self._long_term_memory.format_profile_for_prompt(self._user_id)
 
     def _extract_and_update_long_term_memory(self, user_message: str, assistant_message: str):
-        """从对话中提取并更新长期记忆"""
         if not self._long_term_memory:
             return
 
@@ -66,19 +83,19 @@ class StreamingService:
     def _check_repeated_action(self, request_id: str, tool_name: str, tool_input: str) -> bool:
         if request_id not in self._action_history:
             self._action_history[request_id] = []
-        
+
         action_key = f"{tool_name}:{tool_input}"
         history = self._action_history[request_id]
-        
+
         history.append(action_key)
         same_count = sum(1 for h in history if h == action_key)
-        
+
         if same_count >= self._max_same_action_count:
             logger.warning(
                 f"[{request_id}] ⚠️ 检测到重复操作：{tool_name} 已执行 {same_count} 次，强制终止"
             )
             return True
-        
+
         return False
 
     def _build_response_from_intermediate_steps(
@@ -86,7 +103,7 @@ class StreamingService:
     ) -> str:
         if not intermediate_steps:
             return ""
-        
+
         tool_results = []
         for step in intermediate_steps:
             if hasattr(step, '__iter__') and len(step) >= 2:
@@ -105,16 +122,16 @@ class StreamingService:
                         "input": str(tool_input)[:100],
                         "output": str(observation)[:500]
                     })
-        
+
         if not tool_results:
             return ""
-        
+
         response_parts = [f"根据已获取的信息，为您回答「{query}」：\n"]
-        
+
         for i, result in enumerate(tool_results, 1):
             tool_name = result["tool"]
             output = result["output"]
-            
+
             try:
                 output_data = json.loads(output)
                 if isinstance(output_data, dict):
@@ -133,10 +150,10 @@ class StreamingService:
                     continue
             except (json.JSONDecodeError, TypeError):
                 pass
-            
+
             if len(output) > 50:
                 response_parts.append(f"\n{output}")
-        
+
         response_parts.append("\n\n（注：由于处理时间限制，以上是基于已获取数据整理的信息。）")
         return "".join(response_parts)
 
@@ -160,7 +177,7 @@ class StreamingService:
             if self._fallback_service and self._fallback_service.should_use_fallback(output):
                 logger.warning("检测到工具调用可能未返回有效结果，尝试从中间步骤生成答案...")
                 tool_call_failed = True
-                
+
                 if intermediate_steps:
                     built_response = self._build_response_from_intermediate_steps(query, intermediate_steps)
                     if built_response:
@@ -185,7 +202,6 @@ class StreamingService:
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", final_response, time.time())
 
-            # 提取并更新长期记忆
             self._extract_and_update_long_term_memory(query, final_response)
 
             if fallback_used:
@@ -211,7 +227,6 @@ class StreamingService:
                     self._memory.add_message("user", query, time.time())
                     self._memory.add_message("assistant", fallback_response, time.time())
 
-                    # 提取并更新长期记忆
                     self._extract_and_update_long_term_memory(query, fallback_response)
 
                     logger.info(f"✅ 降级搜索成功 | 助手响应长度：{len(fallback_response)} 字符")
@@ -224,7 +239,6 @@ class StreamingService:
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", default_response, time.time())
 
-            # 提取并更新长期记忆
             self._extract_and_update_long_term_memory(query, default_response)
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
@@ -248,7 +262,7 @@ class StreamingService:
             ):
                 if should_stop:
                     break
-                    
+
                 event_type = event.get("event")
                 data = event.get("data", {}) or {}
                 run_id = event.get("run_id")
@@ -257,14 +271,14 @@ class StreamingService:
                     tool_name = data.get("name") or data.get("tool")
                     tool_input = data.get("input")
                     tool_input_str = str(tool_input) if tool_input else ""
-                    
+
                     if self._check_repeated_action(request_id, tool_name or "unknown_tool", tool_input_str):
                         should_stop = True
                         fallback_msg = "\n\n⚠️ 检测到重复操作，已自动终止循环。"
                         final_chunks.append(fallback_msg)
                         yield fallback_msg
                         break
-                    
+
                     self._tool_runs[run_id] = {
                         "name": tool_name or "unknown_tool",
                         "input": tool_input_str,
@@ -325,19 +339,19 @@ class StreamingService:
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", fallback, time.time())
 
-            # 提取并更新长期记忆
             self._extract_and_update_long_term_memory(query, fallback)
         else:
             final_response = "".join(final_chunks)
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", final_response, time.time())
 
-            # 提取并更新长期记忆
             self._extract_and_update_long_term_memory(query, final_response)
 
             logger.info(f"[{request_id}] ✅ 流式对话完成，响应长度：{len(final_response)} 字符")
         finally:
             self._current_request_id = None
+            self._cleanup_action_history(request_id)
+            self._log_memory_usage()
 
     async def generate_events(
         self, query: str, image_path: Optional[str] = None
@@ -482,14 +496,12 @@ class StreamingService:
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", fallback, time.time())
 
-            # 提取并更新长期记忆
             self._extract_and_update_long_term_memory(query, fallback)
         else:
             final_response = "".join(final_chunks)
             self._memory.add_message("user", query, time.time())
             self._memory.add_message("assistant", final_response, time.time())
 
-            # 提取并更新长期记忆
             self._extract_and_update_long_term_memory(query, final_response)
 
             if not thinking_logged and thinking_buffer:
@@ -497,3 +509,5 @@ class StreamingService:
             logger.info(f"[{request_id}] ✅ 事件流完成，响应长度：{len(final_response)} 字符")
         finally:
             self._current_request_id = None
+            self._cleanup_action_history(request_id)
+            self._log_memory_usage()

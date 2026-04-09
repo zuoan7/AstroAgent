@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -14,25 +15,20 @@ from src.utils.helpers import parse_date
 
 MCP_SERVER_URL = "http://localhost:8001/mcp"
 
+MCP_RECONNECT_MAX_RETRIES = 3
+MCP_RECONNECT_DELAY = 2.0
+
 
 class AstronomySkillRouter:
-    """
-    天文技能路由层。
-
-    说明：
-    - 对上：只暴露“技能”接口（与 skill.yaml 中的 name 一一对应）
-    - 对下：直接通过内部 MCP 客户端调用具体工具（get_weather / get_weekly_events 等）
-    - 这样可以保证上层 Agent 不再直接面向底层工具，而是通过技能完成复杂任务编排
-    """
 
     def __init__(self) -> None:
         self._mcp_session_id: Optional[str] = None
         self._mcp_initialized = False
-        self._http_client: Optional[httpx.Client] = None
+        self._http_client: Optional[httpx.AsyncClient] = None
+        self._reconnect_attempts = 0
         self._init_mcp_session_sync()
 
         self._call_mcp_tool = self._call_mcp_tool_internal
-        # 注册表：技能名 -> 具体实现函数
         self._registry: Dict[str, Callable[..., str]] = {
             "observation-planner": self._observation_planner,
             "celestial-events-forecast": self._celestial_events_forecast,
@@ -41,11 +37,8 @@ class AstronomySkillRouter:
             "astrophotography-calculator": self._astrophotography_calculator,
             "celestial-position-calculator": self._celestial_position_calculator,
         }
-        # 简单直通型技能配置：skill_name -> {"tool_name": str, "param_mapping": {skill_param: tool_param}}
         self._simple_skills: Dict[str, Dict[str, Any]] = {}
 
-        # 预注册一个基于 get_weather 的简单天气查询技能
-        # skill 名：weather-lookup，底层工具：get_weather
         self.register_simple_skill(
             skill_name="weather-lookup",
             tool_name="get_weather",
@@ -59,7 +52,6 @@ class AstronomySkillRouter:
     # ===== 公共接口 =====
 
     def list_skills(self) -> Dict[str, str]:
-        """返回可用技能名称及简要说明（说明保持与 skill.yaml 一致的语义）。"""
         return {
             "observation-planner": "生成指定日期和地点的天文观测计划",
             "celestial-events-forecast": "查询指定时间段的天象事件",
@@ -76,29 +68,15 @@ class AstronomySkillRouter:
         tool_name: str,
         param_mapping: Optional[Dict[str, str]] = None,
     ) -> None:
-        """
-        注册“单工具直通型”技能：
-        - skill_name: 对上暴露的技能名
-        - tool_name: 对下实际调用的 MCP 工具名
-        - param_mapping: 可选，skill 参数名 -> MCP 工具参数名 的映射，默认同名直传
-        """
         self._simple_skills[skill_name] = {
             "tool_name": tool_name,
             "param_mapping": param_mapping or {},
         }
 
     def call(self, name: str, **params: Any) -> str:
-        """
-        调用指定技能。
-
-        Args:
-            name: 技能名称（与 skill.yaml 中的 name 对应）
-            params: 技能参数
-        """
         if name in self._registry:
             return self._registry[name](**params)
 
-        # 若是简单直通型技能，则自动包装单一 MCP 工具调用
         if name in self._simple_skills:
             cfg = self._simple_skills[name]
             tool_name = cfg["tool_name"]
@@ -108,34 +86,31 @@ class AstronomySkillRouter:
                 tool_key = mapping.get(k, k)
                 tool_kwargs[tool_key] = v
             raw = self._call_mcp_tool(tool_name, **tool_kwargs)
-            # 这里统一做一次温和截断，避免把底层工具的大块 JSON 直接抛给上层
             return self._shorten_text(raw, 1200)
 
         raise ValueError(f"未知技能：{name}")
 
     def call_mcp_tool(self, tool_name: str, **kwargs) -> str:
-        """直接调用底层 MCP 工具（绕过 Skill 路由）"""
         return self._call_mcp_tool(tool_name, **kwargs)
 
     # ===== MCP 通信层 =====
 
     def _init_mcp_session_sync(self):
-        """使用同步方式初始化MCP会话"""
         try:
             client = httpx.Client(timeout=30.0)
-            
+
             logger.info("正在建立SSE连接...")
             sse_response = client.get(
                 MCP_SERVER_URL,
                 headers={"Accept": "text/event-stream"}
             )
-            
+
             session_id = sse_response.headers.get("mcp-session-id")
             if not session_id:
                 raise Exception("无法获取session ID")
-            
+
             logger.info(f"✅ 获取到session ID: {session_id}")
-            
+
             init_request = {
                 "jsonrpc": "2.0",
                 "method": "initialize",
@@ -149,7 +124,7 @@ class AstronomySkillRouter:
                 },
                 "id": 1
             }
-            
+
             response = client.post(
                 MCP_SERVER_URL,
                 json=init_request,
@@ -159,19 +134,19 @@ class AstronomySkillRouter:
                     "Mcp-Session-Id": session_id
                 }
             )
-            
+
             if response.status_code != 200:
                 raise Exception(f"初始化失败: {response.status_code}")
-            
+
             init_result = self._parse_sse_response(response.text)
             if init_result:
                 logger.debug(f"初始化成功，服务器信息: {init_result.get('result', {}).get('serverInfo', {})}")
-            
+
             notif_request = {
                 "jsonrpc": "2.0",
                 "method": "notifications/initialized"
             }
-            
+
             client.post(
                 MCP_SERVER_URL,
                 json=notif_request,
@@ -181,14 +156,14 @@ class AstronomySkillRouter:
                     "Mcp-Session-Id": session_id
                 }
             )
-            
+
             logger.info("获取工具列表...")
             list_request = {
                 "jsonrpc": "2.0",
                 "method": "tools/list",
                 "id": 2
             }
-            
+
             response = client.post(
                 MCP_SERVER_URL,
                 json=list_request,
@@ -198,25 +173,120 @@ class AstronomySkillRouter:
                     "Mcp-Session-Id": session_id
                 }
             )
-            
+
             tools_result = self._parse_sse_response(response.text)
             if tools_result:
                 tools_list = tools_result.get("result", {}).get("tools", [])
                 logger.info(f"✅ 从服务器获取到 {len(tools_list)} 个工具")
-            
+
+            client.close()
+
             self._mcp_session_id = session_id
             self._mcp_initialized = True
-            self._http_client = client
-            
+            self._http_client = httpx.AsyncClient(timeout=30.0)
+            self._reconnect_attempts = 0
+
             logger.info(f"✅ MCP会话初始化成功，会话ID: {session_id}")
-            
+
         except Exception as e:
             logger.error(f"❌ MCP会话初始化失败: {e}")
             self._mcp_initialized = False
             self._http_client = None
 
+    def _is_session_valid(self) -> bool:
+        if not self._mcp_initialized or not self._mcp_session_id:
+            return False
+        if self._http_client is None or self._http_client.is_closed:
+            return False
+        return True
+
+    async def _ensure_session(self) -> bool:
+        if self._is_session_valid():
+            return True
+
+        logger.warning("MCP会话无效或已断开，尝试重连...")
+        return await self._reconnect()
+
+    async def _reconnect(self) -> bool:
+        for attempt in range(1, MCP_RECONNECT_MAX_RETRIES + 1):
+            logger.info(f"MCP重连尝试 {attempt}/{MCP_RECONNECT_MAX_RETRIES}...")
+            try:
+                if self._http_client and not self._http_client.is_closed:
+                    await self._http_client.aclose()
+
+                client = httpx.AsyncClient(timeout=30.0)
+
+                sse_response = await client.get(
+                    MCP_SERVER_URL,
+                    headers={"Accept": "text/event-stream"}
+                )
+
+                session_id = sse_response.headers.get("mcp-session-id")
+                if not session_id:
+                    raise Exception("重连时无法获取session ID")
+
+                init_request = {
+                    "jsonrpc": "2.0",
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {
+                            "name": "AstroAgent-SkillRouter",
+                            "version": "1.0.0"
+                        }
+                    },
+                    "id": 1
+                }
+
+                response = await client.post(
+                    MCP_SERVER_URL,
+                    json=init_request,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json, text/event-stream",
+                        "Mcp-Session-Id": session_id
+                    }
+                )
+
+                if response.status_code != 200:
+                    raise Exception(f"重连初始化失败: {response.status_code}")
+
+                notif_request = {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized"
+                }
+
+                await client.post(
+                    MCP_SERVER_URL,
+                    json=notif_request,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json, text/event-stream",
+                        "Mcp-Session-Id": session_id
+                    }
+                )
+
+                self._mcp_session_id = session_id
+                self._mcp_initialized = True
+                self._http_client = client
+                self._reconnect_attempts = 0
+
+                logger.info(f"✅ MCP重连成功，新会话ID: {session_id}")
+                return True
+
+            except Exception as e:
+                logger.error(f"❌ MCP重连第 {attempt} 次失败: {e}")
+                self._mcp_initialized = False
+                self._http_client = None
+                if attempt < MCP_RECONNECT_MAX_RETRIES:
+                    await asyncio.sleep(MCP_RECONNECT_DELAY * attempt)
+
+        logger.error(f"❌ MCP重连失败，已尝试 {MCP_RECONNECT_MAX_RETRIES} 次")
+        self._reconnect_attempts += MCP_RECONNECT_MAX_RETRIES
+        return False
+
     def _parse_sse_response(self, response_text: str) -> Optional[dict]:
-        """解析 SSE 格式的响应"""
         try:
             lines = response_text.strip().split('\n')
             for line in lines:
@@ -229,11 +299,26 @@ class AstronomySkillRouter:
             return None
 
     def _call_mcp_tool_internal(self, tool_name: str, **kwargs) -> str:
-        if not self._mcp_initialized or not self._mcp_session_id:
-            logger.error("❌ MCP会话未初始化")
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, self._async_call_mcp_tool(tool_name, **kwargs))
+                return future.result(timeout=60)
+        else:
+            return asyncio.run(self._async_call_mcp_tool(tool_name, **kwargs))
+
+    async def _async_call_mcp_tool(self, tool_name: str, **kwargs) -> str:
+        session_ok = await self._ensure_session()
+        if not session_ok:
+            logger.error("❌ MCP会话不可用且重连失败")
             return json.dumps(AgentError(
                 code=ErrorCode.MCP_SESSION_ERROR,
-                message="MCP会话未初始化，请检查桥服务器是否运行",
+                message="MCP会话不可用且重连失败，请检查桥服务器是否运行",
                 details={"tool_name": tool_name}
             ).to_dict(), ensure_ascii=False)
 
@@ -265,7 +350,7 @@ class AstronomySkillRouter:
 
             logger.debug(f"调用工具 {tool_name}，处理后的参数: {processed_kwargs}")
 
-            response = self._http_client.post(
+            response = await self._http_client.post(
                 MCP_SERVER_URL,
                 json=request,
                 headers={
@@ -277,6 +362,9 @@ class AstronomySkillRouter:
             )
 
             if response.status_code != 200:
+                if response.status_code in (404, 410, 503):
+                    self._mcp_initialized = False
+                    logger.warning(f"MCP会话可能已失效(HTTP {response.status_code})，标记需要重连")
                 return json.dumps(AgentError(
                     code=ErrorCode.MCP_SESSION_ERROR,
                     message=f"MCP服务器返回HTTP错误: {response.status_code}",
@@ -344,6 +432,7 @@ class AstronomySkillRouter:
             ).to_dict(), ensure_ascii=False)
         except httpx.ConnectError:
             logger.error(f"❌ 无法连接到MCP服务器: {MCP_SERVER_URL}")
+            self._mcp_initialized = False
             return json.dumps(AgentError(
                 code=ErrorCode.MCP_CONNECTION_ERROR,
                 message="无法连接到MCP服务器",
@@ -354,6 +443,9 @@ class AstronomySkillRouter:
             error = ErrorHandler.handle(e, {"tool_name": tool_name})
             return json.dumps(error.to_dict(), ensure_ascii=False)
 
+    async def async_call_mcp_tool(self, tool_name: str, **kwargs) -> str:
+        return await self._async_call_mcp_tool(tool_name, **kwargs)
+
     # ===== 具体技能实现 =====
 
     def _observation_planner(
@@ -362,14 +454,6 @@ class AstronomySkillRouter:
         location: Optional[str] = None,
         duration: Optional[str] = None,
     ) -> str:
-        """
-        skill: observation-planner
-        生成指定日期和地点的天文观测计划。
-        参数设计参考 skill.yaml：
-        - date: 观测日期，支持“今天”“明天”或 YYYY-MM-DD
-        - location: 观测地点（城市名称或经纬度），可选；未提供时给出一般性观测建议
-        - duration: 观测时段，如“整晚”“前半夜”“后半夜”
-        """
         if not location and date:
             text = str(date).strip()
             if not self._is_date_like(text):
@@ -377,7 +461,7 @@ class AstronomySkillRouter:
                 date = None
 
         obs_date = parse_date(date)
-        
+
         display_location = ParamParser.normalize_location(location)
         query_city = None
         if location is not None:
@@ -425,7 +509,7 @@ class AstronomySkillRouter:
         plan_lines.append(self._shorten_text(weekly_events, 600))
 
         if tonight_best:
-            plan_lines.append("\n三、系统给出的“今晚最佳观测目标”参考")
+            plan_lines.append("\n三、系统给出的\"今晚最佳观测目标\"参考")
             plan_lines.append(self._shorten_text(tonight_best, 600))
 
         plan_lines.append("\n四、实用建议")
@@ -443,29 +527,18 @@ class AstronomySkillRouter:
         end_date: Optional[str] = None,
         event_type: Optional[str] = None,
     ) -> str:
-        """
-        skill: celestial-events-forecast
-        查询指定时间段的天象事件。
-        目前实现：
-        - 若时间跨度 <= 7 天：调用 get_weekly_events
-        - 若时间跨度 > 7 天或未指定 end_date：调用 get_monthly_events
-        - event_type 暂时仅用于在文案层提示筛选意图，不做严格机器过滤
-        """
         if start_date:
             start_dt = parse_date(start_date)
         else:
             start_dt = datetime.now()
 
-        # 检查年份是否为2026年，因为系统只存储了2026年的天象数据
         if start_dt.year != 2026:
-            # 自动调整为2026年
             start_dt = start_dt.replace(year=2026)
 
         end_dt: Optional[datetime] = None
         if end_date:
             try:
                 end_dt = parse_date(end_date)
-                # 检查结束年份是否为2026年
                 if end_dt.year != 2026:
                     end_dt = end_dt.replace(year=2026)
             except Exception:
@@ -484,7 +557,6 @@ class AstronomySkillRouter:
         if event_type:
             description_prefix.append(f"用户关心的事件类型：{event_type}（当前版本为软筛选，仅供解释用）")
 
-        # 时间跨度粗略判断
         use_weekly = False
         if end_dt:
             try:
@@ -493,7 +565,6 @@ class AstronomySkillRouter:
             except Exception:
                 use_weekly = False
         else:
-            # 未给 end_date，默认按一周预报
             use_weekly = True
 
         if use_weekly:
@@ -502,9 +573,7 @@ class AstronomySkillRouter:
                 start_date=start_dt.strftime("%Y-%m-%d"),
             )
         else:
-            # 处理跨月份的情况
             if end_dt:
-                # 遍历从开始日期到结束日期的所有月份
                 current_dt = start_dt
                 monthly_bodies = []
                 while current_dt <= end_dt:
@@ -514,14 +583,12 @@ class AstronomySkillRouter:
                         month=current_dt.month,
                     )
                     monthly_bodies.append(month_body)
-                    # 移动到下一个月
                     if current_dt.month == 12:
                         current_dt = current_dt.replace(year=current_dt.year + 1, month=1)
                     else:
                         current_dt = current_dt.replace(month=current_dt.month + 1)
                 body = "\n".join(monthly_bodies)
             else:
-                # 未指定结束日期，只获取当前月份
                 year = start_dt.year
                 month = start_dt.month
                 body = self._call_mcp_tool(
@@ -541,22 +608,16 @@ class AstronomySkillRouter:
         date: Optional[str] = None,
         equipment: Optional[str] = None,
     ) -> str:
-        """
-        skill: deep-sky-observing-guide
-        为指定深空天体提供观测指导。
-        """
         if not target:
-            return "深空观测指导技能需要提供目标名称（target），例如“M31”或“猎户座大星云”。"
+            return "深空观测指导技能需要提供目标名称（target），例如\"M31\"或\"猎户座大星云\"。"
 
         obs_date = parse_date(date) if date else datetime.now()
 
-        # 1) 查询天体基本信息
         obj_info_raw = self._call_mcp_tool(
             "get_astrophysical_object_info",
             object_name=target,
         )
 
-        # 2) 如果可能是星系目标，再尝试一次星系数据库
         galaxy_info_raw: Optional[str] = None
         if any(x in target.lower() for x in ["galaxy", "星系", "m31", "m33"]):
             galaxy_info_raw = self._call_mcp_tool(
@@ -564,7 +625,6 @@ class AstronomySkillRouter:
                 galaxy_name=target,
             )
 
-        # 3) 可选：根据地点查询天气
         weather_brief = ""
         if observer_location:
             weather_raw = self._call_mcp_tool(
@@ -595,8 +655,8 @@ class AstronomySkillRouter:
 
         lines.append("\n三、观测建议")
         lines.append(
-            "1. 建议选择无月光或月亮落下后 1–2 小时的时段进行深空观测。\n"
-            "2. 若使用双筒或小口径望远镜，可优先寻找目标所在星座的亮星作“跳星”指引。\n"
+            "1. 建议选择无月光或月亮落下后 1-2 小时的时段进行深空观测。\n"
+            "2. 若使用双筒或小口径望远镜，可优先寻找目标所在星座的亮星作\"跳星\"指引。\n"
             "3. 使用较低倍率（长焦距目镜）先锁定目标，再逐步提高放大倍率细看结构。"
         )
 
@@ -609,26 +669,16 @@ class AstronomySkillRouter:
         max_distance: Optional[float] = None,
         observable_only: Optional[bool] = None,
     ) -> str:
-        """
-        skill: neo-tracker
-        追踪近地天体飞掠事件。
-        - time_range: “未来30天”“本月”等自然语言时间范围
-        - min_size: 最小直径（米）
-        - max_distance: 最大距离（地月距离倍数）
-        - observable_only: 是否仅返回有较大亮度、接近地球、理论上有观测价值的天体
-        """
         from datetime import datetime, timedelta
-        
-        # 解析时间范围
+
         start_date, end_date = self._parse_time_range(time_range)
-        
-        # 检查日期范围是否超过7天（NASA API限制）
+
         warning_lines = []
         try:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
             delta_days = (end_dt - start_dt).days
-            
+
             if delta_days > 7:
                 warning_lines.append(f"⚠️ 注意：NASA NEO API 最多只支持查询7天的数据。")
                 warning_lines.append(f"请求范围：{start_date} 至 {end_date}（{delta_days}天）")
@@ -646,20 +696,16 @@ class AstronomySkillRouter:
 
         data = None
         try:
-            # 尝试解析JSON
             if isinstance(raw_json, str):
                 data = json.loads(raw_json)
             else:
                 data = raw_json
         except Exception:
-            # 如果解析失败，可能已经是字符串或其他格式
             return raw_json
 
-        # 如果有错误信息，直接返回
         if isinstance(data, dict) and data.get("error"):
             return data["error"]
 
-        # NASA NEO feed 结构：near_earth_objects: { "YYYY-MM-DD": [ {...}, ... ] }
         neos = []
         for day, objs in (data.get("near_earth_objects") or {}).items():
             for obj in objs:
@@ -680,18 +726,14 @@ class AstronomySkillRouter:
             except Exception:
                 miss_lunar = None
 
-            # 尺寸筛选
             if min_size is not None and size is not None and size < min_size:
                 continue
-            # 距离筛选
             if max_distance is not None and miss_lunar is not None and miss_lunar > max_distance:
                 continue
 
-            # 观测价值粗筛（非常简化的逻辑）
             if observable_only:
                 try:
                     abs_mag = float(obj.get("absolute_magnitude_h"))
-                    # 绝对星等越小越亮，这里仅做非常粗的阈值
                     if abs_mag > 25:
                         continue
                 except Exception:
@@ -711,7 +753,6 @@ class AstronomySkillRouter:
             warning_text = "\n".join(warning_lines) if warning_lines else ""
             return warning_text + "\n在给定的时间范围和筛选条件下，没有找到明显具有观测价值的近地天体飞掠事件。"
 
-        # 添加警告信息（如果有）
         if warning_lines:
             lines = warning_lines.copy()
             lines.extend([
@@ -722,7 +763,7 @@ class AstronomySkillRouter:
             lines = [
                 "📡 近地天体飞掠列表（按时间排序）：",
             ]
-        
+
         filtered.sort(key=lambda x: (x["date"], x.get("miss_distance_lunar") or 1e9))
         for item in filtered[:20]:
             hazard = "⚠️ 潜在威胁小行星" if item["hazardous"] else ""
@@ -747,11 +788,6 @@ class AstronomySkillRouter:
         location: Optional[str] = None,
         date: Optional[str] = None,
     ) -> str:
-        """
-        skill: astrophotography-calculator
-        计算天文摄影参数。
-        当前实现主要为经验规则型计算，不依赖 MCP 工具。
-        """
         obs_date = parse_date(date) if date else datetime.now()
 
         lines = [
@@ -767,13 +803,12 @@ class AstronomySkillRouter:
         if location:
             lines.append(f"📍 拍摄地点：{location}")
 
-        # 非严格的“500 规则”估算（假设 24mm 全画幅）
         lines.append("\n一、曝光时间估算（星点不拖尾的经验值）")
         lines.append(
             "若使用广角/标准镜头并在赤道仪跟踪下：\n"
-            "- 星野/银河：单张 20–60 秒，ISO 1600–6400，光圈尽量开大。\n"
-            "- 星云/星团：根据目标亮度，单张 120–300 秒，ISO 800–3200。\n"
-            "若非跟踪（固定三脚架），可按“500 规则”粗略估计：曝光秒数 ≈ 500 / 焦距（全画幅等效）。"
+            "- 星野/银河：单张 20-60 秒，ISO 1600-6400，光圈尽量开大。\n"
+            "- 星云/星团：根据目标亮度，单张 120-300 秒，ISO 800-3200。\n"
+            "若非跟踪（固定三脚架），可按\"500 规则\"粗略估计：曝光秒数 ≈ 500 / 焦距（全画幅等效）。"
         )
 
         lines.append("\n二、总曝光时间与叠加")
@@ -800,15 +835,9 @@ class AstronomySkillRouter:
         location: Optional[str] = None,
         output_format: Optional[str] = None,
     ) -> str:
-        """
-        skill: celestial-position-calculator
-        计算天体在指定时间的位置。
-        当前主要支持太阳系行星（通过 get_planet_position），输出以赤道坐标为主。
-        """
         if not target:
-            return "天体位置计算技能需要提供目标名称（target），例如“mars”“jupiter”等。"
+            return "天体位置计算技能需要提供目标名称（target），例如\"mars\"\"jupiter\"等。"
 
-        # 导入datetime模块作为别名，避免与参数名冲突
         import datetime as dt_mod
         obs_time = parse_date(datetime) if datetime else dt_mod.datetime.now()
 
@@ -828,7 +857,6 @@ class AstronomySkillRouter:
             longitude=lon,
         )
 
-        # 工具已返回 JSON/dict 风格，这里只做轻度包装
         body = self._shorten_text(result_raw, 600)
         fmt = (output_format or "radec").lower()
 
@@ -844,7 +872,6 @@ class AstronomySkillRouter:
 
     # ===== 辅助方法 =====
     def _is_date_like(self, text: str) -> bool:
-        """判断一个字符串是否“像日期”，用于纠正常被误塞入 date 的地点名称。"""
         t = text.strip()
         if not t:
             return False
@@ -854,10 +881,6 @@ class AstronomySkillRouter:
             return True
         return False
     def _parse_location(self, location: str) -> tuple[Optional[float], Optional[float]]:
-        """
-        解析 location 为 (lat, lon)。
-        当前实现只处理简单的“纬度,经度”数字形式。
-        """
         if not location:
             return None, None
         text = location.replace("，", ",")
@@ -872,9 +895,6 @@ class AstronomySkillRouter:
             return None, None
 
     def _parse_time_range(self, time_range: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-        """
-        将自然语言 time_range 转换为 (start_date, end_date)，格式 YYYY-MM-DD。
-        """
         today = datetime.now().date()
         if not time_range:
             return today.strftime("%Y-%m-%d"), (today + timedelta(days=7)).strftime("%Y-%m-%d")
@@ -896,7 +916,6 @@ class AstronomySkillRouter:
         return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
     def _summarize_weather(self, raw: str) -> str:
-        """从 get_weather 的原始 JSON 文本中提取一个简要观测建议。"""
         try:
             data = json.loads(raw)
         except Exception:
@@ -942,11 +961,9 @@ class AstronomySkillRouter:
         return "\n".join(parts) if parts else ""
 
     def _shorten_text(self, text: Any, max_len: int) -> str:
-        """将任意对象转为字符串，并在长度超过 max_len 时截断。"""
         if text is None:
             return ""
         s = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
         if len(s) <= max_len:
             return s
         return s[: max_len - 3] + "..."
-
