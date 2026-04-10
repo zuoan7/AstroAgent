@@ -6,6 +6,9 @@
 
 from src.agent import AstroAgent
 
+import pytest
+
+@pytest.mark.skip(reason="Interactive test - requires stdin")
 def test_agent_prompt():
 
     agent = AstroAgent()

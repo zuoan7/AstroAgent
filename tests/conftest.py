@@ -329,3 +329,64 @@ class PerformanceTimer:
 @pytest.fixture
 def perf_timer():
     return PerformanceTimer()
+
+
+@pytest.fixture
+def skill_manager():
+    from unittest.mock import MagicMock, patch
+    with patch("src.core.config.settings") as mock_settings:
+        mock_settings.DASHSCOPE_API_KEY = "test-key"
+        mock_settings.MODEL_NAME = "qwen-max"
+        mock_settings.RAG_ENABLED = False
+        mock_settings.MEMORY_SIZE = 15
+        mock_settings.MEMORY_WINDOW = 8
+        mock_settings.LONG_TERM_MEMORY_PATH = "/tmp/test_memory/user_profiles.sqlite"
+        mock_settings.DEFAULT_USER_ID = "test_user"
+        mock_settings.EPHEMERIS_FILE = "de421.bsp"
+        mock_settings.DEFAULT_LOCATION = (39.9, 116.4)
+        mock_settings.SUPPORTED_YEAR_RANGE = (2026, 2030)
+        mock_settings.PLANET_MAPPING = {'mercury': 199, 'venus': 299, 'mars': 499, 'jupiter': 5, 'saturn': 6, 'uranus': 7, 'neptune': 8}
+        mock_settings.VALID_PLANETS = {'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'}
+        mock_settings.PLANET_NAMES_CN = {'mercury': '水星', 'venus': '金星', 'mars': '火星', 'jupiter': '木星', 'saturn': '土星', 'uranus': '天王星', 'neptune': '海王星'}
+        mock_settings.PLANET_MAX_MAGNITUDE = {'mercury': -1.9, 'venus': -4.6, 'mars': -2.0, 'jupiter': -2.7, 'saturn': -0.3}
+        mock_settings.SUPPORTED_BODIES = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn']
+        mock_settings.CELESTIAL_NAME_MAPPING = {}
+        mock_settings.GALAXY_NAME_MAPPING = {}
+        mock_settings.PLANET_VISIBILITY_BY_MONTH = {}
+        mock_settings.MOON_PHASE_THRESHOLDS = []
+        mock_settings.OBSERVING_TIPS_TEMPLATES = {}
+        mock_settings.NASA_API_KEY = "test-nasa-key"
+        mock_settings.NASA_BASE_URL = "https://api.nasa.gov"
+        mock_settings.NASA_APOD_URL = "https://api.nasa.gov/planetary/apod"
+        mock_settings.NASA_NEO_URL = "https://api.nasa.gov/neo/rest/v1/feed"
+        mock_settings.NASA_NEO_MAX_DAYS = 7
+        mock_settings.AMAP_API_KEY = "test-amap-key"
+        mock_settings.AMAP_DEFAULT_CITY = "北京"
+        mock_settings.AMAP_WEATHER_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
+        mock_settings.AMAP_GEOCODE_URL = "https://restapi.amap.com/v3/geocode/regeo"
+        mock_settings.TAVILY_API_KEY = "test-tavily-key"
+        mock_settings.TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+        mock_settings.MCP_SERVER_URL = "http://localhost:8001/mcp"
+        mock_settings.MCP_PORT = 8001
+        mock_settings.API_HOST = "0.0.0.0"
+        mock_settings.API_PORT = 8000
+        mock_settings.MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+        mock_settings.ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png'}
+        mock_settings.ALLOWED_AUDIO_EXTENSIONS = {'.wav', '.mp3'}
+        mock_settings.RATE_LIMIT_PER_MINUTE = 30
+        mock_settings.UPLOAD_RATE_LIMIT_PER_MINUTE = 10
+        mock_settings.SESSION_MAX_AGE_SECONDS = 3600
+        mock_settings.SESSION_CLEANUP_INTERVAL_SECONDS = 300
+        mock_settings.EMBEDDING_MODEL_NAME = "text-embedding-v2"
+        mock_settings.VISION_MODEL_NAME = "qwen-vl-plus"
+        mock_settings.SPEECH_MODEL_NAME = "paraformer-realtime-v2"
+        mock_settings.VECTOR_DB_PATH = "/tmp/test_vector_db"
+
+        with patch("src.agent.skill_manager.AstronomySkillRouter") as MockRouter:
+            mock_router = MagicMock()
+            mock_router.call_mcp_tool.return_value = '{"status": "ok"}'
+            MockRouter.return_value = mock_router
+
+            from src.agent.skill_manager import SkillManager
+            sm = SkillManager()
+            yield sm

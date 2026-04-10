@@ -23,17 +23,6 @@ class OnlineRetriever:
         vector_weight: float = 0.5,
         bm25_weight: float = 0.5,
     ):
-        """
-        初始化在线检索器
-
-        Args:
-            vector_db_path: 向量数据库路径
-            collection_name: collection 名称
-            top_k: 返回结果数量
-            use_hybrid: 是否使用混合检索
-            vector_weight: 向量检索权重 (0-1)
-            bm25_weight: BM25 检索权重 (0-1)
-        """
         self.enabled = bool(settings.RAG_ENABLED)
         self.top_k = top_k
         self.use_hybrid = use_hybrid
@@ -50,7 +39,6 @@ class OnlineRetriever:
                 logger.warning("⚠️  RAG_ENABLED=False，在线检索已禁用")
             return
 
-        # 初始化向量检索
         self.embeddings = DashScopeEmbeddings(
             model=settings.EMBEDDING_MODEL_NAME,
             dashscope_api_key=settings.DASHSCOPE_API_KEY,
@@ -62,7 +50,6 @@ class OnlineRetriever:
         )
         logger.info(f"✅ 向量检索已连接：{vector_db_path}")
 
-        # 初始化 BM25 检索器
         self.bm25_retriever = None
         if use_hybrid:
             try:
@@ -80,112 +67,86 @@ class OnlineRetriever:
                 logger.warning(f"⚠️  BM25 检索初始化失败: {e}，将使用纯向量检索")
                 self.use_hybrid = False
 
-    def _normalize_scores(self, scores: list[float]) -> list[float]:
-        """将分数归一化到 0-1 范围"""
+    @staticmethod
+    def _min_max_normalize(scores: list[float]) -> list[float]:
         if not scores:
             return []
-        min_score = min(scores)
-        max_score = max(scores)
-        if max_score == min_score:
-            return [1.0] * len(scores) if max_score > 0 else [0.0] * len(scores)
-        return [(s - min_score) / (max_score - min_score) for s in scores]
+        min_s = min(scores)
+        max_s = max(scores)
+        if max_s == min_s:
+            return [1.0] * len(scores) if max_s > 0 else [0.0] * len(scores)
+        return [(s - min_s) / (max_s - min_s) for s in scores]
 
     def _merge_results(
         self,
         vector_results: list,
+        vector_distances: list[float],
         bm25_results: list,
         top_k: int
     ) -> list:
-        """
-        合并向量检索和 BM25 检索的结果
-
-        Args:
-            vector_results: 向量检索结果
-            bm25_results: BM25 检索结果
-            top_k: 返回结果数量
-
-        Returns:
-            合并后的结果列表
-        """
         if not bm25_results:
             return vector_results[:top_k]
         if not vector_results:
-            return bm25_results[:top_k]
+            return [
+                self._bm25_result_to_doc(r) for r in bm25_results[:top_k]
+            ]
 
-        # 创建文档 ID 到分数的映射
-        vector_scores = {}
+        vector_scores_raw = []
+        for dist in vector_distances:
+            vector_scores_raw.append(1.0 / (1.0 + dist))
+
+        bm25_scores_raw = [r.get("score", 0.0) for r in bm25_results]
+
+        vector_norm = self._min_max_normalize(vector_scores_raw)
+        bm25_norm = self._min_max_normalize(bm25_scores_raw)
+
+        all_results: dict[str, dict] = {}
+
         for i, doc in enumerate(vector_results):
-            # 使用文档内容作为 key
-            doc_id = doc.page_content[:100]  # 取前100字符作为 ID
-            score = 1.0 - (i * 0.1)  # 简化的分数：排名越前分数越高
-            vector_scores[doc_id] = {
-                "score": score,
+            doc_id = doc.page_content[:100]
+            all_results[doc_id] = {
+                "normalized_score": vector_norm[i] * self.vector_weight,
                 "doc": doc,
-                "source": "vector"
+                "content": doc.page_content,
+                "metadata": doc.metadata,
+                "source": "vector",
             }
 
-        bm25_scores = {}
-        for result in bm25_results:
+        for i, result in enumerate(bm25_results):
             doc_id = result.get("document", "")[:100]
-            bm25_scores[doc_id] = {
-                "score": result.get("score", 0),
-                "doc": result.get("document", ""),
+            bm25_entry = {
+                "normalized_score": bm25_norm[i] * self.bm25_weight,
+                "content": result.get("document", ""),
                 "metadata": result.get("metadata", {}),
-                "source": "bm25"
+                "source": "bm25",
             }
-
-        # 归一化分数
-        vector_score_values = [v["score"] for v in vector_scores.values()]
-        bm25_score_values = [b["score"] for b in bm25_scores.values()]
-
-        vector_norm = self._normalize_scores(vector_score_values)
-        bm25_norm = self._normalize_scores(bm25_score_values)
-
-        # 更新归一化后的分数
-        for i, (doc_id, data) in enumerate(vector_scores.items()):
-            data["normalized_score"] = vector_norm[i] * self.vector_weight
-            data["content"] = data["doc"].page_content
-            data["metadata"] = data["doc"].metadata
-
-        for i, (doc_id, data) in enumerate(bm25_scores.items()):
-            data["normalized_score"] = bm25_norm[i] * self.bm25_weight
-            data["content"] = data["doc"]
-            # 将 bm25 结果包装为类似向量结果的格式
-            data["doc"] = type('obj', (object,), {
-                "page_content": data["content"],
-                "metadata": data.get("metadata", {})
-            })()
-
-        # 合并所有结果
-        all_results = {}
-        for doc_id, data in vector_scores.items():
-            all_results[doc_id] = data
-
-        for doc_id, data in bm25_scores.items():
             if doc_id in all_results:
-                # 如果已存在，取较高分数
-                all_results[doc_id]["normalized_score"] = max(
-                    all_results[doc_id]["normalized_score"],
-                    data["normalized_score"]
+                all_results[doc_id]["normalized_score"] = (
+                    all_results[doc_id]["normalized_score"] + bm25_entry["normalized_score"]
                 )
                 all_results[doc_id]["source"] = "hybrid"
             else:
-                all_results[doc_id] = data
+                bm25_entry["doc"] = self._bm25_result_to_doc(result)
+                all_results[doc_id] = bm25_entry
 
-        # 按分数排序
         sorted_results = sorted(
             all_results.values(),
             key=lambda x: x.get("normalized_score", 0),
             reverse=True
         )[:top_k]
 
-        # 转换为标准格式
         merged = []
         for item in sorted_results:
-            doc = item["doc"]
-            merged.append(doc)
+            merged.append(item["doc"])
 
         return merged
+
+    @staticmethod
+    def _bm25_result_to_doc(result: dict):
+        content = result.get("document", "")
+        metadata = result.get("metadata", {})
+        from langchain_core.documents import Document
+        return Document(page_content=content, metadata=metadata)
 
     def get_relevant_context(self, query: str, top_k: Optional[int] = None) -> str:
         if not self.enabled or not self.db:
@@ -196,23 +157,21 @@ class OnlineRetriever:
         try:
             results = []
 
-            # 向量检索
-            vector_results = self.db.similarity_search(query, k=k)
+            vector_results_with_scores = self.db.similarity_search_with_score(query, k=k)
+            vector_results = [doc for doc, _ in vector_results_with_scores]
+            vector_distances = [score for _, score in vector_results_with_scores]
 
-            # BM25 检索（如果可用）
             bm25_results = []
             if self.use_hybrid and self.bm25_retriever:
                 bm25_results = self.bm25_retriever.search(query, top_k=k)
 
-            # 合并结果
             if self.use_hybrid and bm25_results:
-                results = self._merge_results(vector_results, bm25_results, k)
+                results = self._merge_results(vector_results, vector_distances, bm25_results, k)
                 logger.info(f"📄 混合检索：向量 {len(vector_results)} + BM25 {len(bm25_results)} -> 合并 {len(results)}")
             else:
                 results = vector_results
                 logger.info(f"📄 向量检索：{len(results)} 个结果")
 
-            # 将元数据也拼进上下文，便于回答时引用来源
             parts: list[str] = []
             for doc in results:
                 meta = doc.metadata or {}
@@ -235,7 +194,6 @@ class OnlineRetriever:
             return ""
 
     def get_vector_results(self, query: str, top_k: Optional[int] = None) -> list:
-        """仅获取向量检索结果"""
         if not self.enabled or not self.db:
             return []
 
@@ -243,7 +201,6 @@ class OnlineRetriever:
         return self.db.similarity_search(query, k=k)
 
     def get_bm25_results(self, query: str, top_k: Optional[int] = None) -> list:
-        """仅获取 BM25 检索结果"""
         if not self.bm25_retriever:
             return []
 

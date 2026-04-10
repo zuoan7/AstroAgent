@@ -144,6 +144,34 @@ class AstronomySkillRouter:
             self._async_call_mcp_tool(tool_name, **kwargs)
         )
 
+    def call_mcp_tools_parallel(self, calls: list[dict]) -> list[str]:
+        """
+        并行调用多个 MCP 工具，使用 asyncio.gather 减少总响应时间。
+
+        Args:
+            calls: 列表，每个元素为 {"tool_name": str, "kwargs": dict} 格式
+
+        Returns:
+            与 calls 顺序对应的结果列表
+        """
+        async def _gather():
+            coros = [
+                self._async_call_mcp_tool(c["tool_name"], **c.get("kwargs", {}))
+                for c in calls
+            ]
+            return await asyncio.gather(*coros, return_exceptions=True)
+
+        results = self._async_bridge.run(_gather())
+        final = []
+        for r in results:
+            if isinstance(r, Exception):
+                from src.core.errors import ErrorHandler
+                error = ErrorHandler.handle(r, {"parallel_call": True})
+                final.append(json.dumps(error.to_dict(), ensure_ascii=False))
+            else:
+                final.append(r)
+        return final
+
     async def async_call_mcp_tool(self, tool_name: str, **kwargs) -> str:
         return await self._async_call_mcp_tool(tool_name, **kwargs)
 
@@ -467,23 +495,51 @@ class AstronomySkillRouter:
                 query_city = display_location
 
         weather_brief = ""
-        if query_city:
-            weather_raw = self.call_mcp_tool(
-                "get_weather",
-                city=query_city,
-                extensions="all",
-            )
-            weather_brief = self._summarize_weather(weather_raw)
-
-        weekly_events = self.call_mcp_tool(
-            "get_weekly_events",
-            start_date=obs_date.strftime("%Y-%m-%d"),
-        )
-
+        weekly_events = ""
         tonight_best = ""
+
+        parallel_calls = []
+        if query_city:
+            parallel_calls.append({
+                "tool_name": "get_weather",
+                "kwargs": {"city": query_city, "extensions": "all"},
+                "_key": "weather",
+            })
+        parallel_calls.append({
+            "tool_name": "get_weekly_events",
+            "kwargs": {"start_date": obs_date.strftime("%Y-%m-%d")},
+            "_key": "weekly_events",
+        })
         today_str = datetime.now().strftime("%Y-%m-%d")
         if obs_date.strftime("%Y-%m-%d") == today_str:
-            tonight_best = self.call_mcp_tool("get_tonight_best")
+            parallel_calls.append({
+                "tool_name": "get_tonight_best",
+                "kwargs": {},
+                "_key": "tonight_best",
+            })
+
+        if len(parallel_calls) > 1:
+            parallel_results = self.call_mcp_tools_parallel(parallel_calls)
+            for i, result in enumerate(parallel_results):
+                key = parallel_calls[i]["_key"]
+                if key == "weather":
+                    weather_brief = self._summarize_weather(result)
+                elif key == "weekly_events":
+                    weekly_events = result
+                elif key == "tonight_best":
+                    tonight_best = result
+        else:
+            for call in parallel_calls:
+                if call["_key"] == "weather":
+                    weather_raw = self.call_mcp_tool("get_weather", city=query_city, extensions="all")
+                    weather_brief = self._summarize_weather(weather_raw)
+                elif call["_key"] == "weekly_events":
+                    weekly_events = self.call_mcp_tool(
+                        "get_weekly_events",
+                        start_date=obs_date.strftime("%Y-%m-%d"),
+                    )
+                elif call["_key"] == "tonight_best":
+                    tonight_best = self.call_mcp_tool("get_tonight_best")
 
         plan_lines = [
             f"📅 观测日期：{obs_date.strftime('%Y-%m-%d')}",
@@ -572,19 +628,18 @@ class AstronomySkillRouter:
         else:
             if end_dt:
                 current_dt = start_dt
-                monthly_bodies = []
+                monthly_calls = []
                 while current_dt <= end_dt:
-                    month_body = self.call_mcp_tool(
-                        "get_monthly_events",
-                        year=current_dt.year,
-                        month=current_dt.month,
-                    )
-                    monthly_bodies.append(month_body)
+                    monthly_calls.append({
+                        "tool_name": "get_monthly_events",
+                        "kwargs": {"year": current_dt.year, "month": current_dt.month},
+                    })
                     if current_dt.month == 12:
                         current_dt = current_dt.replace(year=current_dt.year + 1, month=1)
                     else:
                         current_dt = current_dt.replace(month=current_dt.month + 1)
-                body = "\n".join(monthly_bodies)
+                monthly_results = self.call_mcp_tools_parallel(monthly_calls)
+                body = "\n".join(monthly_results)
             else:
                 year = start_dt.year
                 month = start_dt.month
@@ -610,26 +665,38 @@ class AstronomySkillRouter:
 
         obs_date = parse_date(date) if date else datetime.now()
 
-        obj_info_raw = self.call_mcp_tool(
-            "get_astrophysical_object_info",
-            object_name=target,
-        )
-
-        galaxy_info_raw: Optional[str] = None
+        parallel_calls = [
+            {
+                "tool_name": "get_astrophysical_object_info",
+                "kwargs": {"object_name": target},
+                "_key": "obj_info",
+            },
+        ]
         if any(x in target.lower() for x in ["galaxy", "星系", "m31", "m33"]):
-            galaxy_info_raw = self.call_mcp_tool(
-                "get_galaxy_data",
-                galaxy_name=target,
-            )
-
-        weather_brief = ""
+            parallel_calls.append({
+                "tool_name": "get_galaxy_data",
+                "kwargs": {"galaxy_name": target},
+                "_key": "galaxy_info",
+            })
         if observer_location:
-            weather_raw = self.call_mcp_tool(
-                "get_weather",
-                city=observer_location,
-                extensions="all",
-            )
-            weather_brief = self._summarize_weather(weather_raw)
+            parallel_calls.append({
+                "tool_name": "get_weather",
+                "kwargs": {"city": observer_location, "extensions": "all"},
+                "_key": "weather",
+            })
+
+        parallel_results = self.call_mcp_tools_parallel(parallel_calls)
+        obj_info_raw = ""
+        galaxy_info_raw: Optional[str] = None
+        weather_brief = ""
+        for i, result in enumerate(parallel_results):
+            key = parallel_calls[i]["_key"]
+            if key == "obj_info":
+                obj_info_raw = result
+            elif key == "galaxy_info":
+                galaxy_info_raw = result
+            elif key == "weather":
+                weather_brief = self._summarize_weather(result)
 
         lines = [
             f"🎯 深空目标：{target}",

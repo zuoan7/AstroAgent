@@ -5,7 +5,7 @@ import tracemalloc
 import threading
 from unittest.mock import MagicMock, patch
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, asCompleted
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 

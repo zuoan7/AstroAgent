@@ -4,6 +4,7 @@
 """
 
 import logging
+import threading
 from skyfield.api import load
 from skyfield import almanac
 from src.core.config import settings
@@ -17,28 +18,32 @@ class EphemerisManager:
     
     负责加载和管理星历数据文件，确保整个应用只加载一次，
     避免重复加载造成的内存浪费。
+    使用 threading.Lock 保护单例创建过程，确保多线程安全。
     """
     
     _instance = None
     _initialized = False
+    _lock = threading.Lock()
     
     def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
         return cls._instance
     
     def __init__(self):
-        if EphemerisManager._initialized:
-            return
-        
-        EphemerisManager._initialized = True
-        
-        self.planets = None
-        self.earth = None
-        self.timescale = None
-        self.is_loaded = False
-        
-        self._load_ephemeris()
+        with EphemerisManager._lock:
+            if EphemerisManager._initialized:
+                return
+            
+            EphemerisManager._initialized = True
+            
+            self.planets = None
+            self.earth = None
+            self.timescale = None
+            self.is_loaded = False
+            
+            self._load_ephemeris()
     
     def _load_ephemeris(self):
         """加载星历数据"""

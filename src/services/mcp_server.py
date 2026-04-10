@@ -9,31 +9,74 @@ import json
 from typing import Optional, Union
 
 from fastmcp import FastMCP
-from src.astronomy import AstronomyTools, AstronomyEventsPredictor
+from src.astronomy import (
+    EphemerisManager,
+    PlanetaryCalculator,
+    CelestialDatabaseService,
+    NASAAPIService,
+    WeatherService,
+    SearchService,
+    EventsPredictor,
+)
 from src.agent.param_parser import ParamParser
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler, safe_tool_call
 
 print("🚀 正在初始化天文工具...")
-tools = None
+ephemeris = None
+planetary = None
+celestial_db = None
+nasa_api = None
+weather = None
+search = None
 events_predictor = None
 
 try:
-    tools = AstronomyTools()
-    print("✅ AstronomyTools 初始化完成")
+    ephemeris = EphemerisManager()
+    print("✅ EphemerisManager 初始化完成")
 except Exception as e:
-    print(f"⚠️  AstronomyTools 初始化失败: {e}")
-    print("   部分功能可能无法使用")
+    print(f"⚠️  EphemerisManager 初始化失败: {e}")
 
 try:
-    events_predictor = AstronomyEventsPredictor()
-    print("✅ AstronomyEventsPredictor 初始化完成")
+    if ephemeris:
+        planetary = PlanetaryCalculator(ephemeris)
+        print("✅ PlanetaryCalculator 初始化完成")
 except Exception as e:
-    print(f"⚠️  AstronomyEventsPredictor 初始化失败: {e}")
-    print("   天象预测功能可能无法使用")
+    print(f"⚠️  PlanetaryCalculator 初始化失败: {e}")
 
-if tools is None and events_predictor is None:
-    print("❌ 所有工具初始化失败，服务器无法启动")
+try:
+    celestial_db = CelestialDatabaseService()
+    print("✅ CelestialDatabaseService 初始化完成")
+except Exception as e:
+    print(f"⚠️  CelestialDatabaseService 初始化失败: {e}")
+
+try:
+    nasa_api = NASAAPIService()
+    print("✅ NASAAPIService 初始化完成")
+except Exception as e:
+    print(f"⚠️  NASAAPIService 初始化失败: {e}")
+
+try:
+    weather = WeatherService()
+    print("✅ WeatherService 初始化完成")
+except Exception as e:
+    print(f"⚠️  WeatherService 初始化失败: {e}")
+
+try:
+    search = SearchService()
+    print("✅ SearchService 初始化完成")
+except Exception as e:
+    print(f"⚠️  SearchService 初始化失败: {e}")
+
+try:
+    if ephemeris:
+        events_predictor = EventsPredictor(ephemeris)
+        print("✅ EventsPredictor 初始化完成")
+except Exception as e:
+    print(f"⚠️  EventsPredictor 初始化失败: {e}")
+
+if ephemeris is None:
+    print("❌ 星历数据初始化失败，服务器无法启动")
     sys.exit(1)
 
 print("✅ 天文工具初始化完成（部分功能可能受限）")
@@ -41,11 +84,43 @@ print("✅ 天文工具初始化完成（部分功能可能受限）")
 mcp = FastMCP(name="Astronomy Server")
 
 
-def _require_tools():
-    if tools is None:
+def _require_planetary():
+    if planetary is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
-            message=f"AstronomyTools 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
+            message=f"PlanetaryCalculator 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
+        )
+
+
+def _require_celestial_db():
+    if celestial_db is None:
+        raise AgentError(
+            code=ErrorCode.TOOL_CALL_FAILED,
+            message="CelestialDatabaseService 未初始化"
+        )
+
+
+def _require_nasa_api():
+    if nasa_api is None:
+        raise AgentError(
+            code=ErrorCode.TOOL_CALL_FAILED,
+            message="NASAAPIService 未初始化"
+        )
+
+
+def _require_weather():
+    if weather is None:
+        raise AgentError(
+            code=ErrorCode.TOOL_CALL_FAILED,
+            message="WeatherService 未初始化"
+        )
+
+
+def _require_search():
+    if search is None:
+        raise AgentError(
+            code=ErrorCode.TOOL_CALL_FAILED,
+            message="SearchService 未初始化"
         )
 
 
@@ -53,7 +128,7 @@ def _require_events_predictor():
     if events_predictor is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
-            message=f"AstronomyEventsPredictor 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
+            message=f"EventsPredictor 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
         )
 
 
@@ -61,59 +136,59 @@ def _require_events_predictor():
 @safe_tool_call
 def get_planet_position(planet_name: str, observation_time: str = None,
                        latitude: float = None, longitude: float = None) -> str:
-    _require_tools()
-    result = tools.get_planet_position(planet_name, observation_time, latitude, longitude)
+    _require_planetary()
+    result = planetary.get_planet_position(planet_name, observation_time, latitude, longitude)
     return json.dumps(result, ensure_ascii=False)
 
 
 @mcp.tool()
 @safe_tool_call
 def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5") -> str:
-    _require_tools()
-    return json.dumps(tools.coordinate_transformation(ra, dec, epoch, target_system), ensure_ascii=False)
+    _require_planetary()
+    return json.dumps(planetary.coordinate_transformation(ra, dec, epoch, target_system), ensure_ascii=False)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_rise_set_times(body_name: str, latitude: float, longitude: float, date: str = None) -> str:
-    _require_tools()
-    return tools.get_rise_set_times(body_name, latitude, longitude, date)
+    _require_planetary()
+    return planetary.get_rise_set_times(body_name, latitude, longitude, date)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_current_sky_objects(latitude: float, longitude: float, date: str = None) -> str:
-    _require_tools()
-    return tools.get_current_sky_objects(latitude, longitude, date)
+    _require_planetary()
+    return planetary.get_current_sky_objects(latitude, longitude, date)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_astrophysical_object_info(object_name: str) -> str:
-    _require_tools()
-    result = tools.get_astrophysical_object_info(object_name)
+    _require_celestial_db()
+    result = celestial_db.get_object_info(object_name)
     return json.dumps(result, ensure_ascii=False)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_galaxy_data(galaxy_name: str) -> str:
-    _require_tools()
-    result = tools.get_galaxy_data(galaxy_name)
+    _require_celestial_db()
+    result = celestial_db.get_galaxy_data(galaxy_name)
     return json.dumps(result, ensure_ascii=False)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_nasa_apod(date: str = None, hd: bool = False) -> str:
-    _require_tools()
-    return tools.get_nasa_apod(date, hd)
+    _require_nasa_api()
+    return nasa_api.get_apod(date, hd)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) -> str:
-    _require_tools()
+    _require_nasa_api()
     from datetime import datetime, timedelta
 
     if start_date:
@@ -133,23 +208,23 @@ def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) 
         end_dt = start_dt + timedelta(days=7)
         end_date = end_dt.strftime("%Y-%m-%d")
 
-    result = tools.get_neo_data(start_date, end_date, limit)
+    result = nasa_api.get_neo_data(start_date, end_date, limit)
     return json.dumps(result, ensure_ascii=False)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_weather(city: str = None, extensions: str = "base") -> str:
-    _require_tools()
-    result = tools.get_weather(city=city, extensions=extensions)
+    _require_weather()
+    result = weather.get_weather(city=city, extensions=extensions)
     return json.dumps(result, ensure_ascii=False)
 
 
 @mcp.tool()
 @safe_tool_call
 def web_search(query: str, max_results: int = 5) -> str:
-    _require_tools()
-    result = tools.web_search(query=query, max_results=max_results)
+    _require_search()
+    result = search.search(query=query, max_results=max_results)
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -214,7 +289,6 @@ def observation_guide(target: str) -> str:
 
 
 def main():
-    """MCP服务器主函数"""
     print("\n" + "="*60)
     print("🌌 天文MCP服务器 - Streamable HTTP模式")
     print("="*60)

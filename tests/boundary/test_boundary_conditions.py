@@ -555,7 +555,7 @@ class TestTimeBoundary:
     def test_time_range_parsing_boundary(self):
         from src.skills.router import AstronomySkillRouter
 
-        with patch.object(AstronomySkillRouter, "_init_mcp_session_sync"):
+        with patch.object(AstronomySkillRouter, "_init_mcp_session"):
             with patch("src.skills.router.httpx.Client"):
                 router = AstronomySkillRouter.__new__(AstronomySkillRouter)
                 router._mcp_session_id = None

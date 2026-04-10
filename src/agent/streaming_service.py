@@ -11,7 +11,7 @@ from src.utils.helpers import extract_image_url
 MAX_ACTION_HISTORY_ENTRIES = 100
 
 
-class StreamingService:
+class BaseStreamingGenerator:
     def __init__(
         self,
         agent_executor: Any,
@@ -157,6 +157,155 @@ class StreamingService:
         response_parts.append("\n\n（注：由于处理时间限制，以上是基于已获取数据整理的信息。）")
         return "".join(response_parts)
 
+    def _prepare_input(self, query: str) -> Dict[str, str]:
+        chat_history = self._format_chat_history()
+        user_profile = self._format_user_profile()
+        return {
+            "input": query,
+            "chat_history": chat_history,
+            "user_profile": user_profile
+        }
+
+    def _handle_tool_start(self, request_id: str, run_id: str, data: dict, check_repeated: bool = False) -> Optional[str]:
+        tool_name = data.get("name") or data.get("tool")
+        tool_input = data.get("input")
+        tool_input_str = str(tool_input) if tool_input else ""
+
+        if check_repeated and self._check_repeated_action(request_id, tool_name or "unknown_tool", tool_input_str):
+            return "repeated"
+
+        self._tool_runs[run_id] = {
+            "name": tool_name or "unknown_tool",
+            "input": tool_input_str,
+            "start_time": time.time(),
+            "request_id": request_id,
+        }
+        logger.info(
+            json.dumps(
+                {
+                    "type": "tool_start",
+                    "request_id": request_id,
+                    "run_id": run_id,
+                    "tool_name": tool_name or "unknown_tool",
+                    "input": str(tool_input),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    def _handle_tool_end(self, request_id: str, run_id: str, data: dict) -> Dict[str, Any]:
+        meta = self._tool_runs.pop(run_id, {})
+        duration = None
+        if meta.get("start_time") is not None:
+            duration = time.time() - meta["start_time"]
+        tool_output = data.get("output")
+        tool_output_str = "" if tool_output is None else str(tool_output)
+
+        logger.info(
+            json.dumps(
+                {
+                    "type": "tool_end",
+                    "request_id": request_id,
+                    "run_id": run_id,
+                    "tool_name": meta.get("name"),
+                    "duration_sec": duration,
+                    "output_preview": tool_output_str[:200],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        extracted_url = None
+        if tool_output_str.strip().startswith("{"):
+            try:
+                obj = json.loads(tool_output_str)
+                if isinstance(obj, dict):
+                    extracted_url = obj.get("hdurl") or obj.get("url")
+            except Exception:
+                extracted_url = None
+        if not extracted_url and self._fallback_service:
+            extracted_url = self._fallback_service.extract_image_url(tool_output_str)
+        elif not extracted_url:
+            extracted_url = extract_image_url(tool_output_str)
+
+        return {
+            "meta": meta,
+            "duration": duration,
+            "tool_output_str": tool_output_str,
+            "extracted_url": extracted_url,
+        }
+
+    def _save_to_memory(self, query: str, response: str):
+        self._memory.add_message("user", query, time.time())
+        self._memory.add_message("assistant", response, time.time())
+        self._extract_and_update_long_term_memory(query, response)
+
+    def _finalize_request(self, request_id: Optional[str]):
+        self._current_request_id = None
+        self._cleanup_action_history(request_id)
+        self._log_memory_usage()
+
+    def _extract_stream_text(self, data: dict) -> Optional[str]:
+        chunk = data.get("chunk")
+        if not chunk:
+            return None
+        text = getattr(chunk, "content", None) or getattr(chunk, "text", None)
+        return text
+
+    def _parse_thinking_and_final_answer(
+        self,
+        text: str,
+        thinking_buffer: list[str],
+        final_answer_started: bool,
+        final_answer_extracted: bool,
+        thinking_logged: bool,
+        request_id: str,
+    ) -> Dict[str, Any]:
+        thinking_buffer.append(text)
+        combined_thinking = "".join(thinking_buffer)
+
+        result = {
+            "thinking_buffer": thinking_buffer,
+            "final_answer_started": final_answer_started,
+            "final_answer_extracted": final_answer_extracted,
+            "thinking_logged": thinking_logged,
+            "final_answer_text": None,
+            "thinking_text": None,
+            "is_thinking": False,
+            "is_final_answer_chunk": False,
+            "should_continue": True,
+        }
+
+        if not final_answer_started:
+            if re.search(r'(Thought:|Action:|Observation:)\s*$', combined_thinking, re.IGNORECASE):
+                result["is_thinking"] = True
+                result["thinking_text"] = text
+            elif re.search(r'Final Answer:\s*', combined_thinking, re.IGNORECASE):
+                result["final_answer_started"] = True
+                if not thinking_logged and combined_thinking:
+                    result["thinking_logged"] = True
+                    logger.info(f"[{request_id}] 🔍 Thinking: {combined_thinking}")
+                match = re.search(r'Final Answer:\s*(.*)', combined_thinking, re.IGNORECASE | re.DOTALL)
+                if match and not final_answer_extracted:
+                    result["final_answer_extracted"] = True
+                    final_answer_text = match.group(1).strip()
+                    if final_answer_text:
+                        result["final_answer_text"] = final_answer_text
+                        logger.info(f"[{request_id}] Final Answer: {final_answer_text[:100]}...")
+                result["thinking_buffer"] = []
+                result["should_continue"] = False
+                return result
+            else:
+                result["is_thinking"] = True
+                result["thinking_text"] = text
+        else:
+            result["is_final_answer_chunk"] = True
+
+        return result
+
+
+class StreamingService(BaseStreamingGenerator):
     def generate_response(self, query: str) -> Generator[str, None, None]:
         logger.info(f"\n=== 处理用户查询：{query} ===")
 
@@ -164,13 +313,8 @@ class StreamingService:
         fallback_used = False
 
         try:
-            chat_history = self._format_chat_history()
-            user_profile = self._format_user_profile()
-            response = self._agent_executor.invoke({
-                "input": query,
-                "chat_history": chat_history,
-                "user_profile": user_profile
-            })
+            agent_input = self._prepare_input(query)
+            response = self._agent_executor.invoke(agent_input)
             output = response.get("output", "")
             intermediate_steps = response.get("intermediate_steps", [])
 
@@ -196,10 +340,7 @@ class StreamingService:
 
             yield final_response
 
-            self._memory.add_message("user", query, time.time())
-            self._memory.add_message("assistant", final_response, time.time())
-
-            self._extract_and_update_long_term_memory(query, final_response)
+            self._save_to_memory(query, final_response)
 
             if fallback_used:
                 logger.info(f"✅ 使用联网搜索降级 | 助手响应长度：{len(final_response)} 字符")
@@ -218,10 +359,7 @@ class StreamingService:
 
                     yield fallback_response
 
-                    self._memory.add_message("user", query, time.time())
-                    self._memory.add_message("assistant", fallback_response, time.time())
-
-                    self._extract_and_update_long_term_memory(query, fallback_response)
+                    self._save_to_memory(query, fallback_response)
 
                     logger.info(f"✅ 降级搜索成功 | 助手响应长度：{len(fallback_response)} 字符")
                     return
@@ -230,10 +368,7 @@ class StreamingService:
 
             default_response = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
             yield default_response
-            self._memory.add_message("user", query, time.time())
-            self._memory.add_message("assistant", default_response, time.time())
-
-            self._extract_and_update_long_term_memory(query, default_response)
+            self._save_to_memory(query, default_response)
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
         request_id = uuid.uuid4().hex[:8]
@@ -244,14 +379,9 @@ class StreamingService:
         should_stop = False
 
         try:
-            chat_history = self._format_chat_history()
-            user_profile = self._format_user_profile()
+            agent_input = self._prepare_input(query)
             async for event in self._agent_executor.astream_events(
-                {
-                    "input": query,
-                    "chat_history": chat_history,
-                    "user_profile": user_profile
-                },
+                agent_input,
                 version="v1",
             ):
                 if should_stop:
@@ -262,64 +392,21 @@ class StreamingService:
                 run_id = event.get("run_id")
 
                 if event_type == "on_tool_start":
-                    tool_name = data.get("name") or data.get("tool")
-                    tool_input = data.get("input")
-                    tool_input_str = str(tool_input) if tool_input else ""
-
-                    if self._check_repeated_action(request_id, tool_name or "unknown_tool", tool_input_str):
+                    result = self._handle_tool_start(request_id, run_id, data, check_repeated=True)
+                    if result == "repeated":
                         should_stop = True
                         fallback_msg = "\n\n⚠️ 检测到重复操作，已自动终止循环。"
                         final_chunks.append(fallback_msg)
                         yield fallback_msg
                         break
-
-                    self._tool_runs[run_id] = {
-                        "name": tool_name or "unknown_tool",
-                        "input": tool_input_str,
-                        "start_time": time.time(),
-                        "request_id": request_id,
-                    }
-                    logger.info(
-                        json.dumps(
-                            {
-                                "type": "tool_start",
-                                "request_id": request_id,
-                                "run_id": run_id,
-                                "tool_name": tool_name or "unknown_tool",
-                                "input": str(tool_input),
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
                     continue
 
                 if event_type == "on_tool_end":
-                    meta = self._tool_runs.pop(run_id, {})
-                    duration = None
-                    if meta.get("start_time") is not None:
-                        duration = time.time() - meta["start_time"]
-                    tool_output = data.get("output")
-                    logger.info(
-                        json.dumps(
-                            {
-                                "type": "tool_end",
-                                "request_id": request_id,
-                                "run_id": run_id,
-                                "tool_name": meta.get("name") or "unknown_tool",
-                                "duration_sec": duration,
-                                "output_preview": str(tool_output)[:200],
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
+                    self._handle_tool_end(request_id, run_id, data)
                     continue
 
                 if event_type in ("on_chat_model_stream", "on_llm_stream"):
-                    chunk = data.get("chunk")
-                    if not chunk:
-                        continue
-
-                    text = getattr(chunk, "content", None) or getattr(chunk, "text", None)
+                    text = self._extract_stream_text(data)
                     if not text:
                         continue
 
@@ -330,22 +417,13 @@ class StreamingService:
             logger.error(f"[{request_id}] ❌ 流式生成失败：{e}")
             fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
             yield fallback
-            self._memory.add_message("user", query, time.time())
-            self._memory.add_message("assistant", fallback, time.time())
-
-            self._extract_and_update_long_term_memory(query, fallback)
+            self._save_to_memory(query, fallback)
         else:
             final_response = "".join(final_chunks)
-            self._memory.add_message("user", query, time.time())
-            self._memory.add_message("assistant", final_response, time.time())
-
-            self._extract_and_update_long_term_memory(query, final_response)
-
+            self._save_to_memory(query, final_response)
             logger.info(f"[{request_id}] ✅ 流式对话完成，响应长度：{len(final_response)} 字符")
         finally:
-            self._current_request_id = None
-            self._cleanup_action_history(request_id)
-            self._log_memory_usage()
+            self._finalize_request(request_id)
 
     async def generate_events(
         self, query: str, image_path: Optional[str] = None
@@ -363,14 +441,9 @@ class StreamingService:
         should_stop = False
 
         try:
-            chat_history = self._format_chat_history()
-            user_profile = self._format_user_profile()
+            agent_input = self._prepare_input(query)
             async for event in self._agent_executor.astream_events(
-                {
-                    "input": query,
-                    "chat_history": chat_history,
-                    "user_profile": user_profile
-                },
+                agent_input,
                 version="v1",
             ):
                 event_type = event.get("event")
@@ -378,108 +451,47 @@ class StreamingService:
                 run_id = event.get("run_id")
 
                 if event_type == "on_tool_start":
-                    tool_name = data.get("name") or data.get("tool")
-                    tool_input = data.get("input")
-                    self._tool_runs[run_id] = {
-                        "name": tool_name or "unknown_tool",
-                        "input": str(tool_input),
-                        "start_time": time.time(),
-                        "request_id": request_id,
-                    }
-                    logger.info(
-                        json.dumps(
-                            {
-                                "type": "tool_start",
-                                "request_id": request_id,
-                                "run_id": run_id,
-                                "tool_name": tool_name or "unknown_tool",
-                                "input": str(tool_input),
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
+                    self._handle_tool_start(request_id, run_id, data, check_repeated=False)
                     continue
 
                 if event_type == "on_tool_end":
-                    meta = self._tool_runs.pop(run_id, {})
-                    duration = None
-                    if meta.get("start_time") is not None:
-                        duration = time.time() - meta["start_time"]
-                    tool_output = data.get("output")
-                    tool_output_str = "" if tool_output is None else str(tool_output)
-
-                    logger.info(
-                        json.dumps(
-                            {
-                                "type": "tool_end",
-                                "request_id": request_id,
-                                "run_id": run_id,
-                                "tool_name": meta.get("name"),
-                                "duration_sec": duration,
-                                "output_preview": tool_output_str[:200],
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
-
-                    extracted_url = None
-                    if tool_output_str.strip().startswith("{"):
-                        try:
-                            obj = json.loads(tool_output_str)
-                            if isinstance(obj, dict):
-                                extracted_url = obj.get("hdurl") or obj.get("url")
-                        except Exception:
-                            extracted_url = None
-                    if not extracted_url and self._fallback_service:
-                        extracted_url = self._fallback_service.extract_image_url(tool_output_str)
-                    elif not extracted_url:
-                        extracted_url = extract_image_url(tool_output_str)
-
+                    tool_result = self._handle_tool_end(request_id, run_id, data)
+                    extracted_url = tool_result.get("extracted_url")
                     if extracted_url:
                         yield {
                             "type": "image",
                             "url": extracted_url,
                             "meta": {
                                 "request_id": request_id,
-                                "tool": meta.get("name"),
+                                "tool": tool_result["meta"].get("name"),
                             },
                         }
                     continue
 
                 if event_type in ("on_chat_model_stream", "on_llm_stream"):
-                    chunk = data.get("chunk")
-                    if not chunk:
-                        continue
-                    text = getattr(chunk, "content", None) or getattr(chunk, "text", None)
+                    text = self._extract_stream_text(data)
                     if not text:
                         continue
 
-                    thinking_buffer.append(text)
-                    combined_thinking = "".join(thinking_buffer)
+                    parse_result = self._parse_thinking_and_final_answer(
+                        text, thinking_buffer, final_answer_started,
+                        final_answer_extracted, thinking_logged, request_id,
+                    )
+                    thinking_buffer = parse_result["thinking_buffer"]
+                    final_answer_started = parse_result["final_answer_started"]
+                    final_answer_extracted = parse_result["final_answer_extracted"]
+                    thinking_logged = parse_result["thinking_logged"]
 
-                    if not final_answer_started:
-                        if re.search(r'(Thought:|Action:|Observation:)\s*$', combined_thinking, re.IGNORECASE):
-                            in_thinking = True
-                        elif re.search(r'Final Answer:\s*', combined_thinking, re.IGNORECASE):
-                            final_answer_started = True
-                            if not thinking_logged and combined_thinking:
-                                thinking_logged = True
-                                logger.info(f"[{request_id}] 🔍 Thinking: {combined_thinking}")
-                            match = re.search(r'Final Answer:\s*(.*)', combined_thinking, re.IGNORECASE | re.DOTALL)
-                            if match and not final_answer_extracted:
-                                final_answer_extracted = True
-                                final_answer_text = match.group(1).strip()
-                                if final_answer_text:
-                                    final_chunks.append(final_answer_text)
-                                    yield {"type": "text", "content": final_answer_text}
-                                    logger.info(f"[{request_id}] Final Answer: {final_answer_text[:100]}...")
-                            thinking_buffer = []
-                            continue
+                    if not parse_result["should_continue"]:
+                        if parse_result["final_answer_text"]:
+                            final_chunks.append(parse_result["final_answer_text"])
+                            yield {"type": "text", "content": parse_result["final_answer_text"]}
+                        continue
 
-                    if final_answer_started:
+                    if parse_result["is_final_answer_chunk"]:
                         final_chunks.append(text)
                         yield {"type": "text", "content": text}
-                    elif in_thinking and not final_answer_started:
+                    elif parse_result["is_thinking"]:
                         yield {"type": "thinking", "content": text}
                     continue
 
@@ -487,21 +499,13 @@ class StreamingService:
             logger.error(f"[{request_id}] ❌ 事件流生成失败：{e}")
             fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
             yield {"type": "text", "content": fallback}
-            self._memory.add_message("user", query, time.time())
-            self._memory.add_message("assistant", fallback, time.time())
-
-            self._extract_and_update_long_term_memory(query, fallback)
+            self._save_to_memory(query, fallback)
         else:
             final_response = "".join(final_chunks)
-            self._memory.add_message("user", query, time.time())
-            self._memory.add_message("assistant", final_response, time.time())
-
-            self._extract_and_update_long_term_memory(query, final_response)
+            self._save_to_memory(query, final_response)
 
             if not thinking_logged and thinking_buffer:
                 logger.info(f"[{request_id}] 🔍 Thinking: {''.join(thinking_buffer)}")
             logger.info(f"[{request_id}] ✅ 事件流完成，响应长度：{len(final_response)} 字符")
         finally:
-            self._current_request_id = None
-            self._cleanup_action_history(request_id)
-            self._log_memory_usage()
+            self._finalize_request(request_id)
