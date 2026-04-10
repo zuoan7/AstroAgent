@@ -1,0 +1,78 @@
+# 2026年天象事件数据
+# 包含流星雨、日月食、行星特殊位置和节气等天文事件
+
+year: 2026
+
+meteor_showers:
+  - date: "2026-01-03"
+    event: "象限仪座流星雨极大"
+    description: "每小时约110颗，月光干扰小，后半夜可见"
+    peak_time: "凌晨"
+  - date: "2026-04-22"
+    event: "天琴座流星雨极大"
+    description: "每小时约18颗，无月光干扰"
+    peak_time: "后半夜"
+  - date: "2026-05-05"
+    event: "宝瓶座η流星雨极大"
+    description: "每小时约40颗，凌晨可见"
+    peak_time: "凌晨"
+  - date: "2026-08-12"
+    event: "英仙座流星雨极大"
+    description: "每小时约100颗，年度最佳流星雨！"
+    peak_time: "整夜"
+  - date: "2026-10-21"
+    event: "猎户座流星雨极大"
+    description: "每小时约20颗，后半夜可见"
+    peak_time: "后半夜"
+  - date: "2026-11-17"
+    event: "狮子座流星雨极大"
+    description: "每小时约15颗，可能有爆发"
+    peak_time: "后半夜"
+  - date: "2026-12-14"
+    event: "双子座流星雨极大"
+    description: "每小时约120颗，整夜可见，年度最佳！"
+    peak_time: "整夜"
+
+eclipses:
+  - date: "2026-03-03"
+    event: "月全食"
+    description: "已发生，亚洲、欧洲可见"
+    type: "lunar"
+  - date: "2026-08-12"
+    event: "日偏食"
+    description: "北京时间20:02开始，最大遮挡约80%"
+    type: "solar"
+  - date: "2026-08-28"
+    event: "月偏食"
+    description: "凌晨4:23开始，可见红月亮"
+    type: "lunar"
+
+conjunctions:
+  - date: "2026-03-09"
+    event: "金星合土星"
+    description: "日落后西方低空，两者相距约1.5度，肉眼可见"
+  - date: "2026-06-08"
+    event: "金星合木星"
+    description: "日落后西方低空，两者相距约0.5度，非常壮观"
+
+oppositions:
+  - date: "2026-10-04"
+    event: "土星冲日"
+    description: "土星整夜可见，是观测土星环的最佳时机"
+  - date: "2026-11-26"
+    event: "天王星冲日"
+    description: "天王星最亮，可用望远镜观测"
+
+seasons:
+  - date: "2026-03-20"
+    event: "春分"
+    description: "22:45:58，太阳直射赤道，昼夜等长"
+  - date: "2026-06-21"
+    event: "夏至"
+    description: "16:25:19，一年中白昼最长"
+  - date: "2026-09-23"
+    event: "秋分"
+    description: "08:08:12，昼夜等长"
+  - date: "2026-12-22"
+    event: "冬至"
+    description: "04:48:24，一年中夜晚最长"

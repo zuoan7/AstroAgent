@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -11,7 +10,7 @@ from pybreaker import CircuitBreaker
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler
 
-logger = logging.getLogger(__name__)
+from src.core.logger import logger
 
 NASA_APOD_CACHE = TTLCache(maxsize=128, ttl=86400)
 NASA_NEO_CACHE = TTLCache(maxsize=64, ttl=3600)

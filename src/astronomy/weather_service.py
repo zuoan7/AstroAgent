@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import logging
 
 import requests
 from cachetools import TTLCache
@@ -8,12 +7,9 @@ from pybreaker import CircuitBreaker
 
 from src.core.config import settings
 from src.core.errors import ErrorHandler, ErrorCode
-from src.utils.helpers import (
-    parse_mixed_input,
-    is_coordinates,
-)
+from src.agent.param_parser import ParamParser
 
-logger = logging.getLogger(__name__)
+from src.core.logger import logger
 
 WEATHER_CACHE = TTLCache(maxsize=256, ttl=1800)
 
@@ -66,13 +62,13 @@ class WeatherService:
 
     def get_weather(self, city=None, extensions="base") -> dict:
         try:
-            params = parse_mixed_input(city, {"city": None, "extensions": extensions})
+            params = ParamParser.parse_mixed_input(city, {"city": None, "extensions": extensions})
 
             if params.get("city"):
                 city = params["city"]
                 extensions = params.get("extensions", extensions)
 
-            if city and is_coordinates(city):
+            if city and ParamParser.is_coordinates(city):
                 parts = city.split(",")
                 lon = float(parts[1].strip())
                 lat = float(parts[0].strip())

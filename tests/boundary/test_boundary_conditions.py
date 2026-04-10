@@ -78,7 +78,7 @@ class TestExtremeAstronomicalValues:
         mock_eph.is_loaded = True
         calc = PlanetaryCalculator(ephemeris=mock_eph)
 
-        with patch("src.astronomy.planetary.parse_mixed_input", return_value={}):
+        with patch("src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}):
             with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                 mock_t = MagicMock()
                 mock_ts_obj = MagicMock()

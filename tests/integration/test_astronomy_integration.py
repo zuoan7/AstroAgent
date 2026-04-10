@@ -33,7 +33,7 @@ class TestAstronomyModuleIntegration:
         mock_ephemeris.earth.__add__ = MagicMock(return_value=mock_observer)
         mock_ephemeris.planets.__getitem__ = MagicMock(return_value=mock_planet)
 
-        with patch("src.astronomy.planetary.parse_mixed_input", return_value={}):
+        with patch("src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}):
             with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                 mock_t = MagicMock()
                 mock_ts_obj = MagicMock()

@@ -60,9 +60,12 @@ class AstroAgent:
 
     def _build_agent(self):
         try:
-            with open('config/prompts/main.txt', 'r', encoding='utf-8') as f:
+            from src.core.config import resolve_path
+            from pathlib import Path
+            template_path = resolve_path(settings.PROMPT_TEMPLATE_PATH)
+            with open(template_path, 'r', encoding='utf-8') as f:
                 template = f.read()
-            logger.info("✅ 成功从外部文件读取prompt模板")
+            logger.info(f"✅ 成功从外部文件读取prompt模板: {template_path}")
         except Exception as e:
             logger.error(f"❌ 读取prompt模板文件失败：{str(e)}")
             template = '''

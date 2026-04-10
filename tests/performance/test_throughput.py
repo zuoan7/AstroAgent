@@ -47,7 +47,7 @@ class TestAstronomyDataProcessingThroughput:
         for _ in range(50):
             for planet in planets:
                 perf_timer.start()
-                with patch("src.astronomy.planetary.parse_mixed_input", return_value={}):
+                with patch("src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}):
                     with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                         mock_t = MagicMock()
                         mock_ts_obj = MagicMock()

@@ -4,54 +4,57 @@
 """
 
 import re
-import logging
 
 from astroquery.simbad import Simbad
 from astroquery.ned import Ned
 
 from src.core.config import settings
-
-logger = logging.getLogger(__name__)
+from src.core.errors import AgentError, ErrorCode
+from src.core.logger import logger
 
 
 class CelestialDatabaseService:
     """
     天体数据库服务
-    
+
     提供对SIMBAD和NED天文数据库的统一访问接口。
     """
-    
+
     def __init__(self):
         pass
-    
+
     def get_object_info(self, object_name: str) -> dict:
         """
         查询天体基本信息（使用SIMBAD数据库）
-        
+
         Args:
             object_name: 天体名称
-            
+
         Returns:
             天体信息字典
         """
         try:
-            # 使用标准名称映射
             query_name = settings.CELESTIAL_NAME_MAPPING.get(object_name, object_name)
-            
-            # 配置Simbad查询
+
             custom_simbad = Simbad()
             custom_simbad.add_votable_fields('ra', 'dec', 'main_id', 'otype')
-            
-            # 执行查询
+
             result = custom_simbad.query_object(query_name)
-            
+
             if result is None:
-                return {'error': f'未找到该天体: {object_name}'}
-            
+                return AgentError(
+                    code=ErrorCode.TOOL_CALL_FAILED,
+                    message=f'未找到该天体: {object_name}',
+                    details={"object_name": object_name}
+                ).to_dict()
+
             if len(result) == 0:
-                return {'error': f'未找到该天体: {object_name}'}
-            
-            # 安全提取结果
+                return AgentError(
+                    code=ErrorCode.TOOL_CALL_FAILED,
+                    message=f'未找到该天体: {object_name}',
+                    details={"object_name": object_name}
+                ).to_dict()
+
             info = {
                 'name': object_name,
                 'ra': str(result['ra'][0]) if 'ra' in result.colnames and len(result['ra']) > 0 else None,
@@ -59,45 +62,53 @@ class CelestialDatabaseService:
                 'main_id': str(result['main_id'][0]) if 'main_id' in result.colnames and len(result['main_id']) > 0 else None,
                 'otype': str(result['otype'][0]) if 'otype' in result.colnames and len(result['otype']) > 0 else None
             }
-            
+
             return info
-            
+
         except Exception as e:
             logger.error(f"查询天体信息失败: {e}")
-            return {'error': f'查询天体信息时出错: {e}'}
-    
+            return AgentError(
+                code=ErrorCode.TOOL_CALL_FAILED,
+                message=f'查询天体信息时出错: {e}',
+                details={"object_name": object_name}
+            ).to_dict()
+
     def get_galaxy_data(self, galaxy_name: str) -> dict:
         """
         查询星系数据（使用NED数据库）
-        
+
         Args:
             galaxy_name: 星系名称
-            
+
         Returns:
             星系数据字典
         """
         try:
-            # 使用标准名称映射
             query_name = settings.GALAXY_NAME_MAPPING.get(galaxy_name, galaxy_name)
-            
-            # 执行NED查询
+
             result = Ned.query_object(query_name)
-            
+
             if result is None:
-                return {'error': f'未找到该星系: {galaxy_name}'}
-            
+                return AgentError(
+                    code=ErrorCode.TOOL_CALL_FAILED,
+                    message=f'未找到该星系: {galaxy_name}',
+                    details={"galaxy_name": galaxy_name}
+                ).to_dict()
+
             if len(result) == 0:
-                return {'error': f'未找到该星系: {galaxy_name}'}
-            
-            # 提取星等信息
+                return AgentError(
+                    code=ErrorCode.TOOL_CALL_FAILED,
+                    message=f'未找到该星系: {galaxy_name}',
+                    details={"galaxy_name": galaxy_name}
+                ).to_dict()
+
             magnitude = None
             if 'Magnitude and Filter' in result.colnames and len(result['Magnitude and Filter']) > 0:
                 mag_str = str(result['Magnitude and Filter'][0])
                 mag_match = re.search(r'\d+\.\d+', mag_str)
                 if mag_match:
                     magnitude = float(mag_match.group())
-            
-            # 安全提取关键信息
+
             info = {
                 'name': galaxy_name,
                 'ra': str(result['RA'][0]) if 'RA' in result.colnames and len(result['RA']) > 0 else None,
@@ -106,12 +117,16 @@ class CelestialDatabaseService:
                 'magnitude': magnitude,
                 'type': str(result['Type'][0]) if 'Type' in result.colnames and len(result['Type']) > 0 else None
             }
-            
+
             return info
-            
+
         except Exception as e:
             logger.error(f"查询星系数据失败: {e}")
-            return {'error': f'查询星系数据时出错: {e}'}
+            return AgentError(
+                code=ErrorCode.TOOL_CALL_FAILED,
+                message=f'查询星系数据时出错: {e}',
+                details={"galaxy_name": galaxy_name}
+            ).to_dict()
 
 
 __all__ = ['CelestialDatabaseService']

@@ -24,6 +24,14 @@ class APIConfig(BaseSettings):
     UPLOAD_RATE_LIMIT_PER_MINUTE: int = Field(10, description="文件上传限流：每分钟最大上传数")
     SESSION_MAX_AGE_SECONDS: int = Field(3600, description="用户会话最大存活时间（秒）")
     SESSION_CLEANUP_INTERVAL_SECONDS: int = Field(300, description="会话清理间隔（秒）")
+    PROMPT_TEMPLATE_PATH: str = Field(
+        "config/prompts/main.txt",
+        description="Prompt模板文件路径（相对于项目根目录）"
+    )
+    PROJECT_ROOT: str = Field(
+        "",
+        description="项目根目录绝对路径（留空则自动检测）"
+    )
 
 
 class AstronomyConfig(BaseSettings):
@@ -168,6 +176,10 @@ class AstronomyConfig(BaseSettings):
         "https://api.tavily.com/search",
         description="Tavily 搜索接口地址"
     )
+    ASTRONOMY_DATA_DIR: str = Field(
+        "config/astronomy",
+        description="天文事件数据目录（相对于项目根目录）"
+    )
 
 
 class ModelConfig(BaseSettings):
@@ -223,6 +235,14 @@ class Settings(BaseSettings):
     UPLOAD_RATE_LIMIT_PER_MINUTE: int = Field(10, description="文件上传限流：每分钟最大上传数")
     SESSION_MAX_AGE_SECONDS: int = Field(3600, description="用户会话最大存活时间（秒）")
     SESSION_CLEANUP_INTERVAL_SECONDS: int = Field(300, description="会话清理间隔（秒）")
+    PROMPT_TEMPLATE_PATH: str = Field(
+        "config/prompts/main.txt",
+        description="Prompt模板文件路径（相对于项目根目录）"
+    )
+    PROJECT_ROOT: str = Field(
+        "",
+        description="项目根目录绝对路径（留空则自动检测）"
+    )
     API_HOST: str = Field("0.0.0.0", description="FastAPI 服务监听地址")
     API_PORT: int = Field(8000, description="FastAPI 服务端口")
     MCP_PORT: int = Field(8001, description="MCP 服务端口（避免与 FastAPI 冲突）")
@@ -249,6 +269,10 @@ class Settings(BaseSettings):
     TAVILY_SEARCH_URL: str = Field(
         "https://api.tavily.com/search",
         description="Tavily 搜索接口地址"
+    )
+    ASTRONOMY_DATA_DIR: str = Field(
+        "config/astronomy",
+        description="天文事件数据目录（相对于项目根目录）"
     )
     EPHEMERIS_FILE: str = Field("./data/ephemeris/de421.bsp", description="星历数据文件路径")
     DEFAULT_LOCATION: Tuple[float, float] = Field(
@@ -379,4 +403,19 @@ class Settings(BaseSettings):
     }
 
 
+def _resolve_project_root() -> str:
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent.parent
+    return str(root)
+
+
 settings = Settings()
+if not settings.PROJECT_ROOT:
+    settings.PROJECT_ROOT = _resolve_project_root()
+
+
+def resolve_path(relative_path: str) -> str:
+    from pathlib import Path
+    if Path(relative_path).is_absolute():
+        return relative_path
+    return str(Path(settings.PROJECT_ROOT) / relative_path)

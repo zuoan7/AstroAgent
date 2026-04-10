@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import os
-import logging
 
 import requests
 from cachetools import TTLCache
@@ -8,8 +7,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from pybreaker import CircuitBreaker
 
 from src.core.config import settings
-
-logger = logging.getLogger(__name__)
+from src.core.errors import AgentError, ErrorCode
+from src.core.logger import logger
 
 SEARCH_CACHE = TTLCache(maxsize=128, ttl=1800)
 
@@ -37,10 +36,11 @@ class SearchService:
     def search(self, query: str, max_results: int = 5) -> dict:
         try:
             if not self.api_key:
-                return {
-                    "error": "TAVILY_API_KEY 未配置",
-                    "suggestion": "请在.env文件中配置 TAVILY_API_KEY"
-                }
+                return AgentError(
+                    code=ErrorCode.API_ERROR,
+                    message="TAVILY_API_KEY 未配置",
+                    details={"suggestion": "请在.env文件中配置 TAVILY_API_KEY"}
+                ).to_dict()
 
             cache_key = f"search:{query}:{max_results}"
             cached = SEARCH_CACHE.get(cache_key)
@@ -86,15 +86,27 @@ class SearchService:
 
         except requests.exceptions.Timeout:
             logger.error(f"搜索超时: {query}")
-            return {"error": "搜索请求超时，请稍后重试"}
+            return AgentError(
+                code=ErrorCode.API_ERROR,
+                message="搜索请求超时，请稍后重试",
+                details={"query": query}
+            ).to_dict()
 
         except requests.exceptions.RequestException as e:
             logger.error(f"搜索请求失败: {e}")
-            return {"error": f"搜索请求失败: {str(e)}"}
+            return AgentError(
+                code=ErrorCode.API_ERROR,
+                message=f"搜索请求失败: {str(e)}",
+                details={"query": query}
+            ).to_dict()
 
         except Exception as e:
             logger.error(f"搜索异常: {e}")
-            return {"error": f"搜索异常: {str(e)}"}
+            return AgentError(
+                code=ErrorCode.UNKNOWN_ERROR,
+                message=f"搜索异常: {str(e)}",
+                details={"query": query}
+            ).to_dict()
 
 
 __all__ = ['SearchService']

@@ -46,3 +46,4 @@ rich
 # MCP
 fastmcp
 langchain-mcp-adapters
+pyyaml>=6.0

@@ -13,7 +13,7 @@ from src.core.logger import logger
 from src.core.errors import AgentError, ErrorHandler, ErrorCode
 from src.core.config import settings
 from src.agent.param_parser import ParamParser
-from src.utils.helpers import parse_date, shorten_text
+from src.agent.param_parser import ParamParser
 
 MCP_RECONNECT_MAX_RETRIES = 3
 MCP_RECONNECT_DELAY = 2.0
@@ -135,7 +135,7 @@ class AstronomySkillRouter:
                 tool_key = mapping.get(k, k)
                 tool_kwargs[tool_key] = v
             raw = self.call_mcp_tool(tool_name, **tool_kwargs)
-            return shorten_text(raw, 1200)
+            return ParamParser.shorten_text(raw, 1200)
 
         raise ValueError(f"未知技能：{name}")
 
@@ -484,7 +484,7 @@ class AstronomySkillRouter:
                 location = text
                 date = None
 
-        obs_date = parse_date(date)
+        obs_date = ParamParser.parse_date(date)
 
         display_location = ParamParser.normalize_location(location)
         query_city = None
@@ -558,11 +558,11 @@ class AstronomySkillRouter:
             plan_lines.append("暂时无法获取指定地点的天气信息，请根据当地实际情况或天气预报应用调整计划。")
 
         plan_lines.append("\n二、本周重要天象（摘要）")
-        plan_lines.append(shorten_text(weekly_events, 600))
+        plan_lines.append(ParamParser.shorten_text(weekly_events, 600))
 
         if tonight_best:
             plan_lines.append("\n三、系统给出的\"今晚最佳观测目标\"参考")
-            plan_lines.append(shorten_text(tonight_best, 600))
+            plan_lines.append(ParamParser.shorten_text(tonight_best, 600))
 
         plan_lines.append("\n四、实用建议")
         plan_lines.append(
@@ -580,7 +580,7 @@ class AstronomySkillRouter:
         event_type: Optional[str] = None,
     ) -> str:
         if start_date:
-            start_dt = parse_date(start_date)
+            start_dt = ParamParser.parse_date(start_date)
         else:
             start_dt = datetime.now()
 
@@ -591,7 +591,7 @@ class AstronomySkillRouter:
         end_dt: Optional[datetime] = None
         if end_date:
             try:
-                end_dt = parse_date(end_date)
+                end_dt = ParamParser.parse_date(end_date)
                 if not (supported_min <= end_dt.year <= supported_max):
                     end_dt = end_dt.replace(year=supported_min)
             except Exception:
@@ -650,7 +650,7 @@ class AstronomySkillRouter:
                 )
 
         description_prefix.append("\n下面是为你整理的天象预报：\n")
-        description_prefix.append(shorten_text(body, 1200))
+        description_prefix.append(ParamParser.shorten_text(body, 1200))
         return "\n".join(description_prefix)
 
     def _deep_sky_observing_guide(
@@ -661,9 +661,14 @@ class AstronomySkillRouter:
         equipment: Optional[str] = None,
     ) -> str:
         if not target:
-            return "深空观测指导技能需要提供目标名称（target），例如\"M31\"或\"猎户座大星云\"。"
+            if not target:
+                return json.dumps(AgentError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message="深空观测指导技能需要提供目标名称（target），例如\"M31\"或\"猎户座大星云\"",
+                    details={"skill": "deep-sky-observing-guide"}
+                ).to_dict(), ensure_ascii=False)
 
-        obs_date = parse_date(date) if date else datetime.now()
+        obs_date = ParamParser.ParamParser.parse_date(date) if date else datetime.now()
 
         parallel_calls = [
             {
@@ -708,10 +713,10 @@ class AstronomySkillRouter:
             lines.append(f"🔭 计划使用设备：{equipment}")
 
         lines.append("\n一、目标基础信息（基于专业数据库）")
-        lines.append(shorten_text(obj_info_raw, 600))
+        lines.append(ParamParser.shorten_text(obj_info_raw, 600))
         if galaxy_info_raw:
             lines.append("\n补充：星系数据摘要")
-            lines.append(shorten_text(galaxy_info_raw, 400))
+            lines.append(ParamParser.shorten_text(galaxy_info_raw, 400))
 
         if weather_brief:
             lines.append("\n二、观测条件（天气简要）")
@@ -768,7 +773,13 @@ class AstronomySkillRouter:
             return raw_json
 
         if isinstance(data, dict) and data.get("error"):
-            return data["error"]
+            if isinstance(data.get("error"), bool) and data.get("code"):
+                return json.dumps(data, ensure_ascii=False)
+            return json.dumps(AgentError(
+                code=ErrorCode.TOOL_CALL_FAILED,
+                message=str(data.get("error")),
+                details={"tool": "get_neo_data"}
+            ).to_dict(), ensure_ascii=False)
 
         neos = []
         for day, objs in (data.get("near_earth_objects") or {}).items():
@@ -852,7 +863,7 @@ class AstronomySkillRouter:
         location: Optional[str] = None,
         date: Optional[str] = None,
     ) -> str:
-        obs_date = parse_date(date) if date else datetime.now()
+        obs_date = ParamParser.ParamParser.parse_date(date) if date else datetime.now()
 
         lines = [
             f"📷 天文摄影参数建议",
@@ -900,10 +911,14 @@ class AstronomySkillRouter:
         output_format: Optional[str] = None,
     ) -> str:
         if not target:
-            return "天体位置计算技能需要提供目标名称（target），例如\"mars\"\"jupiter\"等。"
+                return json.dumps(AgentError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message="天体位置计算技能需要提供目标名称（target），例如\"mars\"\"jupiter\"等",
+                    details={"skill": "celestial-position-calculator"}
+                ).to_dict(), ensure_ascii=False)
 
         import datetime as dt_mod
-        obs_time = parse_date(datetime) if datetime else dt_mod.datetime.now()
+        obs_time = ParamParser.parse_date(datetime) if datetime else dt_mod.datetime.now()
 
         if location:
             lat, lon = self._parse_location(location)
@@ -921,7 +936,7 @@ class AstronomySkillRouter:
             longitude=lon,
         )
 
-        body = shorten_text(result_raw, 600)
+        body = ParamParser.shorten_text(result_raw, 600)
         fmt = (output_format or "radec").lower()
 
         header = (

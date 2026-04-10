@@ -4,21 +4,16 @@
 """
 
 import json
-import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from skyfield import almanac
 from skyfield.api import wgs84
 from .base import EphemerisManager
 from src.core.config import settings
 from src.agent.param_parser import ParamParser
-from src.utils.helpers import (
-    parse_date,
-    get_direction_from_azimuth,
-)
 
-logger = logging.getLogger(__name__)
+from src.core.logger import logger
 
 
 class EventsPredictor:
@@ -47,84 +42,99 @@ class EventsPredictor:
         self.special_events = self._load_special_events()
     
     def _load_special_events(self) -> list:
-        """加载特殊天象数据"""
-        return [
-            # 流星雨
-            {"date": "2026-01-03", "event": "象限仪座流星雨极大",
-             "description": "每小时约110颗，月光干扰小，后半夜可见",
-             "type": "meteor_shower", "peak_time": "凌晨"},
-            
-            {"date": "2026-04-22", "event": "天琴座流星雨极大",
-             "description": "每小时约18颗，无月光干扰",
-             "type": "meteor_shower", "peak_time": "后半夜"},
-            
-            {"date": "2026-05-05", "event": "宝瓶座η流星雨极大",
-             "description": "每小时约40颗，凌晨可见",
-             "type": "meteor_shower", "peak_time": "凌晨"},
-            
-            {"date": "2026-08-12", "event": "英仙座流星雨极大",
-             "description": "每小时约100颗，年度最佳流星雨！",
-             "type": "meteor_shower", "peak_time": "整夜"},
-            
-            {"date": "2026-10-21", "event": "猎户座流星雨极大",
-             "description": "每小时约20颗，后半夜可见",
-             "type": "meteor_shower", "peak_time": "后半夜"},
-            
-            {"date": "2026-11-17", "event": "狮子座流星雨极大",
-             "description": "每小时约15颗，可能有爆发",
-             "type": "meteor_shower", "peak_time": "后半夜"},
-            
-            {"date": "2026-12-14", "event": "双子座流星雨极大",
-             "description": "每小时约120颗，整夜可见，年度最佳！",
-             "type": "meteor_shower", "peak_time": "整夜"},
-            
-            # 日月食
-            {"date": "2026-03-03", "event": "月全食",
-             "description": "已发生，亚洲、欧洲可见",
-             "type": "eclipse"},
-            
-            {"date": "2026-08-12", "event": "日偏食",
-             "description": "北京时间20:02开始，最大遮挡约80%",
-             "type": "eclipse"},
-            
-            {"date": "2026-08-28", "event": "月偏食",
-             "description": "凌晨4:23开始，可见红月亮",
-             "type": "eclipse"},
-            
-            # 行星特殊位置
-            {"date": "2026-03-09", "event": "金星合土星",
-             "description": "日落后西方低空，两者相距约1.5度，肉眼可见",
-             "type": "conjunction"},
-            
-            {"date": "2026-06-08", "event": "金星合木星",
-             "description": "日落后西方低空，两者相距约0.5度，非常壮观",
-             "type": "conjunction"},
-            
-            {"date": "2026-10-04", "event": "土星冲日",
-             "description": "土星整夜可见，是观测土星环的最佳时机",
-             "type": "opposition"},
-            
-            {"date": "2026-11-26", "event": "天王星冲日",
-             "description": "天王星最亮，可用望远镜观测",
-             "type": "opposition"},
-            
-            # 节气
-            {"date": "2026-03-20", "event": "春分",
-             "description": "22:45:58，太阳直射赤道，昼夜等长",
-             "type": "season"},
-            
-            {"date": "2026-06-21", "event": "夏至",
-             "description": "16:25:19，一年中白昼最长",
-             "type": "season"},
-            
-            {"date": "2026-09-23", "event": "秋分",
-             "description": "08:08:12，昼夜等长",
-             "type": "season"},
-            
-            {"date": "2026-12-22", "event": "冬至",
-             "description": "04:48:24，一年中夜晚最长",
-             "type": "season"},
-        ]
+        """从YAML配置文件加载特殊天象数据，支持按年份加载"""
+        events = self._load_events_from_yaml()
+        if events is not None:
+            return events
+
+        logger.warning("YAML天象数据加载失败，使用内置降级数据")
+        return self._get_fallback_events()
+
+    def _load_events_from_yaml(self) -> Optional[list]:
+        """从YAML文件加载天象事件数据"""
+        try:
+            import yaml
+            from src.core.config import resolve_path
+            from pathlib import Path
+
+            data_dir = resolve_path(settings.ASTRONOMY_DATA_DIR)
+            year = datetime.now().year
+            yaml_path = Path(data_dir) / f"events_{year}.yaml"
+
+            if not yaml_path.exists():
+                for y in range(year - 1, year + 2):
+                    alt_path = Path(data_dir) / f"events_{y}.yaml"
+                    if alt_path.exists():
+                        yaml_path = alt_path
+                        break
+
+            if not yaml_path.exists():
+                logger.warning(f"未找到天象数据文件: {yaml_path}")
+                return None
+
+            with open(yaml_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+
+            if not data:
+                return None
+
+            events = []
+
+            for shower in data.get("meteor_showers", []):
+                events.append({
+                    "date": shower["date"],
+                    "event": shower["event"],
+                    "description": shower["description"],
+                    "type": "meteor_shower",
+                    "peak_time": shower.get("peak_time", ""),
+                })
+
+            for eclipse in data.get("eclipses", []):
+                events.append({
+                    "date": eclipse["date"],
+                    "event": eclipse["event"],
+                    "description": eclipse["description"],
+                    "type": "eclipse",
+                })
+
+            for conj in data.get("conjunctions", []):
+                events.append({
+                    "date": conj["date"],
+                    "event": conj["event"],
+                    "description": conj["description"],
+                    "type": "conjunction",
+                })
+
+            for opp in data.get("oppositions", []):
+                events.append({
+                    "date": opp["date"],
+                    "event": opp["event"],
+                    "description": opp["description"],
+                    "type": "opposition",
+                })
+
+            for season in data.get("seasons", []):
+                events.append({
+                    "date": season["date"],
+                    "event": season["event"],
+                    "description": season["description"],
+                    "type": "season",
+                })
+
+            events.sort(key=lambda x: x["date"])
+            logger.info(f"✅ 从YAML加载了 {len(events)} 个天象事件: {yaml_path}")
+            return events
+
+        except ImportError:
+            logger.warning("PyYAML未安装，无法加载YAML天象数据")
+            return None
+        except Exception as e:
+            logger.error(f"加载YAML天象数据失败: {e}")
+            return None
+
+    def _get_fallback_events(self) -> list:
+        """内置降级数据，仅在YAML加载失败时使用"""
+        return []
     
     def get_moon_phase(self, date) -> tuple:
         """
@@ -225,7 +235,7 @@ class EventsPredictor:
             alt, az, _ = astrometric.altaz()
             
             if alt.degrees > 15:
-                direction = get_direction_from_azimuth(az.degrees)
+                direction = ParamParser.get_direction_from_azimuth(az.degrees)
                 visible.append(f"{p['name_cn']}（{direction}天空）")
         
         return visible
@@ -244,7 +254,7 @@ class EventsPredictor:
             now = datetime.now()
             
             # 解析开始日期
-            current_date = parse_date(start_date, default=now)
+            current_date = ParamParser.parse_date(start_date, default=now)
             
             # 计算结束日期
             end_date = current_date + timedelta(days=7)

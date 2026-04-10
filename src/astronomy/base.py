@@ -3,13 +3,12 @@
 基础模块 - 星历数据管理和共享
 """
 
-import logging
 import threading
 from skyfield.api import load
 from skyfield import almanac
 from src.core.config import settings
 
-logger = logging.getLogger(__name__)
+from src.core.logger import logger
 
 
 class EphemerisManager:
