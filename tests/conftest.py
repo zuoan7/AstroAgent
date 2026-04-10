@@ -88,6 +88,13 @@ def mock_settings():
             'new_moon': "今晚特别适合深空观测！",
             'full_moon': "满月光太强，建议观测明亮的行星和双星。",
         }
+        instance.MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+        instance.ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+        instance.ALLOWED_AUDIO_EXTENSIONS = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac'}
+        instance.RATE_LIMIT_PER_MINUTE = 30
+        instance.UPLOAD_RATE_LIMIT_PER_MINUTE = 10
+        instance.SESSION_MAX_AGE_SECONDS = 3600
+        instance.SESSION_CLEANUP_INTERVAL_SECONDS = 300
         MockSettings.return_value = instance
         yield instance
 

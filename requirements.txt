@@ -35,6 +35,7 @@ astroquery
 fastapi
 uvicorn
 websockets
+slowapi
 
 # Streamlit UI
 streamlit

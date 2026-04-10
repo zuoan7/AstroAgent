@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     )
     DEFAULT_USER_ID: str = Field("anonymous", description="默认用户 ID")
     
+    # ========== API 安全配置 ==========
+    MAX_UPLOAD_SIZE: int = Field(10 * 1024 * 1024, description="文件上传大小限制（字节），默认10MB")
+    ALLOWED_IMAGE_EXTENSIONS: set = Field(
+        default_factory=lambda: {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'},
+        description="允许上传的图片文件扩展名白名单"
+    )
+    ALLOWED_AUDIO_EXTENSIONS: set = Field(
+        default_factory=lambda: {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac'},
+        description="允许上传的音频文件扩展名白名单"
+    )
+    RATE_LIMIT_PER_MINUTE: int = Field(30, description="API请求限流：每分钟最大请求数")
+    UPLOAD_RATE_LIMIT_PER_MINUTE: int = Field(10, description="文件上传限流：每分钟最大上传数")
+    SESSION_MAX_AGE_SECONDS: int = Field(3600, description="用户会话最大存活时间（秒）")
+    SESSION_CLEANUP_INTERVAL_SECONDS: int = Field(300, description="会话清理间隔（秒）")
+
     # ========== API 服务配置 ==========
     API_HOST: str = Field("0.0.0.0", description="FastAPI 服务监听地址")
     API_PORT: int = Field(8000, description="FastAPI 服务端口")
