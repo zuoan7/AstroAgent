@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import threading
 import time
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
@@ -18,6 +19,54 @@ MCP_RECONNECT_MAX_RETRIES = 3
 MCP_RECONNECT_DELAY = 2.0
 
 
+class _AsyncBridge:
+    """
+    Safe bridge to run async MCP operations from synchronous context.
+
+    Creates a dedicated background event loop in a daemon thread, avoiding
+    the dangerous pattern of calling asyncio.run() inside an already-running
+    event loop (which causes RuntimeError / deadlock in FastAPI).
+
+    Uses asyncio.run_coroutine_threadsafe() to submit coroutines from
+    sync code to the background loop.
+    """
+
+    def __init__(self) -> None:
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._thread: Optional[threading.Thread] = None
+        self._started = threading.Event()
+
+    def start(self) -> None:
+        if self._loop is not None:
+            return
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+        self._started.wait(timeout=10)
+
+    def _run_loop(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        self._started.set()
+        self._loop.run_forever()
+
+    def run(self, coro: Any, timeout: float = 60.0) -> Any:
+        self.start()
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        try:
+            return future.result(timeout=timeout)
+        except Exception as e:
+            future.cancel()
+            raise e
+
+    def shutdown(self) -> None:
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+        self._loop = None
+        self._thread = None
+
+
 class AstronomySkillRouter:
 
     def __init__(self) -> None:
@@ -25,9 +74,8 @@ class AstronomySkillRouter:
         self._mcp_initialized = False
         self._http_client: Optional[httpx.AsyncClient] = None
         self._reconnect_attempts = 0
-        self._init_mcp_session_sync()
+        self._async_bridge = _AsyncBridge()
 
-        self._call_mcp_tool = self._call_mcp_tool_internal
         self._registry: Dict[str, Callable[..., str]] = {
             "observation-planner": self._observation_planner,
             "celestial-events-forecast": self._celestial_events_forecast,
@@ -47,6 +95,8 @@ class AstronomySkillRouter:
                 "extensions": "extensions",
             },
         )
+
+        logger.info("✅ AstronomySkillRouter初始化完成（MCP延迟连接模式）")
 
     # ===== 公共接口 =====
 
@@ -84,22 +134,46 @@ class AstronomySkillRouter:
             for k, v in params.items():
                 tool_key = mapping.get(k, k)
                 tool_kwargs[tool_key] = v
-            raw = self._call_mcp_tool(tool_name, **tool_kwargs)
+            raw = self.call_mcp_tool(tool_name, **tool_kwargs)
             return shorten_text(raw, 1200)
 
         raise ValueError(f"未知技能：{name}")
 
     def call_mcp_tool(self, tool_name: str, **kwargs) -> str:
-        return self._call_mcp_tool(tool_name, **kwargs)
+        return self._async_bridge.run(
+            self._async_call_mcp_tool(tool_name, **kwargs)
+        )
+
+    async def async_call_mcp_tool(self, tool_name: str, **kwargs) -> str:
+        return await self._async_call_mcp_tool(tool_name, **kwargs)
+
+    def shutdown(self) -> None:
+        self._async_bridge.shutdown()
+        if self._http_client and not self._http_client.is_closed:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self._http_client.aclose())
+                else:
+                    loop.run_until_complete(self._http_client.aclose())
+            except Exception:
+                pass
+        logger.info("✅ AstronomySkillRouter已关闭")
 
     # ===== MCP 通信层 =====
 
-    def _init_mcp_session_sync(self):
-        try:
-            client = httpx.Client(timeout=30.0)
+    async def _init_mcp_session(self) -> bool:
+        if self._mcp_initialized and self._is_session_valid():
+            return True
 
-            logger.info("正在建立SSE连接...")
-            sse_response = client.get(
+        try:
+            if self._http_client and not self._http_client.is_closed:
+                await self._http_client.aclose()
+
+            client = httpx.AsyncClient(timeout=30.0)
+
+            logger.info("正在建立SSE连接（异步）...")
+            sse_response = await client.get(
                 settings.MCP_SERVER_URL,
                 headers={"Accept": "text/event-stream"}
             )
@@ -124,7 +198,7 @@ class AstronomySkillRouter:
                 "id": 1
             }
 
-            response = client.post(
+            response = await client.post(
                 settings.MCP_SERVER_URL,
                 json=init_request,
                 headers={
@@ -146,7 +220,7 @@ class AstronomySkillRouter:
                 "method": "notifications/initialized"
             }
 
-            client.post(
+            await client.post(
                 settings.MCP_SERVER_URL,
                 json=notif_request,
                 headers={
@@ -163,7 +237,7 @@ class AstronomySkillRouter:
                 "id": 2
             }
 
-            response = client.post(
+            response = await client.post(
                 settings.MCP_SERVER_URL,
                 json=list_request,
                 headers={
@@ -178,19 +252,19 @@ class AstronomySkillRouter:
                 tools_list = tools_result.get("result", {}).get("tools", [])
                 logger.info(f"✅ 从服务器获取到 {len(tools_list)} 个工具")
 
-            client.close()
-
             self._mcp_session_id = session_id
             self._mcp_initialized = True
-            self._http_client = httpx.AsyncClient(timeout=30.0)
+            self._http_client = client
             self._reconnect_attempts = 0
 
             logger.info(f"✅ MCP会话初始化成功，会话ID: {session_id}")
+            return True
 
         except Exception as e:
             logger.error(f"❌ MCP会话初始化失败: {e}")
             self._mcp_initialized = False
             self._http_client = None
+            return False
 
     def _is_session_valid(self) -> bool:
         if not self._mcp_initialized or not self._mcp_session_id:
@@ -203,85 +277,25 @@ class AstronomySkillRouter:
         if self._is_session_valid():
             return True
 
-        logger.warning("MCP会话无效或已断开，尝试重连...")
+        logger.warning("MCP会话无效或未初始化，尝试建立连接...")
         return await self._reconnect()
 
     async def _reconnect(self) -> bool:
         for attempt in range(1, MCP_RECONNECT_MAX_RETRIES + 1):
-            logger.info(f"MCP重连尝试 {attempt}/{MCP_RECONNECT_MAX_RETRIES}...")
+            logger.info(f"MCP连接尝试 {attempt}/{MCP_RECONNECT_MAX_RETRIES}...")
             try:
-                if self._http_client and not self._http_client.is_closed:
-                    await self._http_client.aclose()
-
-                client = httpx.AsyncClient(timeout=30.0)
-
-                sse_response = await client.get(
-                    settings.MCP_SERVER_URL,
-                    headers={"Accept": "text/event-stream"}
-                )
-
-                session_id = sse_response.headers.get("mcp-session-id")
-                if not session_id:
-                    raise Exception("重连时无法获取session ID")
-
-                init_request = {
-                    "jsonrpc": "2.0",
-                    "method": "initialize",
-                    "params": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {},
-                        "clientInfo": {
-                            "name": "AstroAgent-SkillRouter",
-                            "version": "1.0.0"
-                        }
-                    },
-                    "id": 1
-                }
-
-                response = await client.post(
-                    settings.MCP_SERVER_URL,
-                    json=init_request,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json, text/event-stream",
-                        "Mcp-Session-Id": session_id
-                    }
-                )
-
-                if response.status_code != 200:
-                    raise Exception(f"重连初始化失败: {response.status_code}")
-
-                notif_request = {
-                    "jsonrpc": "2.0",
-                    "method": "notifications/initialized"
-                }
-
-                await client.post(
-                    settings.MCP_SERVER_URL,
-                    json=notif_request,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json, text/event-stream",
-                        "Mcp-Session-Id": session_id
-                    }
-                )
-
-                self._mcp_session_id = session_id
-                self._mcp_initialized = True
-                self._http_client = client
-                self._reconnect_attempts = 0
-
-                logger.info(f"✅ MCP重连成功，新会话ID: {session_id}")
-                return True
-
+                success = await self._init_mcp_session()
+                if success:
+                    return True
             except Exception as e:
-                logger.error(f"❌ MCP重连第 {attempt} 次失败: {e}")
-                self._mcp_initialized = False
-                self._http_client = None
-                if attempt < MCP_RECONNECT_MAX_RETRIES:
-                    await asyncio.sleep(MCP_RECONNECT_DELAY * attempt)
+                logger.error(f"❌ MCP连接第 {attempt} 次失败: {e}")
 
-        logger.error(f"❌ MCP重连失败，已尝试 {MCP_RECONNECT_MAX_RETRIES} 次")
+            self._mcp_initialized = False
+            self._http_client = None
+            if attempt < MCP_RECONNECT_MAX_RETRIES:
+                await asyncio.sleep(MCP_RECONNECT_DELAY * attempt)
+
+        logger.error(f"❌ MCP连接失败，已尝试 {MCP_RECONNECT_MAX_RETRIES} 次")
         self._reconnect_attempts += MCP_RECONNECT_MAX_RETRIES
         return False
 
@@ -296,20 +310,6 @@ class AstronomySkillRouter:
         except Exception as e:
             logger.error(f"解析 SSE 响应失败: {e}")
             return None
-
-    def _call_mcp_tool_internal(self, tool_name: str, **kwargs) -> str:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, self._async_call_mcp_tool(tool_name, **kwargs))
-                return future.result(timeout=60)
-        else:
-            return asyncio.run(self._async_call_mcp_tool(tool_name, **kwargs))
 
     async def _async_call_mcp_tool(self, tool_name: str, **kwargs) -> str:
         session_ok = await self._ensure_session()
@@ -442,9 +442,6 @@ class AstronomySkillRouter:
             error = ErrorHandler.handle(e, {"tool_name": tool_name})
             return json.dumps(error.to_dict(), ensure_ascii=False)
 
-    async def async_call_mcp_tool(self, tool_name: str, **kwargs) -> str:
-        return await self._async_call_mcp_tool(tool_name, **kwargs)
-
     # ===== 具体技能实现 =====
 
     def _observation_planner(
@@ -471,14 +468,14 @@ class AstronomySkillRouter:
 
         weather_brief = ""
         if query_city:
-            weather_raw = self._call_mcp_tool(
+            weather_raw = self.call_mcp_tool(
                 "get_weather",
                 city=query_city,
                 extensions="all",
             )
             weather_brief = self._summarize_weather(weather_raw)
 
-        weekly_events = self._call_mcp_tool(
+        weekly_events = self.call_mcp_tool(
             "get_weekly_events",
             start_date=obs_date.strftime("%Y-%m-%d"),
         )
@@ -486,7 +483,7 @@ class AstronomySkillRouter:
         tonight_best = ""
         today_str = datetime.now().strftime("%Y-%m-%d")
         if obs_date.strftime("%Y-%m-%d") == today_str:
-            tonight_best = self._call_mcp_tool("get_tonight_best")
+            tonight_best = self.call_mcp_tool("get_tonight_best")
 
         plan_lines = [
             f"📅 观测日期：{obs_date.strftime('%Y-%m-%d')}",
@@ -531,15 +528,16 @@ class AstronomySkillRouter:
         else:
             start_dt = datetime.now()
 
-        if start_dt.year != 2026:
-            start_dt = start_dt.replace(year=2026)
+        supported_min, supported_max = settings.SUPPORTED_YEAR_RANGE
+        if not (supported_min <= start_dt.year <= supported_max):
+            start_dt = start_dt.replace(year=supported_min)
 
         end_dt: Optional[datetime] = None
         if end_date:
             try:
                 end_dt = parse_date(end_date)
-                if end_dt.year != 2026:
-                    end_dt = end_dt.replace(year=2026)
+                if not (supported_min <= end_dt.year <= supported_max):
+                    end_dt = end_dt.replace(year=supported_min)
             except Exception:
                 end_dt = None
 
@@ -567,7 +565,7 @@ class AstronomySkillRouter:
             use_weekly = True
 
         if use_weekly:
-            body = self._call_mcp_tool(
+            body = self.call_mcp_tool(
                 "get_weekly_events",
                 start_date=start_dt.strftime("%Y-%m-%d"),
             )
@@ -576,7 +574,7 @@ class AstronomySkillRouter:
                 current_dt = start_dt
                 monthly_bodies = []
                 while current_dt <= end_dt:
-                    month_body = self._call_mcp_tool(
+                    month_body = self.call_mcp_tool(
                         "get_monthly_events",
                         year=current_dt.year,
                         month=current_dt.month,
@@ -590,7 +588,7 @@ class AstronomySkillRouter:
             else:
                 year = start_dt.year
                 month = start_dt.month
-                body = self._call_mcp_tool(
+                body = self.call_mcp_tool(
                     "get_monthly_events",
                     year=year,
                     month=month,
@@ -612,21 +610,21 @@ class AstronomySkillRouter:
 
         obs_date = parse_date(date) if date else datetime.now()
 
-        obj_info_raw = self._call_mcp_tool(
+        obj_info_raw = self.call_mcp_tool(
             "get_astrophysical_object_info",
             object_name=target,
         )
 
         galaxy_info_raw: Optional[str] = None
         if any(x in target.lower() for x in ["galaxy", "星系", "m31", "m33"]):
-            galaxy_info_raw = self._call_mcp_tool(
+            galaxy_info_raw = self.call_mcp_tool(
                 "get_galaxy_data",
                 galaxy_name=target,
             )
 
         weather_brief = ""
         if observer_location:
-            weather_raw = self._call_mcp_tool(
+            weather_raw = self.call_mcp_tool(
                 "get_weather",
                 city=observer_location,
                 extensions="all",
@@ -686,7 +684,7 @@ class AstronomySkillRouter:
         except Exception:
             pass
 
-        raw_json = self._call_mcp_tool(
+        raw_json = self.call_mcp_tool(
             "get_neo_data",
             start_date=start_date,
             end_date=end_date,
@@ -848,7 +846,7 @@ class AstronomySkillRouter:
         if lat is None or lon is None:
             lat, lon = 39.9, 116.4
 
-        result_raw = self._call_mcp_tool(
+        result_raw = self.call_mcp_tool(
             "get_planet_position",
             planet_name=target,
             observation_time=obs_time.isoformat(),

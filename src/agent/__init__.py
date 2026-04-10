@@ -157,8 +157,8 @@ class AstroAgent:
         try:
             if hasattr(self, 'skill_manager') and self.skill_manager:
                 router = getattr(self.skill_manager, '_skill_router', None)
-                if router and hasattr(router, '_http_client') and router._http_client:
-                    router._http_client.close()
-                    logger.info("✅ MCP HTTP客户端已关闭")
+                if router and hasattr(router, 'shutdown'):
+                    router.shutdown()
+                    logger.info("✅ MCP Router已关闭")
         except Exception:
             pass
