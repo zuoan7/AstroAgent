@@ -77,3 +77,25 @@ htmlcov/
 
 # Debug files
 debug_*.py
+
+# Process ID files
+*.pid
+.pids/
+scripts/.pids/
+
+# Virtual environments (including hidden ones)
+.venv/
+.test_venv/
+
+# SSL certificates and keys (sensitive)
+*.pem
+*.key
+ssl/
+config/ssl/
+
+# Test reports
+test_reports/
+
+# OS specific files
+.DS_Store
+Thumbs.db
