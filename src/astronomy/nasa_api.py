@@ -1,53 +1,38 @@
-# -*- coding: utf-8 -*-
 from datetime import datetime, timedelta
 from typing import Optional
 
-import requests
 from cachetools import TTLCache
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from pybreaker import CircuitBreaker
 
 from src.core.config import settings
-from src.core.errors import AgentError, ErrorCode, ErrorHandler
-
+from src.core.errors import AgentError, ErrorCode
 from src.core.logger import logger
+from src.astronomy.base_api_service import BaseAPIService
 
-NASA_APOD_CACHE = TTLCache(maxsize=128, ttl=86400)
-NASA_NEO_CACHE = TTLCache(maxsize=64, ttl=3600)
+_APOD_CACHE = TTLCache(maxsize=128, ttl=86400)
+_NEO_CACHE = TTLCache(maxsize=64, ttl=3600)
 
-nasa_api_breaker = CircuitBreaker(
-    fail_max=5,
-    reset_timeout=60,
-)
+_NASA_BREAKER = CircuitBreaker(fail_max=5, reset_timeout=60)
 
 
-class NASAAPIService:
+class NASAAPIService(BaseAPIService):
+
+    _api_key_attr = "NASA_API_KEY"
+    _cache = _APOD_CACHE
+    _breaker = _NASA_BREAKER
 
     def __init__(self):
-        self.api_key = settings.NASA_API_KEY
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((requests.Timeout, requests.ConnectionError)),
-        reraise=True,
-    )
-    @nasa_api_breaker
-    def _request_get(self, url: str, params: dict, timeout: int = 30) -> requests.Response:
-        return requests.get(url, params=params, timeout=timeout)
+        super().__init__()
+        self._neo_cache = _NEO_CACHE
 
     def get_apod(self, date=None, hd=False) -> dict:
-        if not self.api_key:
-            raise AgentError(
-                code=ErrorCode.NASA_API_ERROR,
-                message="NASA_API_KEY 未配置，无法查询 NASA 数据",
-                details={"api": "APOD"}
-            )
+        key_error = self._check_api_key("APOD")
+        if key_error:
+            raise key_error
 
         cache_key = f"apod:{date or 'today'}:{hd}"
-        cached = NASA_APOD_CACHE.get(cache_key)
+        cached = self._get_cached(cache_key)
         if cached is not None:
-            logger.debug(f"NASA APOD缓存命中: {cache_key}")
             return cached
 
         try:
@@ -63,7 +48,7 @@ class NASAAPIService:
             response.raise_for_status()
 
             result = response.json()
-            NASA_APOD_CACHE[cache_key] = result
+            self._set_cached(cache_key, result)
             return result
 
         except AgentError:
@@ -78,15 +63,12 @@ class NASAAPIService:
             )
 
     def get_neo_data(self, start_date=None, end_date=None, limit=20) -> dict:
-        if not self.api_key:
-            raise AgentError(
-                code=ErrorCode.NASA_API_ERROR,
-                message="NASA_API_KEY 未配置，无法查询近地天体数据",
-                details={"api": "NEO"}
-            )
+        key_error = self._check_api_key("NEO")
+        if key_error:
+            raise key_error
 
         cache_key = f"neo:{start_date}:{end_date}:{limit}"
-        cached = NASA_NEO_CACHE.get(cache_key)
+        cached = self._neo_cache.get(cache_key)
         if cached is not None:
             logger.debug(f"NASA NEO缓存命中: {cache_key}")
             return cached
@@ -121,7 +103,7 @@ class NASAAPIService:
             response.raise_for_status()
 
             result = response.json()
-            NASA_NEO_CACHE[cache_key] = result
+            self._neo_cache[cache_key] = result
             return result
 
         except AgentError:

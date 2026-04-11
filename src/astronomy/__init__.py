@@ -15,6 +15,7 @@
 from .base import EphemerisManager
 from .planetary import PlanetaryCalculator
 from .celestial_databases import CelestialDatabaseService
+from .base_api_service import BaseAPIService
 from .nasa_api import NASAAPIService
 from .weather_service import WeatherService
 from .search_service import SearchService
@@ -24,6 +25,7 @@ __all__ = [
     'EphemerisManager',
     'PlanetaryCalculator',
     'CelestialDatabaseService',
+    'BaseAPIService',
     'NASAAPIService',
     'WeatherService',
     'SearchService',

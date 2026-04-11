@@ -1,38 +1,23 @@
-# -*- coding: utf-8 -*-
-
 import requests
 from cachetools import TTLCache
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from pybreaker import CircuitBreaker
 
 from src.core.config import settings
 from src.core.errors import ErrorHandler, ErrorCode
 from src.agent.param_parser import ParamParser
-
 from src.core.logger import logger
+from src.astronomy.base_api_service import BaseAPIService
 
-WEATHER_CACHE = TTLCache(maxsize=256, ttl=1800)
+_WEATHER_CACHE = TTLCache(maxsize=256, ttl=1800)
 
-weather_api_breaker = CircuitBreaker(
-    fail_max=5,
-    reset_timeout=60,
-)
+_WEATHER_BREAKER = CircuitBreaker(fail_max=5, reset_timeout=60)
 
 
-class WeatherService:
+class WeatherService(BaseAPIService):
 
-    def __init__(self):
-        self.api_key = settings.AMAP_API_KEY
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=8),
-        retry=retry_if_exception_type((requests.Timeout, requests.ConnectionError)),
-        reraise=True,
-    )
-    @weather_api_breaker
-    def _request_get(self, url: str, params: dict, timeout: int = 15) -> requests.Response:
-        return requests.get(url, params=params, timeout=timeout)
+    _api_key_attr = "AMAP_API_KEY"
+    _cache = _WEATHER_CACHE
+    _breaker = _WEATHER_BREAKER
 
     def reverse_geocode(self, longitude: float, latitude: float) -> str:
         try:
@@ -87,9 +72,8 @@ class WeatherService:
                 city = settings.AMAP_DEFAULT_CITY
 
             cache_key = f"weather:{city}:{extensions or 'base'}"
-            cached = WEATHER_CACHE.get(cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
-                logger.debug(f"天气缓存命中: {cache_key}")
                 return cached
 
             req_params = {
@@ -112,7 +96,7 @@ class WeatherService:
                 return error.to_dict()
 
             result = self._process_weather_response(data, city, extensions)
-            WEATHER_CACHE[cache_key] = result
+            self._set_cached(cache_key, result)
             return result
 
         except Exception as e:

@@ -1,37 +1,30 @@
-# -*- coding: utf-8 -*-
 import os
 
 import requests
 from cachetools import TTLCache
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from pybreaker import CircuitBreaker
 
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode
 from src.core.logger import logger
+from src.astronomy.base_api_service import BaseAPIService
 
-SEARCH_CACHE = TTLCache(maxsize=128, ttl=1800)
+_SEARCH_CACHE = TTLCache(maxsize=128, ttl=1800)
 
-search_api_breaker = CircuitBreaker(
-    fail_max=5,
-    reset_timeout=60,
-)
+_SEARCH_BREAKER = CircuitBreaker(fail_max=5, reset_timeout=60)
 
 
-class SearchService:
+class SearchService(BaseAPIService):
+
+    _api_key_attr = "TAVILY_API_KEY"
+    _cache = _SEARCH_CACHE
+    _breaker = _SEARCH_BREAKER
 
     def __init__(self):
-        self.api_key = os.getenv("TAVILY_API_KEY") or getattr(settings, "TAVILY_API_KEY", None)
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((requests.Timeout, requests.ConnectionError)),
-        reraise=True,
-    )
-    @search_api_breaker
-    def _request_post(self, url: str, json: dict, timeout: int = 30) -> requests.Response:
-        return requests.post(url, json=json, timeout=timeout)
+        super().__init__()
+        env_key = os.getenv("TAVILY_API_KEY")
+        if env_key:
+            self.api_key = env_key
 
     def search(self, query: str, max_results: int = 5) -> dict:
         try:
@@ -43,9 +36,8 @@ class SearchService:
                 ).to_dict()
 
             cache_key = f"search:{query}:{max_results}"
-            cached = SEARCH_CACHE.get(cache_key)
+            cached = self._get_cached(cache_key)
             if cached is not None:
-                logger.debug(f"搜索缓存命中: {cache_key}")
                 return cached
 
             url = "https://api.tavily.com/search"
@@ -81,7 +73,7 @@ class SearchService:
                 "total": len(results)
             }
 
-            SEARCH_CACHE[cache_key] = result
+            self._set_cached(cache_key, result)
             return result
 
         except requests.exceptions.Timeout:
