@@ -9,7 +9,7 @@ from src.core.logger import logger
 from src.core.errors import AgentError, ErrorCode
 
 
-EXTRACTION_SYSTEM_PROMPT = """你是一个用户画像信息提取专家。你的任务是从用户与天文助手的对话中，提取结构化的用户偏好、习惯和约束信息。
+EXTRACTION_SYSTEM_PROMPT = """你是一个天文领域用户画像信息提取专家。你的任务是从用户与天文助手的对话中，提取结构化的用户偏好、习惯和约束信息。
 
 请严格按照以下JSON格式输出，不要输出任何其他内容：
 {
@@ -31,8 +31,10 @@ EXTRACTION_SYSTEM_PROMPT = """你是一个用户画像信息提取专家。你�
 判断规则：
 - should_extract: 仅当对话中包含可提取的用户偏好、习惯或约束信息时为true
 - 如果用户明确表达了偏好（如"简短回答"、"我懂天文"等），提取对应信息
-- 如果用户提到了特定天体或观测类型，记录到frequent_topics
-- 如果用户表达了限制条件（如"不要用术语"、"字数限制"等），记录到constraints
+- 如果用户提到了特定天体或观测类型，记录到frequent_topics（如"木星""星云""流星雨"等）
+- 如果用户表达了观测经验水平（如"我刚入门""我用8寸DOB"等），记录到observation_experience
+- 如果用户提到了观测设备（如"望远镜""赤道仪""单反"等），记录到observation_type
+- 如果用户表达了限制条件（如"不要用术语""字数限制"等），记录到constraints
 - 不要从一般性问答中推断偏好，仅提取明确表达的信息
 - 如果没有可提取的信息，设置should_extract为false，其他字段留空"""
 
