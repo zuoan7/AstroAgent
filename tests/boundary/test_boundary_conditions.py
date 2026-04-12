@@ -553,26 +553,16 @@ class TestTimeBoundary:
             assert isinstance(result2, str)
 
     def test_time_range_parsing_boundary(self):
-        from src.skills.router import AstronomySkillRouter
+        from src.skills.skill_handlers import _parse_time_range
 
-        with patch.object(AstronomySkillRouter, "_init_mcp_session"):
-            with patch("src.skills.router.httpx.Client"):
-                router = AstronomySkillRouter.__new__(AstronomySkillRouter)
-                router._mcp_session_id = None
-                router._mcp_initialized = False
-                router._http_client = None
-                router._registry = {}
-                router._simple_skills = {}
-                router._call_mcp_tool = MagicMock(return_value="{}")
+        start, end = _parse_time_range(None)
+        assert start is not None
+        assert end is not None
 
-                start, end = router._parse_time_range(None)
-                assert start is not None
-                assert end is not None
+        start2, end2 = _parse_time_range("未来30天")
+        assert start2 is not None
+        assert end2 is not None
 
-                start2, end2 = router._parse_time_range("未来30天")
-                assert start2 is not None
-                assert end2 is not None
-
-                start3, end3 = router._parse_time_range("本月")
-                assert start3 is not None
-                assert end3 is not None
+        start3, end3 = _parse_time_range("本月")
+        assert start3 is not None
+        assert end3 is not None

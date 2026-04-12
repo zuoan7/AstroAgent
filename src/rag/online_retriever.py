@@ -1,208 +1,357 @@
 """
-在线检索：支持混合检索（向量检索 + BM25），提供相似度检索接口给 Agent 工具调用。
+三级检索架构在线检索器
+
+检索流程:
+  Level 1 - 混合检索: 向量检索 + BM25 关键词检索并行执行
+  Level 2 - RRF 融合: Reciprocal Rank Fusion 算法合并多路检索结果
+  Level 3 - Rerank 重排序: qwen3-rerank 模型对候选文档精细化排序
+
+性能优化:
+  - TTLCache 缓存检索结果，避免重复计算
+  - 检索候选数 > 最终返回数，确保 Rerank 有足够候选
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import hashlib
+import time
+from typing import Any, Dict, List, Optional
 
-from langchain_chroma import Chroma
-from langchain_community.embeddings import DashScopeEmbeddings
+from cachetools import TTLCache
 
 from src.core.config import settings
 from src.core.logger import logger
+from src.rag.bm25_retriever import BM25Retriever
+from src.rag.reranker import DashScopeReranker, RerankResult
+from src.rag.rrf_fusion import RankedDocument, reciprocal_rank_fusion
 
 
 class OnlineRetriever:
+    """三级检索架构在线检索器"""
+
     def __init__(
         self,
-        vector_db_path: str = settings.VECTOR_DB_PATH,
+        vector_db_path: str = None,
         collection_name: str = "astronomy_rag",
         top_k: int = 3,
-        use_hybrid: bool = True,
-        vector_weight: float = 0.5,
-        bm25_weight: float = 0.5,
     ):
         self.enabled = bool(settings.RAG_ENABLED)
         self.top_k = top_k
-        self.use_hybrid = use_hybrid
-        self.vector_weight = vector_weight
-        self.bm25_weight = bm25_weight
+        self.vector_db_path = vector_db_path or settings.VECTOR_DB_PATH
+
+        self.vector_weight = settings.RAG_VECTOR_WEIGHT
+        self.bm25_weight = settings.RAG_BM25_WEIGHT
+        self.retrieval_candidates = settings.RAG_RETRIEVAL_CANDIDATES
+
+        self.db = None
+        self.embeddings = None
+        self.bm25_retriever: Optional[BM25Retriever] = None
+        self.reranker: Optional[DashScopeReranker] = None
+        self._cache: Optional[TTLCache] = None
 
         if not self.enabled or not settings.DASHSCOPE_API_KEY:
-            self.db = None
-            self.embeddings = None
-            self.bm25_retriever = None
             if not settings.DASHSCOPE_API_KEY:
                 logger.warning("⚠️  DASHSCOPE_API_KEY 未配置，在线检索已禁用")
             else:
                 logger.warning("⚠️  RAG_ENABLED=False，在线检索已禁用")
             return
 
-        self.embeddings = DashScopeEmbeddings(
-            model=settings.EMBEDDING_MODEL_NAME,
-            dashscope_api_key=settings.DASHSCOPE_API_KEY,
+        self._init_vector_store(collection_name)
+        self._init_bm25()
+        self._init_reranker()
+        self._init_cache()
+
+        logger.info(
+            f"✅ 三级检索架构初始化完成: "
+            f"向量={'✓' if self.db else '✗'}, "
+            f"BM25={'✓' if self.bm25_retriever and self.bm25_retriever.bm25 else '✗'}, "
+            f"Rerank={'✓' if self.reranker and self.reranker.enabled else '✗'}, "
+            f"缓存={'✓' if self._cache else '✗'}"
         )
-        self.db = Chroma(
-            embedding_function=self.embeddings,
-            collection_name=collection_name,
-            persist_directory=vector_db_path,
-        )
-        logger.info(f"✅ 向量检索已连接：{vector_db_path}")
 
-        self.bm25_retriever = None
-        if use_hybrid:
-            try:
-                from src.rag.bm25_retriever import BM25Retriever
-                self.bm25_retriever = BM25Retriever(
-                    index_path=vector_db_path + "/bm25_index.pkl",
-                    top_k=top_k
-                )
-                if self.bm25_retriever.bm25 is None:
-                    logger.warning("⚠️  BM25 索引未加载，将使用纯向量检索")
-                    self.use_hybrid = False
-                else:
-                    logger.info("✅ BM25 检索已加载")
-            except Exception as e:
-                logger.warning(f"⚠️  BM25 检索初始化失败: {e}，将使用纯向量检索")
-                self.use_hybrid = False
+    def _init_vector_store(self, collection_name: str) -> None:
+        try:
+            from langchain_chroma import Chroma
+            from langchain_community.embeddings import DashScopeEmbeddings
 
-    @staticmethod
-    def _min_max_normalize(scores: list[float]) -> list[float]:
-        if not scores:
-            return []
-        min_s = min(scores)
-        max_s = max(scores)
-        if max_s == min_s:
-            return [1.0] * len(scores) if max_s > 0 else [0.0] * len(scores)
-        return [(s - min_s) / (max_s - min_s) for s in scores]
+            self.embeddings = DashScopeEmbeddings(
+                model=settings.EMBEDDING_MODEL_NAME,
+                dashscope_api_key=settings.DASHSCOPE_API_KEY,
+            )
+            self.db = Chroma(
+                embedding_function=self.embeddings,
+                collection_name=collection_name,
+                persist_directory=self.vector_db_path,
+            )
+            logger.info(f"✅ 向量检索已连接: {self.vector_db_path}")
+        except Exception as e:
+            logger.error(f"❌ 向量检索初始化失败: {e}")
+            self.db = None
 
-    def _merge_results(
-        self,
-        vector_results: list,
-        vector_distances: list[float],
-        bm25_results: list,
-        top_k: int
-    ) -> list:
-        if not bm25_results:
-            return vector_results[:top_k]
-        if not vector_results:
-            return [
-                self._bm25_result_to_doc(r) for r in bm25_results[:top_k]
-            ]
-
-        vector_scores_raw = []
-        for dist in vector_distances:
-            vector_scores_raw.append(1.0 / (1.0 + dist))
-
-        bm25_scores_raw = [r.get("score", 0.0) for r in bm25_results]
-
-        vector_norm = self._min_max_normalize(vector_scores_raw)
-        bm25_norm = self._min_max_normalize(bm25_scores_raw)
-
-        all_results: dict[str, dict] = {}
-
-        for i, doc in enumerate(vector_results):
-            doc_id = doc.page_content[:100]
-            all_results[doc_id] = {
-                "normalized_score": vector_norm[i] * self.vector_weight,
-                "doc": doc,
-                "content": doc.page_content,
-                "metadata": doc.metadata,
-                "source": "vector",
-            }
-
-        for i, result in enumerate(bm25_results):
-            doc_id = result.get("document", "")[:100]
-            bm25_entry = {
-                "normalized_score": bm25_norm[i] * self.bm25_weight,
-                "content": result.get("document", ""),
-                "metadata": result.get("metadata", {}),
-                "source": "bm25",
-            }
-            if doc_id in all_results:
-                all_results[doc_id]["normalized_score"] = (
-                    all_results[doc_id]["normalized_score"] + bm25_entry["normalized_score"]
-                )
-                all_results[doc_id]["source"] = "hybrid"
+    def _init_bm25(self) -> None:
+        try:
+            self.bm25_retriever = BM25Retriever(
+                index_path=self.vector_db_path + "/bm25_index.pkl",
+                top_k=self.retrieval_candidates,
+            )
+            if self.bm25_retriever.bm25 is None:
+                logger.warning("⚠️  BM25 索引未加载，将使用纯向量检索")
+                self.bm25_retriever = None
             else:
-                bm25_entry["doc"] = self._bm25_result_to_doc(result)
-                all_results[doc_id] = bm25_entry
+                logger.info("✅ BM25 检索已加载")
+        except Exception as e:
+            logger.warning(f"⚠️  BM25 检索初始化失败: {e}，将使用纯向量检索")
+            self.bm25_retriever = None
 
-        sorted_results = sorted(
-            all_results.values(),
-            key=lambda x: x.get("normalized_score", 0),
-            reverse=True
-        )[:top_k]
+    def _init_reranker(self) -> None:
+        try:
+            self.reranker = DashScopeReranker()
+        except Exception as e:
+            logger.warning(f"⚠️  Reranker 初始化失败: {e}")
+            self.reranker = None
 
-        merged = []
-        for item in sorted_results:
-            merged.append(item["doc"])
-
-        return merged
+    def _init_cache(self) -> None:
+        if settings.RAG_CACHE_ENABLED:
+            self._cache = TTLCache(
+                maxsize=settings.RAG_CACHE_MAX_SIZE,
+                ttl=settings.RAG_CACHE_TTL,
+            )
+            logger.info(f"✅ 检索缓存已启用: maxsize={settings.RAG_CACHE_MAX_SIZE}, ttl={settings.RAG_CACHE_TTL}s")
 
     @staticmethod
-    def _bm25_result_to_doc(result: dict):
-        content = result.get("document", "")
-        metadata = result.get("metadata", {})
-        from langchain_core.documents import Document
-        return Document(page_content=content, metadata=metadata)
+    def _cache_key(query: str, top_k: int) -> str:
+        raw = f"{query}::{top_k}"
+        return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+    def _get_cached(self, key: str) -> Optional[str]:
+        if self._cache is None:
+            return None
+        return self._cache.get(key)
+
+    def _set_cached(self, key: str, value: str) -> None:
+        if self._cache is None:
+            return
+        self._cache[key] = value
+
+    # ===== Level 1: 混合检索 =====
+
+    def _vector_search(self, query: str, k: int) -> List[Dict[str, Any]]:
+        if not self.db:
+            return []
+        try:
+            results_with_scores = self.db.similarity_search_with_score(query, k=k)
+            formatted = []
+            for doc, score in results_with_scores:
+                formatted.append({
+                    "content": doc.page_content,
+                    "metadata": doc.metadata or {},
+                    "score": float(score),
+                })
+            logger.info(f"📄 向量检索返回 {len(formatted)} 个结果")
+            return formatted
+        except Exception as e:
+            logger.error(f"❌ 向量检索失败: {e}")
+            return []
+
+    def _bm25_search(self, query: str, k: int) -> List[Dict[str, Any]]:
+        if not self.bm25_retriever:
+            return []
+        try:
+            raw_results = self.bm25_retriever.search(query, top_k=k)
+            formatted = []
+            for r in raw_results:
+                formatted.append({
+                    "content": r.get("document", ""),
+                    "metadata": r.get("metadata", {}),
+                    "score": r.get("score", 0.0),
+                })
+            logger.info(f"📄 BM25 检索返回 {len(formatted)} 个结果")
+            return formatted
+        except Exception as e:
+            logger.error(f"❌ BM25 检索失败: {e}")
+            return []
+
+    def _hybrid_search(self, query: str, k: int) -> Dict[str, List[Dict[str, Any]]]:
+        vector_results = self._vector_search(query, k)
+        bm25_results = self._bm25_search(query, k)
+        ranked_lists = {}
+        if vector_results:
+            ranked_lists["vector"] = vector_results
+        if bm25_results:
+            ranked_lists["bm25"] = bm25_results
+        return ranked_lists
+
+    # ===== Level 2: RRF 融合 =====
+
+    def _rrf_merge(
+        self,
+        ranked_lists: Dict[str, List[Dict[str, Any]]],
+        top_k: int,
+    ) -> List[RankedDocument]:
+        weights = {}
+        if "vector" in ranked_lists:
+            weights["vector"] = self.vector_weight
+        if "bm25" in ranked_lists:
+            weights["bm25"] = self.bm25_weight
+
+        return reciprocal_rank_fusion(
+            ranked_lists=ranked_lists,
+            k=settings.RRF_K,
+            weights=weights,
+            top_k=top_k,
+        )
+
+    # ===== Level 3: Rerank 重排序 =====
+
+    def _rerank(
+        self,
+        query: str,
+        rrf_results: List[RankedDocument],
+        top_n: int,
+    ) -> List[RerankResult]:
+        if not self.reranker or not self.reranker.enabled:
+            return self._rrf_to_rerank_results(rrf_results, top_n)
+
+        documents = [doc.content for doc in rrf_results]
+        if not documents:
+            return []
+
+        rerank_results = self.reranker.rerank(query, documents, top_n=top_n)
+
+        final_results = []
+        for rr in rerank_results:
+            original_idx = rr.index
+            if original_idx < len(rrf_results):
+                final_results.append(RerankResult(
+                    index=original_idx,
+                    relevance_score=rr.relevance_score,
+                    content=rr.content,
+                    metadata=rrf_results[original_idx].metadata,
+                ))
+            else:
+                final_results.append(rr)
+
+        logger.info(f"✅ Rerank 重排序完成: {len(rrf_results)} -> {len(final_results)} 个结果")
+        return final_results
+
+    @staticmethod
+    def _rrf_to_rerank_results(
+        rrf_results: List[RankedDocument],
+        top_n: int,
+    ) -> List[RerankResult]:
+        results = []
+        for i, doc in enumerate(rrf_results[:top_n]):
+            results.append(RerankResult(
+                index=i,
+                relevance_score=doc.rrf_score,
+                content=doc.content,
+                metadata=doc.metadata,
+            ))
+        return results
+
+    # ===== 公共接口 =====
 
     def get_relevant_context(self, query: str, top_k: Optional[int] = None) -> str:
+        """
+        三级检索主入口
+
+        流程: 混合检索 → RRF 融合 → Rerank 重排序 → 格式化输出
+
+        Args:
+            query: 查询文本
+            top_k: 最终返回的文档数
+
+        Returns:
+            格式化后的上下文字符串
+        """
         if not self.enabled or not self.db:
             return ""
 
         k = top_k or self.top_k
 
+        cache_key = self._cache_key(query, k)
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            logger.debug(f"📄 检索缓存命中: {cache_key[:8]}...")
+            return cached
+
         try:
-            results = []
+            start_time = time.time()
 
-            vector_results_with_scores = self.db.similarity_search_with_score(query, k=k)
-            vector_results = [doc for doc, _ in vector_results_with_scores]
-            vector_distances = [score for _, score in vector_results_with_scores]
+            ranked_lists = self._hybrid_search(query, self.retrieval_candidates)
 
-            bm25_results = []
-            if self.use_hybrid and self.bm25_retriever:
-                bm25_results = self.bm25_retriever.search(query, top_k=k)
+            if not ranked_lists:
+                logger.warning("⚠️  混合检索未返回任何结果")
+                return ""
 
-            if self.use_hybrid and bm25_results:
-                results = self._merge_results(vector_results, vector_distances, bm25_results, k)
-                logger.info(f"📄 混合检索：向量 {len(vector_results)} + BM25 {len(bm25_results)} -> 合并 {len(results)}")
-            else:
-                results = vector_results
-                logger.info(f"📄 向量检索：{len(results)} 个结果")
+            rrf_results = self._rrf_merge(ranked_lists, self.retrieval_candidates)
 
-            parts: list[str] = []
-            for doc in results:
-                meta = doc.metadata or {}
-                src = meta.get("source")
-                rid = meta.get("record_id")
-                prefix = []
-                if src:
-                    prefix.append(f"source={src}")
-                if rid:
-                    prefix.append(f"record_id={rid}")
-                header = f"[{', '.join(prefix)}]" if prefix else ""
-                parts.append((header + "\n" + doc.page_content).strip())
+            if not rrf_results:
+                logger.warning("⚠️  RRF 融合未返回任何结果")
+                return ""
 
-            context = "\n\n---\n\n".join(parts)
-            logger.info(f"📄 RAG 检索上下文长度：{len(context)} 字符")
+            rerank_results = self._rerank(query, rrf_results, top_n=k)
+
+            final_docs = rerank_results[:k]
+
+            context = self._format_results(final_docs)
+
+            elapsed = time.time() - start_time
+            logger.info(
+                f"📄 三级检索完成: 混合检索({len(ranked_lists)}路) → "
+                f"RRF({len(rrf_results)}候选) → Rerank({len(final_docs)}最终), "
+                f"耗时 {elapsed:.3f}s"
+            )
+
+            self._set_cached(cache_key, context)
             return context
 
         except Exception as e:
-            logger.error(f"❌ RAG 检索失败：{e}")
+            logger.error(f"❌ 三级检索失败: {e}")
             return ""
+
+    @staticmethod
+    def _format_results(results: List[RerankResult]) -> str:
+        parts: list[str] = []
+        for result in results:
+            meta = result.metadata or {}
+            src = meta.get("source")
+            rid = meta.get("record_id")
+            prefix = []
+            if src:
+                prefix.append(f"source={src}")
+            if rid:
+                prefix.append(f"record_id={rid}")
+            if result.relevance_score > 0:
+                prefix.append(f"score={result.relevance_score:.4f}")
+            header = f"[{', '.join(prefix)}]" if prefix else ""
+            parts.append((header + "\n" + result.content).strip())
+
+        return "\n\n---\n\n".join(parts)
 
     def get_vector_results(self, query: str, top_k: Optional[int] = None) -> list:
         if not self.enabled or not self.db:
             return []
-
         k = top_k or self.top_k
         return self.db.similarity_search(query, k=k)
 
     def get_bm25_results(self, query: str, top_k: Optional[int] = None) -> list:
         if not self.bm25_retriever:
             return []
-
         k = top_k or self.top_k
         return self.bm25_retriever.search(query, top_k=k)
+
+    def get_pipeline_stats(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "vector_store": self.db is not None,
+            "bm25": self.bm25_retriever is not None and self.bm25_retriever.bm25 is not None,
+            "reranker": self.reranker is not None and self.reranker.enabled,
+            "cache": self._cache is not None,
+            "vector_weight": self.vector_weight,
+            "bm25_weight": self.bm25_weight,
+            "rrf_k": settings.RRF_K,
+            "retrieval_candidates": self.retrieval_candidates,
+            "rerank_top_n": settings.RERANK_TOP_N,
+            "rerank_model": settings.RERANK_MODEL_NAME,
+        }

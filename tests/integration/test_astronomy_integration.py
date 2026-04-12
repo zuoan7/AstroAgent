@@ -134,9 +134,16 @@ class TestAstronomyModuleIntegration:
         mock_eph = MagicMock(spec=EphemerisManager)
         calc = PlanetaryCalculator(ephemeris=mock_eph)
 
-        result = calc.coordinate_transformation(
-            ra=10.5, dec=20.3, epoch="J2000", target_system="fk5"
-        )
+        mock_fk5_coord = MagicMock()
+        mock_fk5_coord.ra.hour = 10.5
+        mock_fk5_coord.dec.degree = 20.3
+        mock_sky = MagicMock()
+        mock_sky.transform_to.return_value = mock_fk5_coord
+
+        with patch("src.astronomy.planetary.SkyCoord", return_value=mock_sky):
+            result = calc.coordinate_transformation(
+                ra=10.5, dec=20.3, epoch="J2000", target_system="fk5"
+            )
 
         assert "ra" in result
         assert "dec" in result

@@ -23,6 +23,16 @@ def mock_settings():
         instance.SPEECH_MODEL_NAME = "paraformer-realtime-v2"
         instance.RAG_ENABLED = False
         instance.VECTOR_DB_PATH = "/tmp/test_vector_db"
+        instance.RERANK_MODEL_NAME = "qwen3-rerank"
+        instance.RERANK_ENABLED = False
+        instance.RERANK_TOP_N = 3
+        instance.RRF_K = 60
+        instance.RAG_VECTOR_WEIGHT = 0.5
+        instance.RAG_BM25_WEIGHT = 0.5
+        instance.RAG_RETRIEVAL_CANDIDATES = 20
+        instance.RAG_CACHE_ENABLED = False
+        instance.RAG_CACHE_TTL = 300
+        instance.RAG_CACHE_MAX_SIZE = 256
         instance.MEMORY_SIZE = 15
         instance.MEMORY_WINDOW = 8
         instance.LONG_TERM_MEMORY_PATH = "/tmp/test_memory/user_profiles.sqlite"
@@ -381,6 +391,16 @@ def skill_manager():
         mock_settings.VISION_MODEL_NAME = "qwen-vl-plus"
         mock_settings.SPEECH_MODEL_NAME = "paraformer-realtime-v2"
         mock_settings.VECTOR_DB_PATH = "/tmp/test_vector_db"
+        mock_settings.RERANK_MODEL_NAME = "qwen3-rerank"
+        mock_settings.RERANK_ENABLED = False
+        mock_settings.RERANK_TOP_N = 3
+        mock_settings.RRF_K = 60
+        mock_settings.RAG_VECTOR_WEIGHT = 0.5
+        mock_settings.RAG_BM25_WEIGHT = 0.5
+        mock_settings.RAG_RETRIEVAL_CANDIDATES = 20
+        mock_settings.RAG_CACHE_ENABLED = False
+        mock_settings.RAG_CACHE_TTL = 300
+        mock_settings.RAG_CACHE_MAX_SIZE = 256
 
         with patch("src.agent.skill_manager.AstronomySkillRouter") as MockRouter:
             mock_router = MagicMock()

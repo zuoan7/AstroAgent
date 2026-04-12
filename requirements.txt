@@ -25,6 +25,9 @@ langchain-text-splitters
 # BM25 for hybrid search
 rank-bm25
 
+# Cache
+cachetools>=5.3.0
+
 # Astronomy and scientific stack
 skyfield
 astropy
