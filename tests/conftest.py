@@ -29,6 +29,7 @@ def mock_settings():
         instance.RRF_K = 60
         instance.RAG_VECTOR_WEIGHT = 0.5
         instance.RAG_BM25_WEIGHT = 0.5
+        instance.RAG_ENTITY_WEIGHT = 0.3
         instance.RAG_RETRIEVAL_CANDIDATES = 20
         instance.RAG_CACHE_ENABLED = False
         instance.RAG_CACHE_TTL = 300
@@ -397,6 +398,7 @@ def skill_manager():
         mock_settings.RRF_K = 60
         mock_settings.RAG_VECTOR_WEIGHT = 0.5
         mock_settings.RAG_BM25_WEIGHT = 0.5
+        mock_settings.RAG_ENTITY_WEIGHT = 0.3
         mock_settings.RAG_RETRIEVAL_CANDIDATES = 20
         mock_settings.RAG_CACHE_ENABLED = False
         mock_settings.RAG_CACHE_TTL = 300

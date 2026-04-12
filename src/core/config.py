@@ -213,6 +213,7 @@ class MemoryConfig(BaseSettings):
     RRF_K: int = Field(60, description="RRF 算法常数 K，控制排名衰减速度")
     RAG_VECTOR_WEIGHT: float = Field(0.5, description="混合检索中向量检索的权重")
     RAG_BM25_WEIGHT: float = Field(0.5, description="混合检索中 BM25 检索的权重")
+    RAG_ENTITY_WEIGHT: float = Field(0.3, description="混合检索中天文实体检索的权重")
     RAG_RETRIEVAL_CANDIDATES: int = Field(20, description="混合检索候选文档数（RRF 前）")
     RAG_CACHE_ENABLED: bool = Field(True, description="是否启用检索结果缓存")
     RAG_CACHE_TTL: int = Field(300, description="检索结果缓存 TTL（秒）")

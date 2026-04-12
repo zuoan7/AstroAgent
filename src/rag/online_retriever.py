@@ -1,14 +1,18 @@
 """
-三级检索架构在线检索器
+增强型三级检索架构在线检索器
 
 检索流程:
-  Level 1 - 混合检索: 向量检索 + BM25 关键词检索并行执行
+  Level 1 - 多路混合检索: 向量检索 + BM25 关键词检索 + 天文实体检索
   Level 2 - RRF 融合: Reciprocal Rank Fusion 算法合并多路检索结果
-  Level 3 - Rerank 重排序: qwen3-rerank 模型对候选文档精细化排序
+  Level 3 - 重排序: Rerank 模型 + 时效性/可信度/领域相关性综合重排序
 
-性能优化:
-  - TTLCache 缓存检索结果，避免重复计算
-  - 检索候选数 > 最终返回数，确保 Rerank 有足够候选
+增强功能:
+  - 天文实体检索（第三路检索）
+  - 多模态检索（图像/光谱）
+  - 多级缓存（L1/L2/L3）
+  - 结果过滤（可信度+时效性）
+  - 检索质量监控
+  - 知识更新机制
 """
 
 from __future__ import annotations
@@ -17,17 +21,21 @@ import hashlib
 import time
 from typing import Any, Dict, List, Optional
 
-from cachetools import TTLCache
-
 from src.core.config import settings
 from src.core.logger import logger
 from src.rag.bm25_retriever import BM25Retriever
+from src.rag.cache import MultiLevelCache
+from src.rag.entity_retriever import AstronomyEntityRetriever
+from src.rag.knowledge_updater import KnowledgeUpdateManager
+from src.rag.metrics import MetricsCollector, RetrievalMetrics, UserFeedback
+from src.rag.multimodal_retriever import MultimodalRetriever
 from src.rag.reranker import DashScopeReranker, RerankResult
+from src.rag.result_filter import FilteredResult, ResultFilterAndReranker
 from src.rag.rrf_fusion import RankedDocument, reciprocal_rank_fusion
 
 
 class OnlineRetriever:
-    """三级检索架构在线检索器"""
+    """增强型三级检索架构在线检索器"""
 
     def __init__(
         self,
@@ -41,13 +49,19 @@ class OnlineRetriever:
 
         self.vector_weight = settings.RAG_VECTOR_WEIGHT
         self.bm25_weight = settings.RAG_BM25_WEIGHT
+        self.entity_weight = getattr(settings, "RAG_ENTITY_WEIGHT", 0.3)
         self.retrieval_candidates = settings.RAG_RETRIEVAL_CANDIDATES
 
         self.db = None
         self.embeddings = None
         self.bm25_retriever: Optional[BM25Retriever] = None
+        self.entity_retriever: Optional[AstronomyEntityRetriever] = None
+        self.multimodal_retriever: Optional[MultimodalRetriever] = None
         self.reranker: Optional[DashScopeReranker] = None
-        self._cache: Optional[TTLCache] = None
+        self.result_filter: Optional[ResultFilterAndReranker] = None
+        self.cache: Optional[MultiLevelCache] = None
+        self.metrics: Optional[MetricsCollector] = None
+        self.knowledge_updater: Optional[KnowledgeUpdateManager] = None
 
         if not self.enabled or not settings.DASHSCOPE_API_KEY:
             if not settings.DASHSCOPE_API_KEY:
@@ -58,15 +72,24 @@ class OnlineRetriever:
 
         self._init_vector_store(collection_name)
         self._init_bm25()
+        self._init_entity_retriever()
+        self._init_multimodal()
         self._init_reranker()
+        self._init_result_filter()
         self._init_cache()
+        self._init_metrics()
+        self._init_knowledge_updater()
 
         logger.info(
-            f"✅ 三级检索架构初始化完成: "
+            f"✅ 增强型三级检索架构初始化完成: "
             f"向量={'✓' if self.db else '✗'}, "
             f"BM25={'✓' if self.bm25_retriever and self.bm25_retriever.bm25 else '✗'}, "
+            f"实体={'✓' if self.entity_retriever else '✗'}, "
+            f"多模态={'✓' if self.multimodal_retriever else '✗'}, "
             f"Rerank={'✓' if self.reranker and self.reranker.enabled else '✗'}, "
-            f"缓存={'✓' if self._cache else '✗'}"
+            f"过滤={'✓' if self.result_filter else '✗'}, "
+            f"缓存={'✓' if self.cache else '✗'}, "
+            f"监控={'✓' if self.metrics else '✗'}"
         )
 
     def _init_vector_store(self, collection_name: str) -> None:
@@ -103,6 +126,30 @@ class OnlineRetriever:
             logger.warning(f"⚠️  BM25 检索初始化失败: {e}，将使用纯向量检索")
             self.bm25_retriever = None
 
+    def _init_entity_retriever(self) -> None:
+        try:
+            if self.bm25_retriever and self.bm25_retriever.documents:
+                docs = []
+                for i, doc_text in enumerate(self.bm25_retriever.documents):
+                    meta = self.bm25_retriever.doc_metadata[i] if i < len(self.bm25_retriever.doc_metadata) else {}
+                    docs.append({"content": doc_text, "metadata": meta})
+                self.entity_retriever = AstronomyEntityRetriever(docs)
+                logger.info("✅ 天文实体检索已加载")
+            else:
+                self.entity_retriever = AstronomyEntityRetriever()
+                logger.info("✅ 天文实体检索已初始化（空索引）")
+        except Exception as e:
+            logger.warning(f"⚠️  天文实体检索初始化失败: {e}")
+            self.entity_retriever = None
+
+    def _init_multimodal(self) -> None:
+        try:
+            self.multimodal_retriever = MultimodalRetriever()
+            logger.info("✅ 多模态检索已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️  多模态检索初始化失败: {e}")
+            self.multimodal_retriever = None
+
     def _init_reranker(self) -> None:
         try:
             self.reranker = DashScopeReranker()
@@ -110,30 +157,45 @@ class OnlineRetriever:
             logger.warning(f"⚠️  Reranker 初始化失败: {e}")
             self.reranker = None
 
+    def _init_result_filter(self) -> None:
+        try:
+            self.result_filter = ResultFilterAndReranker()
+            logger.info("✅ 结果过滤器已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️  结果过滤器初始化失败: {e}")
+            self.result_filter = None
+
     def _init_cache(self) -> None:
-        if settings.RAG_CACHE_ENABLED:
-            self._cache = TTLCache(
-                maxsize=settings.RAG_CACHE_MAX_SIZE,
-                ttl=settings.RAG_CACHE_TTL,
-            )
-            logger.info(f"✅ 检索缓存已启用: maxsize={settings.RAG_CACHE_MAX_SIZE}, ttl={settings.RAG_CACHE_TTL}s")
+        try:
+            if settings.RAG_CACHE_ENABLED:
+                self.cache = MultiLevelCache(
+                    l1_maxsize=64,
+                    l1_ttl=60,
+                    l2_maxsize=settings.RAG_CACHE_MAX_SIZE,
+                    l2_ttl=settings.RAG_CACHE_TTL,
+                )
+                logger.info("✅ 多级缓存已启用")
+        except Exception as e:
+            logger.warning(f"⚠️  缓存初始化失败: {e}")
+            self.cache = None
 
-    @staticmethod
-    def _cache_key(query: str, top_k: int) -> str:
-        raw = f"{query}::{top_k}"
-        return hashlib.md5(raw.encode("utf-8")).hexdigest()
+    def _init_metrics(self) -> None:
+        try:
+            self.metrics = MetricsCollector()
+            logger.info("✅ 检索质量监控已启用")
+        except Exception as e:
+            logger.warning(f"⚠️  监控初始化失败: {e}")
+            self.metrics = None
 
-    def _get_cached(self, key: str) -> Optional[str]:
-        if self._cache is None:
-            return None
-        return self._cache.get(key)
+    def _init_knowledge_updater(self) -> None:
+        try:
+            self.knowledge_updater = KnowledgeUpdateManager(self.vector_db_path)
+            logger.info("✅ 知识更新管理器已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️  知识更新管理器初始化失败: {e}")
+            self.knowledge_updater = None
 
-    def _set_cached(self, key: str, value: str) -> None:
-        if self._cache is None:
-            return
-        self._cache[key] = value
-
-    # ===== Level 1: 混合检索 =====
+    # ===== Level 1: 多路混合检索 =====
 
     def _vector_search(self, query: str, k: int) -> List[Dict[str, Any]]:
         if not self.db:
@@ -171,14 +233,47 @@ class OnlineRetriever:
             logger.error(f"❌ BM25 检索失败: {e}")
             return []
 
+    def _entity_search(self, query: str, k: int) -> List[Dict[str, Any]]:
+        if not self.entity_retriever:
+            return []
+        try:
+            results = self.entity_retriever.search_formatted(query, top_k=k)
+            logger.info(f"📄 天文实体检索返回 {len(results)} 个结果")
+            return results
+        except Exception as e:
+            logger.error(f"❌ 天文实体检索失败: {e}")
+            return []
+
+    def _multimodal_search(self, query: str, k: int) -> List[Dict[str, Any]]:
+        if not self.multimodal_retriever:
+            return []
+        try:
+            results = self.multimodal_retriever.search_formatted(query, top_k=k)
+            logger.info(f"📄 多模态检索返回 {len(results)} 个结果")
+            return results
+        except Exception as e:
+            logger.error(f"❌ 多模态检索失败: {e}")
+            return []
+
     def _hybrid_search(self, query: str, k: int) -> Dict[str, List[Dict[str, Any]]]:
-        vector_results = self._vector_search(query, k)
-        bm25_results = self._bm25_search(query, k)
         ranked_lists = {}
+
+        vector_results = self._vector_search(query, k)
         if vector_results:
             ranked_lists["vector"] = vector_results
+
+        bm25_results = self._bm25_search(query, k)
         if bm25_results:
             ranked_lists["bm25"] = bm25_results
+
+        entity_results = self._entity_search(query, k)
+        if entity_results:
+            ranked_lists["entity"] = entity_results
+
+        mm_results = self._multimodal_search(query, k)
+        if mm_results:
+            ranked_lists["multimodal"] = mm_results
+
         return ranked_lists
 
     # ===== Level 2: RRF 融合 =====
@@ -193,6 +288,10 @@ class OnlineRetriever:
             weights["vector"] = self.vector_weight
         if "bm25" in ranked_lists:
             weights["bm25"] = self.bm25_weight
+        if "entity" in ranked_lists:
+            weights["entity"] = self.entity_weight
+        if "multimodal" in ranked_lists:
+            weights["multimodal"] = 0.2
 
         return reciprocal_rank_fusion(
             ranked_lists=ranked_lists,
@@ -201,7 +300,7 @@ class OnlineRetriever:
             top_k=top_k,
         )
 
-    # ===== Level 3: Rerank 重排序 =====
+    # ===== Level 3: 重排序 + 过滤 =====
 
     def _rerank(
         self,
@@ -234,6 +333,17 @@ class OnlineRetriever:
         logger.info(f"✅ Rerank 重排序完成: {len(rrf_results)} -> {len(final_results)} 个结果")
         return final_results
 
+    def _filter_results(
+        self,
+        results: List[RerankResult],
+        query: str,
+        top_k: int,
+    ) -> List[FilteredResult]:
+        if not self.result_filter:
+            return self._rerank_to_filtered(results, top_k)
+
+        return self.result_filter.filter_and_rerank(results, query, top_k=top_k)
+
     @staticmethod
     def _rrf_to_rerank_results(
         rrf_results: List[RankedDocument],
@@ -249,13 +359,31 @@ class OnlineRetriever:
             ))
         return results
 
+    @staticmethod
+    def _rerank_to_filtered(
+        results: List[RerankResult],
+        top_k: int,
+    ) -> List[FilteredResult]:
+        filtered = []
+        for r in results[:top_k]:
+            filtered.append(FilteredResult(
+                content=r.content,
+                relevance_score=r.relevance_score,
+                timeliness_score=0.7,
+                credibility_score=0.5,
+                domain_score=0.5,
+                final_score=r.relevance_score,
+                metadata=r.metadata,
+            ))
+        return filtered
+
     # ===== 公共接口 =====
 
     def get_relevant_context(self, query: str, top_k: Optional[int] = None) -> str:
         """
-        三级检索主入口
+        增强型三级检索主入口
 
-        流程: 混合检索 → RRF 融合 → Rerank 重排序 → 格式化输出
+        流程: 多路混合检索 → RRF 融合 → Rerank 重排序 → 结果过滤 → 格式化输出
 
         Args:
             query: 查询文本
@@ -268,47 +396,141 @@ class OnlineRetriever:
             return ""
 
         k = top_k or self.top_k
+        cache_hit = False
 
-        cache_key = self._cache_key(query, k)
-        cached = self._get_cached(cache_key)
-        if cached is not None:
-            logger.debug(f"📄 检索缓存命中: {cache_key[:8]}...")
-            return cached
+        if self.cache:
+            cached = self.cache.get(query, k)
+            if cached is not None:
+                cache_hit = True
+                logger.debug(f"📄 检索缓存命中")
+                self._record_metrics(query, 0.0, 0, 0.0, 0.0, cache_hit=True)
+                return cached
 
         try:
             start_time = time.time()
+            stage_times = {}
 
+            t0 = time.time()
             ranked_lists = self._hybrid_search(query, self.retrieval_candidates)
+            stage_times["hybrid_search"] = time.time() - t0
 
             if not ranked_lists:
                 logger.warning("⚠️  混合检索未返回任何结果")
                 return ""
 
+            t0 = time.time()
             rrf_results = self._rrf_merge(ranked_lists, self.retrieval_candidates)
+            stage_times["rrf_fusion"] = time.time() - t0
 
             if not rrf_results:
                 logger.warning("⚠️  RRF 融合未返回任何结果")
                 return ""
 
-            rerank_results = self._rerank(query, rrf_results, top_n=k)
+            t0 = time.time()
+            rerank_results = self._rerank(query, rrf_results, top_n=k * 2)
+            stage_times["rerank"] = time.time() - t0
 
-            final_docs = rerank_results[:k]
+            t0 = time.time()
+            filtered_results = self._filter_results(rerank_results, query, top_k=k)
+            stage_times["filter"] = time.time() - t0
 
-            context = self._format_results(final_docs)
+            final_docs = filtered_results[:k]
+
+            context = self._format_filtered_results(final_docs)
 
             elapsed = time.time() - start_time
-            logger.info(
-                f"📄 三级检索完成: 混合检索({len(ranked_lists)}路) → "
-                f"RRF({len(rrf_results)}候选) → Rerank({len(final_docs)}最终), "
-                f"耗时 {elapsed:.3f}s"
+            latency_ms = elapsed * 1000
+
+            top_score = final_docs[0].final_score if final_docs else 0.0
+            avg_score = (
+                sum(d.final_score for d in final_docs) / len(final_docs)
+                if final_docs else 0.0
             )
 
-            self._set_cached(cache_key, context)
+            logger.info(
+                f"📄 增强检索完成: 混合检索({len(ranked_lists)}路) → "
+                f"RRF({len(rrf_results)}候选) → Rerank({len(rerank_results)}) → "
+                f"过滤({len(final_docs)}最终), 耗时 {elapsed:.3f}s"
+            )
+
+            self._record_metrics(
+                query, latency_ms, len(final_docs), top_score, avg_score,
+                cache_hit=False, stages=stage_times,
+            )
+
+            if self.cache:
+                self.cache.set(query, k, context)
+
             return context
 
         except Exception as e:
-            logger.error(f"❌ 三级检索失败: {e}")
+            logger.error(f"❌ 增强检索失败: {e}")
             return ""
+
+    def _record_metrics(
+        self,
+        query: str,
+        latency_ms: float,
+        num_results: int,
+        top_score: float,
+        avg_score: float,
+        cache_hit: bool = False,
+        stages: Optional[Dict[str, float]] = None,
+    ) -> None:
+        if not self.metrics:
+            return
+        try:
+            self.metrics.record_retrieval(RetrievalMetrics(
+                query=query,
+                latency_ms=latency_ms,
+                num_results=num_results,
+                top_score=top_score,
+                avg_score=avg_score,
+                cache_hit=cache_hit,
+                pipeline_stages=stages or {},
+            ))
+        except Exception:
+            pass
+
+    def submit_feedback(
+        self,
+        query: str,
+        relevance_rating: int,
+        is_accurate: bool,
+        comment: str = "",
+    ) -> None:
+        if not self.metrics:
+            return
+        try:
+            self.metrics.record_feedback(UserFeedback(
+                query=query,
+                relevance_rating=relevance_rating,
+                is_accurate=is_accurate,
+                comment=comment,
+            ))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _format_filtered_results(results: List[FilteredResult]) -> str:
+        parts: list[str] = []
+        for result in results:
+            meta = result.metadata or {}
+            prefix_parts = []
+            if meta.get("source"):
+                prefix_parts.append(f"source={meta['source']}")
+            if meta.get("doc_type"):
+                prefix_parts.append(f"type={meta['doc_type']}")
+            if meta.get("celestial_object"):
+                prefix_parts.append(f"object={meta['celestial_object']}")
+            if result.final_score > 0:
+                prefix_parts.append(f"score={result.final_score:.4f}")
+            if meta.get("observation_date"):
+                prefix_parts.append(f"date={meta['observation_date']}")
+            header = f"[{', '.join(prefix_parts)}]" if prefix_parts else ""
+            parts.append((header + "\n" + result.content).strip())
+
+        return "\n\n---\n\n".join(parts)
 
     @staticmethod
     def _format_results(results: List[RerankResult]) -> str:
@@ -342,16 +564,39 @@ class OnlineRetriever:
         return self.bm25_retriever.search(query, top_k=k)
 
     def get_pipeline_stats(self) -> Dict[str, Any]:
-        return {
+        stats = {
             "enabled": self.enabled,
             "vector_store": self.db is not None,
             "bm25": self.bm25_retriever is not None and self.bm25_retriever.bm25 is not None,
+            "entity": self.entity_retriever is not None,
+            "multimodal": self.multimodal_retriever is not None,
             "reranker": self.reranker is not None and self.reranker.enabled,
-            "cache": self._cache is not None,
+            "result_filter": self.result_filter is not None,
+            "cache": self.cache is not None,
+            "metrics": self.metrics is not None,
+            "knowledge_updater": self.knowledge_updater is not None,
             "vector_weight": self.vector_weight,
             "bm25_weight": self.bm25_weight,
+            "entity_weight": self.entity_weight,
             "rrf_k": settings.RRF_K,
             "retrieval_candidates": self.retrieval_candidates,
             "rerank_top_n": settings.RERANK_TOP_N,
             "rerank_model": settings.RERANK_MODEL_NAME,
         }
+        if self.cache:
+            stats["cache_stats"] = self.cache.get_stats()
+        if self.metrics:
+            stats["metrics_summary"] = self.metrics.get_metrics_summary()
+        return stats
+
+    def update_knowledge(self, source: str = "online") -> Dict[str, int]:
+        if not self.knowledge_updater:
+            return {}
+        new_docs = []
+        if source in ("online", "nasa_apod"):
+            new_docs.extend(self.knowledge_updater.fetch_nasa_apod())
+        if source in ("online", "nasa_neo"):
+            new_docs.extend(self.knowledge_updater.fetch_nasa_neo())
+        if new_docs and self.knowledge_updater:
+            return self.knowledge_updater.check_updates(new_docs, source=source)
+        return {}

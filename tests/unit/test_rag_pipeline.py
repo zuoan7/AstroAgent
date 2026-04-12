@@ -286,10 +286,10 @@ class TestOnlineRetrieverPipeline:
         assert result[0].content == "doc1"
 
     def test_cache_key_deterministic(self):
-        from src.rag.online_retriever import OnlineRetriever
-        key1 = OnlineRetriever._cache_key("test query", 3)
-        key2 = OnlineRetriever._cache_key("test query", 3)
-        key3 = OnlineRetriever._cache_key("other query", 3)
+        from src.rag.cache import MultiLevelCache
+        key1 = MultiLevelCache._make_key("test query", 3)
+        key2 = MultiLevelCache._make_key("test query", 3)
+        key3 = MultiLevelCache._make_key("other query", 3)
         assert key1 == key2
         assert key1 != key3
 
