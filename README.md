@@ -540,18 +540,3 @@ make check
 ## 许可证
 
 本项目采用 [MIT License](LICENSE)。
-
-## 维护者与联系方式
-
-当前 `pyproject.toml` 中登记的维护者信息为：
-
-- `AstroAgent Developer`
-- `developer@example.com`
-
-同时，项目仓库元数据中预留了以下入口占位符：
-
-- Homepage: `https://github.com/yourusername/astroagent`
-- Repository: `https://github.com/yourusername/astroagent`
-- Issues: `https://github.com/yourusername/astroagent/issues`
-
-如果你计划将该项目公开发布，建议先将上述占位信息替换为真实维护者与仓库地址。
