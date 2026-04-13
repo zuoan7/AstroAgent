@@ -5,11 +5,171 @@
 """
 
 import json
+import logging
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.core.errors import ErrorHandler
+
+logger = logging.getLogger("AstroAgent")
+
+
+class ParseErrorType(Enum):
+    DATE_PARSE_ERROR = "DATE_PARSE_ERROR"
+    BOOL_PARSE_ERROR = "BOOL_PARSE_ERROR"
+    COORDINATE_PARSE_ERROR = "COORDINATE_PARSE_ERROR"
+    JSON_PARSE_ERROR = "JSON_PARSE_ERROR"
+    TYPE_CONVERT_ERROR = "TYPE_CONVERT_ERROR"
+    UNKNOWN_PARSE_ERROR = "UNKNOWN_PARSE_ERROR"
+
+
+@dataclass
+class ParseError:
+    error_type: ParseErrorType
+    position: str
+    reason: str
+    raw_value: Any = None
+    details: Optional[Dict[str, Any]] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        result = {
+            "error_type": self.error_type.value,
+            "position": self.position,
+            "reason": self.reason,
+        }
+        if self.raw_value is not None:
+            result["raw_value"] = str(self.raw_value)
+        if self.details:
+            result["details"] = self.details
+        return result
+
+    def __str__(self) -> str:
+        return f"[{self.error_type.value}] 位置: {self.position}, 原因: {self.reason}"
+
+
+@dataclass
+class ParseResult:
+    success: bool
+    value: Any = None
+    error: Optional[ParseError] = None
+
+    @staticmethod
+    def ok(value: Any) -> "ParseResult":
+        return ParseResult(success=True, value=value)
+
+    @staticmethod
+    def fail(
+        error_type: ParseErrorType,
+        position: str,
+        reason: str,
+        raw_value: Any = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> "ParseResult":
+        error = ParseError(
+            error_type=error_type,
+            position=position,
+            reason=reason,
+            raw_value=raw_value,
+            details=details or {},
+        )
+        logger.warning(str(error))
+        return ParseResult(success=False, error=error)
+
+
+_NATURAL_DATE_OFFSETS = {
+    '今天': 0, '今日': 0, 'today': 0,
+    '明天': 1, '次日': 1, 'tomorrow': 1,
+    '后天': 2, 'the day after tomorrow': 2,
+    '昨天': -1, 'yesterday': -1,
+}
+
+_TRUE_VALUES = {'true', '1', 'yes', '是', '开', '需要', '对', '真', '有'}
+_FALSE_VALUES = {'false', '0', 'no', '否', '关', '不需要', '错', '假', '无'}
+
+
+def _resolve_natural_date(text: str, base: datetime) -> Optional[datetime]:
+    text_lower = text.lower().strip()
+
+    if text_lower in _NATURAL_DATE_OFFSETS:
+        return base + timedelta(days=_NATURAL_DATE_OFFSETS[text_lower])
+
+    if text in ('今晚', '明晚'):
+        offset = 0 if text == '今晚' else 1
+        return base.replace(hour=20, minute=0, second=0, microsecond=0) + timedelta(days=offset)
+
+    if text == '本周末':
+        weekday = base.weekday()
+        days_to_saturday = (5 - weekday) % 7
+        if days_to_saturday == 0 and base.hour >= 18:
+            days_to_saturday = 7
+        return base + timedelta(days=days_to_saturday)
+
+    if text == '下周一':
+        weekday = base.weekday()
+        days_to_monday = (7 - weekday) % 7
+        if days_to_monday == 0:
+            days_to_monday = 7
+        return base + timedelta(days=days_to_monday)
+
+    return None
+
+
+def _dms_to_degrees(degrees: float, minutes: float, seconds: float, sign: str = '') -> float:
+    value = abs(degrees) + abs(minutes) / 60.0 + abs(seconds) / 3600.0
+    if sign and sign.upper() in ('S', 'W', '-'):
+        value = -value
+    elif degrees < 0:
+        value = -value
+    return value
+
+
+def _parse_ra_to_degrees(ra_str: str) -> Optional[float]:
+    h = m = s = 0.0
+    m_h = re.match(r'(\d+(?:\.\d+)?)\s*h', ra_str, re.IGNORECASE)
+    m_m = re.search(r'(\d+(?:\.\d+)?)\s*m', ra_str, re.IGNORECASE)
+    m_s = re.search(r'(\d+(?:\.\d+)?)\s*s', ra_str, re.IGNORECASE)
+
+    if m_h:
+        h = float(m_h.group(1))
+    elif re.match(r'(\d+(?:\.\d+)?)\s', ra_str):
+        h = float(re.match(r'(\d+(?:\.\d+)?)', ra_str).group(1))
+
+    if m_m:
+        m = float(m_m.group(1))
+    if m_s:
+        s = float(m_s.group(1))
+
+    if not m_h and not m_m and not m_s:
+        return None
+
+    return (h + m / 60.0 + s / 3600.0) * 15.0
+
+
+def _parse_dec_to_degrees(dec_str: str) -> Optional[float]:
+    sign = 1.0
+    dec_clean = dec_str.strip()
+    if dec_clean.startswith('+'):
+        dec_clean = dec_clean[1:]
+    elif dec_clean.startswith('-'):
+        sign = -1.0
+        dec_clean = dec_clean[1:]
+
+    m_d = re.match(r'(\d+(?:\.\d+)?)\s*[°d]', dec_clean, re.IGNORECASE)
+    m_m = re.search(r'(\d+(?:\.\d+)?)\s*[\'′m]', dec_clean, re.IGNORECASE)
+    m_s = re.search(r'(\d+(?:\.\d+)?)\s*["″s]', dec_clean, re.IGNORECASE)
+
+    if m_d:
+        d = float(m_d.group(1))
+    else:
+        return None
+
+    minutes = float(m_m.group(1)) if m_m else 0.0
+    seconds = float(m_s.group(1)) if m_s else 0.0
+
+    return sign * (d + minutes / 60.0 + seconds / 3600.0)
 
 
 class ParamParser:
@@ -17,19 +177,6 @@ class ParamParser:
 
     @staticmethod
     def parse(input_data: Any, primary_param: Optional[str] = None) -> Dict[str, Any]:
-        """
-        统一解析输入参数，支持多种格式：
-        - dict: 直接返回
-        - str (JSON): 解析为dict
-        - str (非JSON): 作为primary_param的值
-
-        Args:
-            input_data: 输入数据
-            primary_param: 主参数名称，当输入为非JSON字符串时使用
-
-        Returns:
-            解析后的参数字典
-        """
         if isinstance(input_data, dict):
             return input_data
 
@@ -41,8 +188,8 @@ class ParamParser:
                     data = json.loads(clean_text)
                     if isinstance(data, dict):
                         return data
-                except (json.JSONDecodeError, ValueError):
-                    pass
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.debug(f"JSON解析失败，回退到字符串模式: {e}")
 
             if primary_param:
                 return {primary_param: input_data}
@@ -52,17 +199,6 @@ class ParamParser:
 
     @staticmethod
     def extract_param(data: Dict[str, Any], keys: List[str], default: Any = None) -> Any:
-        """
-        从字典中提取参数，支持多个可能的键名
-
-        Args:
-            data: 参数字典
-            keys: 可能的键名列表
-            default: 默认值
-
-        Returns:
-            找到的第一个非None值，或默认值
-        """
         for key in keys:
             if key in data and data[key] is not None:
                 return data[key]
@@ -74,17 +210,6 @@ class ParamParser:
         expected_params: Optional[Dict[str, Any]] = None,
         primary_param: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        解析工具输入，支持多种格式并进行验证
-
-        Args:
-            input_data: 输入数据（可以是dict、str、JSON字符串等）
-            expected_params: 期望的参数及其默认值
-            primary_param: 主参数名称
-
-        Returns:
-            解析后的参数字典
-        """
         try:
             parsed = ParamParser.parse(input_data, primary_param)
 
@@ -105,15 +230,6 @@ class ParamParser:
 
     @staticmethod
     def normalize_location(location: Any) -> Optional[str]:
-        """
-        规范化位置输入，支持字典、JSON字符串和普通字符串
-
-        Args:
-            location: 位置输入
-
-        Returns:
-            规范化后的位置字符串
-        """
         if location is None:
             return None
 
@@ -137,24 +253,14 @@ class ParamParser:
                             obj.get("adcode") or
                             obj.get("citycode")
                         )
-                except (json.JSONDecodeError, ValueError):
-                    pass
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.debug(f"位置JSON解析失败: {e}")
             return text
 
         return str(location)
 
     @staticmethod
     def normalize_date(date_str: Any, default: Optional[datetime] = None) -> Optional[str]:
-        """
-        规范化日期字符串，返回 YYYY-MM-DD 格式
-
-        Args:
-            date_str: 日期输入
-            default: 默认值
-
-        Returns:
-            YYYY-MM-DD 格式的日期字符串，或 None
-        """
         if date_str is None:
             if default is not None:
                 return default.strftime("%Y-%m-%d")
@@ -167,16 +273,11 @@ class ParamParser:
             return None
 
         text = date_str.strip()
+        base = default or datetime.now()
 
-        natural_dates = {
-            '今天': 0, '今日': 0, 'today': 0,
-            '明天': 1, '次日': 1, 'tomorrow': 1,
-        }
-
-        text_lower = text.lower()
-        if text_lower in natural_dates:
-            base = default or datetime.now()
-            return (base + timedelta(days=natural_dates[text_lower])).strftime("%Y-%m-%d")
+        resolved = _resolve_natural_date(text, base)
+        if resolved is not None:
+            return resolved.strftime("%Y-%m-%d")
 
         m = re.search(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})", text)
         if m:
@@ -199,16 +300,6 @@ class ParamParser:
 
     @staticmethod
     def parse_date(date_str: Any, default: Optional[datetime] = None) -> datetime:
-        """
-        统一的日期解析函数，支持多种格式，返回 datetime 对象
-
-        Args:
-            date_str: 日期输入，可以是字符串、datetime对象或None
-            default: 默认值，默认为当前时间
-
-        Returns:
-            datetime对象
-        """
         if default is None:
             default = datetime.now()
 
@@ -223,13 +314,9 @@ class ParamParser:
 
         text = date_str.strip()
 
-        natural_dates = {
-            '今天': 0, '今日': 0, 'today': 0,
-            '明天': 1, '次日': 1, 'tomorrow': 1,
-        }
-
-        if text.lower() in natural_dates:
-            return default + timedelta(days=natural_dates[text.lower()])
+        resolved = _resolve_natural_date(text, default)
+        if resolved is not None:
+            return resolved
 
         try:
             dt = datetime.fromisoformat(text.replace('Z', '+00:00'))
@@ -263,16 +350,6 @@ class ParamParser:
 
     @staticmethod
     def safe_int(value: Any, default: int = 0) -> int:
-        """
-        安全转换为整数
-
-        Args:
-            value: 输入值
-            default: 转换失败的默认值
-
-        Returns:
-            整数或默认值
-        """
         if value is None:
             return default
 
@@ -292,16 +369,6 @@ class ParamParser:
 
     @staticmethod
     def safe_float(value: Any, default: float = 0.0) -> float:
-        """
-        安全转换为浮点数
-
-        Args:
-            value: 输入值
-            default: 转换失败的默认值
-
-        Returns:
-            浮点数或默认值
-        """
         if value is None:
             return default
 
@@ -318,44 +385,66 @@ class ParamParser:
 
     @staticmethod
     def safe_bool(value: Any, default: Optional[bool] = None) -> Optional[bool]:
-        """
-        安全转换为布尔值
-
-        Args:
-            value: 输入值
-            default: 转换失败的默认值
-
-        Returns:
-            布尔值或默认值
-        """
         if value is None:
             return default
 
         if isinstance(value, bool):
             return value
 
+        if isinstance(value, int):
+            return value != 0
+
         if isinstance(value, str):
             lower_val = value.lower().strip()
-            if lower_val in ('true', '1', 'yes'):
+            if lower_val in _TRUE_VALUES:
                 return True
-            elif lower_val in ('false', '0', 'no'):
+            elif lower_val in _FALSE_VALUES:
                 return False
             return default
 
         return default
 
     @staticmethod
+    def safe_bool_with_result(value: Any, default: Optional[bool] = None) -> ParseResult:
+        if value is None:
+            if default is not None:
+                return ParseResult.ok(default)
+            return ParseResult.fail(
+                ParseErrorType.BOOL_PARSE_ERROR,
+                "safe_bool",
+                "输入为None且无默认值",
+                raw_value=value,
+            )
+
+        if isinstance(value, bool):
+            return ParseResult.ok(value)
+
+        if isinstance(value, int):
+            return ParseResult.ok(value != 0)
+
+        if isinstance(value, str):
+            lower_val = value.lower().strip()
+            if lower_val in _TRUE_VALUES:
+                return ParseResult.ok(True)
+            elif lower_val in _FALSE_VALUES:
+                return ParseResult.ok(False)
+            return ParseResult.fail(
+                ParseErrorType.BOOL_PARSE_ERROR,
+                "safe_bool",
+                f"无法识别的布尔值: '{value}'",
+                raw_value=value,
+                details={"recognized_true": list(_TRUE_VALUES), "recognized_false": list(_FALSE_VALUES)},
+            )
+
+        return ParseResult.fail(
+            ParseErrorType.BOOL_PARSE_ERROR,
+            "safe_bool",
+            f"不支持的类型: {type(value).__name__}",
+            raw_value=value,
+        )
+
+    @staticmethod
     def parse_mixed_input(value: Any, expected_params: Optional[Dict] = None) -> Dict:
-        """
-        统一处理多种格式的输入（dict/str/其他）
-
-        Args:
-            value: 输入值，可以是字典、字符串或其他类型
-            expected_params: 期望的参数列表
-
-        Returns:
-            解析后的参数字典
-        """
         if isinstance(value, dict):
             if expected_params:
                 return {k: value.get(k) for k in expected_params.keys()}
@@ -372,15 +461,6 @@ class ParamParser:
 
     @staticmethod
     def parse_json_string(text: str) -> Optional[Dict]:
-        """
-        安全解析JSON字符串
-
-        Args:
-            text: JSON字符串
-
-        Returns:
-            解析后的字典或None
-        """
         if not text or not isinstance(text, str):
             return None
 
@@ -394,38 +474,190 @@ class ParamParser:
             data = json.loads(clean_text)
             if isinstance(data, dict):
                 return data
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.debug(f"JSON字符串解析失败: {e}")
 
         return None
 
     @staticmethod
-    def parse_coordinate_string(text: str) -> Optional[tuple]:
-        """
-        解析坐标字符串（如 "latitude=39.9, longitude=116.4" 或 "39.9,116.4"）
-
-        Args:
-            text: 坐标字符串
-
-        Returns:
-            (lat, lon) 元组，失败返回None
-        """
+    def parse_coordinate_string(text: str) -> Optional[Tuple[float, float]]:
         if not text or not isinstance(text, str):
             return None
 
         text = text.strip()
+        if not text:
+            return None
 
-        lat_match = re.search(r'(?:latitude|lat)\s*=\s*([-\d.]+)', text, re.IGNORECASE)
-        lon_match = re.search(r'(?:longitude|lon)\s*=\s*([-\d.]+)', text, re.IGNORECASE)
+        result = ParamParser._parse_coord_radec(text)
+        if result:
+            return result
+
+        result = ParamParser._parse_coord_dms_with_direction(text)
+        if result:
+            return result
+
+        result = ParamParser._parse_coord_decimal_with_direction(text)
+        if result:
+            return result
+
+        result = ParamParser._parse_coord_key_value(text)
+        if result:
+            return result
+
+        result = ParamParser._parse_coord_simple(text)
+        if result:
+            return result
+
+        return None
+
+    @staticmethod
+    def parse_coordinate_with_result(text: str) -> ParseResult:
+        if not text or not isinstance(text, str):
+            return ParseResult.fail(
+                ParseErrorType.COORDINATE_PARSE_ERROR,
+                "parse_coordinate",
+                "输入为空或非字符串类型",
+                raw_value=text,
+            )
+
+        text = text.strip()
+        if not text:
+            return ParseResult.fail(
+                ParseErrorType.COORDINATE_PARSE_ERROR,
+                "parse_coordinate",
+                "输入为空字符串",
+                raw_value=text,
+            )
+
+        result = ParamParser.parse_coordinate_string(text)
+        if result is not None:
+            return ParseResult.ok(result)
+
+        return ParseResult.fail(
+            ParseErrorType.COORDINATE_PARSE_ERROR,
+            "parse_coordinate",
+            f"无法识别的坐标格式: '{text}'",
+            raw_value=text,
+            details={
+                "supported_formats": [
+                    "RA/Dec (如: RA 12h30m45s, Dec +45d15m30s)",
+                    "度分秒 (如: 39°54'00\"N, 116°24'00\"E)",
+                    "带方向小数 (如: 39.9N, 116.4E)",
+                    "键值对 (如: lat=39.9, lon=116.4)",
+                    "简单小数 (如: 39.9, 116.4)",
+                ]
+            },
+        )
+
+    @staticmethod
+    def _parse_coord_radec(text: str) -> Optional[Tuple[float, float]]:
+        ra_match = re.search(
+            r'(?:RA|赤经|ra)\s*[:=]?\s*([0-9hms\d.\s°d\'\"″′]+)',
+            text, re.IGNORECASE
+        )
+        dec_match = re.search(
+            r'(?:Dec|赤纬|dec)\s*[:=]?\s*([+\-0-9dms\d.\s°\'\"″′]+)',
+            text, re.IGNORECASE
+        )
+
+        if not ra_match or not dec_match:
+            return None
+
+        ra_deg = _parse_ra_to_degrees(ra_match.group(1))
+        dec_deg = _parse_dec_to_degrees(dec_match.group(1))
+
+        if ra_deg is None or dec_deg is None:
+            return None
+
+        if 0 <= ra_deg < 360 and -90 <= dec_deg <= 90:
+            return (dec_deg, ra_deg)
+
+        return None
+
+    @staticmethod
+    def _parse_coord_dms_with_direction(text: str) -> Optional[Tuple[float, float]]:
+        dms_pattern = (
+            r'(\d+(?:\.\d+)?)\s*[°d]\s*'
+            r'(\d+(?:\.\d+)?)\s*[\'′m]\s*'
+            r'(\d+(?:\.\d+)?)\s*["″s]'
+            r'\s*([NSEW])'
+        )
+        matches = re.findall(dms_pattern, text, re.IGNORECASE)
+        if len(matches) < 2:
+            return None
+
+        lat_val = None
+        lon_val = None
+
+        for deg_str, min_str, sec_str, direction in matches:
+            d = float(deg_str)
+            m = float(min_str)
+            s = float(sec_str)
+            value = d + m / 60.0 + s / 3600.0
+            dir_upper = direction.upper()
+
+            if dir_upper in ('N', 'S'):
+                if dir_upper == 'S':
+                    value = -value
+                lat_val = value
+            elif dir_upper in ('E', 'W'):
+                if dir_upper == 'W':
+                    value = -value
+                lon_val = value
+
+        if lat_val is not None and lon_val is not None:
+            if -90 <= lat_val <= 90 and -180 <= lon_val <= 180:
+                return (lat_val, lon_val)
+
+        return None
+
+    @staticmethod
+    def _parse_coord_decimal_with_direction(text: str) -> Optional[Tuple[float, float]]:
+        pattern = r'(\d+(?:\.\d+)?)\s*([NSEW])'
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if len(matches) < 2:
+            return None
+
+        lat_val = None
+        lon_val = None
+
+        for num_str, direction in matches:
+            value = float(num_str)
+            dir_upper = direction.upper()
+
+            if dir_upper in ('N', 'S'):
+                if dir_upper == 'S':
+                    value = -value
+                lat_val = value
+            elif dir_upper in ('E', 'W'):
+                if dir_upper == 'W':
+                    value = -value
+                lon_val = value
+
+        if lat_val is not None and lon_val is not None:
+            if -90 <= lat_val <= 90 and -180 <= lon_val <= 180:
+                return (lat_val, lon_val)
+
+        return None
+
+    @staticmethod
+    def _parse_coord_key_value(text: str) -> Optional[Tuple[float, float]]:
+        lat_match = re.search(r'(?:latitude|lat|纬度)\s*=\s*([-\d.]+)', text, re.IGNORECASE)
+        lon_match = re.search(r'(?:longitude|lon|经度)\s*=\s*([-\d.]+)', text, re.IGNORECASE)
 
         if lat_match and lon_match:
             try:
                 lat = float(lat_match.group(1))
                 lon = float(lon_match.group(1))
-                return (lat, lon)
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    return (lat, lon)
             except ValueError:
                 pass
 
+        return None
+
+    @staticmethod
+    def _parse_coord_simple(text: str) -> Optional[Tuple[float, float]]:
         parts = text.split(',')
         if len(parts) == 2:
             try:
@@ -440,30 +672,11 @@ class ParamParser:
 
     @staticmethod
     def is_coordinates(text: str) -> bool:
-        """
-        检测字符串是否为经纬度格式
-
-        Args:
-            text: 待检测字符串
-
-        Returns:
-            是否为有效的经纬度格式
-        """
         result = ParamParser.parse_coordinate_string(text)
         return result is not None
 
     @staticmethod
     def extract_key_value_pairs(text: str, keys: list) -> Dict[str, Any]:
-        """
-        从字符串中提取键值对（如 "ra=10.5, dec=20.5"）
-
-        Args:
-            text: 包含键值对的字符串
-            keys: 要提取的键列表
-
-        Returns:
-            提取到的键值对字典
-        """
         if not text or not isinstance(text, str):
             return {}
 
@@ -481,16 +694,6 @@ class ParamParser:
 
     @staticmethod
     def shorten_text(text: Any, max_len: int = 1200) -> str:
-        """
-        截断文本到指定长度
-
-        Args:
-            text: 输入文本（任意类型）
-            max_len: 最大长度
-
-        Returns:
-            截断后的字符串
-        """
         if text is None:
             return ""
 
@@ -503,15 +706,6 @@ class ParamParser:
 
     @staticmethod
     def get_direction_from_azimuth(az_degrees: float) -> str:
-        """
-        将方位角转为中文方向
-
-        Args:
-            az_degrees: 方位角（度）
-
-        Returns:
-            中文方向（北/东/南/西）
-        """
         if az_degrees < 45 or az_degrees >= 315:
             return "北"
         elif az_degrees < 135:
@@ -523,15 +717,6 @@ class ParamParser:
 
     @staticmethod
     def extract_image_url(text: str) -> Optional[str]:
-        """
-        从文本中提取图片URL
-
-        Args:
-            text: 包含URL的文本
-
-        Returns:
-            图片URL或None
-        """
         if not text or not isinstance(text, str):
             return None
 

@@ -2,7 +2,6 @@ import json
 from typing import Any, Optional
 from src.core.logger import logger
 from src.core.errors import ErrorCode, ErrorHandler
-from src.utils.helpers import extract_image_url
 
 
 _FALLBACK_ERROR_CODES = {
@@ -114,4 +113,5 @@ class FallbackService:
             return f"抱歉，处理搜索结果时出现问题。请稍后再试。"
 
     def extract_image_url(self, text: str) -> Optional[str]:
-        return extract_image_url(text)
+        from src.agent.param_parser import ParamParser
+        return ParamParser.extract_image_url(text)

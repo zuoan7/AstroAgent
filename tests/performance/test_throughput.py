@@ -12,6 +12,12 @@ import pytest
 from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 
+try:
+    import fastapi
+    _FASTAPI_AVAILABLE = True
+except ImportError:
+    _FASTAPI_AVAILABLE = False
+
 
 class TestAstronomyDataProcessingThroughput:
     """测试天文数据处理吞吐量"""
@@ -192,6 +198,7 @@ class TestAstronomyDataProcessingThroughput:
         assert report["avg_ms"] < 10, f"天气数据处理平均 {report['avg_ms']}ms 超过10ms阈值"
 
 
+@pytest.mark.skipif(not _FASTAPI_AVAILABLE, reason="fastapi not installed")
 class TestAPIResponseTime:
     """测试API响应时间"""
 
@@ -483,6 +490,7 @@ class TestConcurrentUserSimulation:
         assert len(errors) == 0, f"并发错误处理异常: {errors}"
         assert all(results), "部分错误处理结果不正确"
 
+    @pytest.mark.skipif(not _FASTAPI_AVAILABLE, reason="fastapi not installed")
     def test_concurrent_api_requests(self):
         from fastapi.testclient import TestClient
 

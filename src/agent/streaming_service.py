@@ -6,7 +6,6 @@ from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, Generator, Optional
 from src.core.logger import logger
 from src.core.errors import ErrorHandler
-from src.utils.helpers import extract_image_url
 
 MAX_ACTION_HISTORY_ENTRIES = 100
 
@@ -227,7 +226,8 @@ class BaseStreamingGenerator:
         if not extracted_url and self._fallback_service:
             extracted_url = self._fallback_service.extract_image_url(tool_output_str)
         elif not extracted_url:
-            extracted_url = extract_image_url(tool_output_str)
+            from src.agent.param_parser import ParamParser
+            extracted_url = ParamParser.extract_image_url(tool_output_str)
 
         return {
             "meta": meta,

@@ -12,11 +12,7 @@ from .base import EphemerisManager
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler
 from src.core.logger import logger
-from src.utils.helpers import (
-    parse_mixed_input,
-    parse_date,
-    parse_coordinate_string,
-)
+from src.agent.param_parser import ParamParser
 
 
 class PlanetaryCalculator:
@@ -50,7 +46,7 @@ class PlanetaryCalculator:
             return error.to_dict()
 
         try:
-            params = parse_mixed_input(planet_name, {
+            params = ParamParser.parse_mixed_input(planet_name, {
                 "planet_name": None,
                 "observation_time": None,
                 "latitude": None,
@@ -78,7 +74,7 @@ class PlanetaryCalculator:
             if observation_time is None:
                 t = ts.now()
             else:
-                dt = parse_date(observation_time)
+                dt = ParamParser.parse_date(observation_time)
                 t = ts.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
 
             planet_id = settings.PLANET_MAPPING[planet_name.lower()]
@@ -124,8 +120,8 @@ class PlanetaryCalculator:
                     raise ValueError("无效的输入格式，需要包含ra和dec键")
 
             elif isinstance(ra, str):
-                from src.utils.helpers import extract_key_value_pairs
-                coords = extract_key_value_pairs(ra, ['ra', 'dec'])
+                from src.agent.param_parser import ParamParser
+                coords = ParamParser.extract_key_value_pairs(ra, ['ra', 'dec'])
                 if 'ra' in coords and 'dec' in coords:
                     ra = coords['ra']
                     dec = coords['dec']
@@ -167,7 +163,7 @@ class PlanetaryCalculator:
         if date is None:
             date = datetime.now()
         elif isinstance(date, str):
-            date = parse_date(date)
+            date = ParamParser.parse_date(date)
 
         observer.date = date.strftime('%Y/%m/%d %H:%M:%S')
 
@@ -215,7 +211,7 @@ class PlanetaryCalculator:
             包含各天体信息的字典
         """
         if isinstance(latitude, str):
-            coords = parse_coordinate_string(latitude)
+            coords = ParamParser.parse_coordinate_string(latitude)
             if coords:
                 latitude, longitude = coords
             else:
@@ -224,7 +220,7 @@ class PlanetaryCalculator:
         if date is None:
             date = datetime.now()
         elif isinstance(date, str):
-            date = parse_date(date)
+            date = ParamParser.parse_date(date)
 
         planets = ['mercury', 'venus', 'mars', 'jupiter', 'saturn']
         sky_objects = {}

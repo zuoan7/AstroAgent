@@ -1,5 +1,45 @@
 import sys
+import importlib.util
 from unittest.mock import MagicMock
+
+
+def _is_module_available(mod_name):
+    if mod_name in sys.modules:
+        return True
+    try:
+        return importlib.util.find_spec(mod_name) is not None
+    except (ValueError, ModuleNotFoundError):
+        return False
+
+
+def _mock_tenacity():
+    class _IdentityDecorator:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, fn):
+            return fn
+
+    mock = MagicMock()
+    mock.retry = _IdentityDecorator
+    mock.stop_after_attempt = MagicMock(return_value=None)
+    mock.wait_exponential = MagicMock(return_value=None)
+    mock.retry_if_exception_type = MagicMock(return_value=(Exception,))
+    mock.before_sleep = MagicMock(return_value=None)
+    return mock
+
+
+def _mock_pybreaker():
+    class _MockCircuitBreaker:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, fn):
+            return fn
+
+    mock = MagicMock()
+    mock.CircuitBreaker = _MockCircuitBreaker
+    return mock
 
 
 def mock_heavy_dependencies():
@@ -24,6 +64,12 @@ def mock_heavy_dependencies():
     ]:
         if mod_name not in sys.modules:
             sys.modules[mod_name] = MagicMock()
+
+    if not _is_module_available("tenacity"):
+        sys.modules["tenacity"] = _mock_tenacity()
+
+    if not _is_module_available("pybreaker"):
+        sys.modules["pybreaker"] = _mock_pybreaker()
 
     import src.core.config
     import src.core.errors

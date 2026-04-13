@@ -9,6 +9,8 @@ import pytest
 from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 
+pytest.importorskip("fastapi")
+
 
 class TestAPIEndpointsIntegration:
     """测试API层与Agent层的集成"""

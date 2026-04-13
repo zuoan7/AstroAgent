@@ -51,6 +51,9 @@ dependencies = [
     "rich>=13.0.0",
     "fastmcp>=0.0.0",
     "langchain-mcp-adapters>=0.0.0",
+    "tenacity>=8.0.0",
+    "pybreaker>=0.6.0",
+    "cachetools>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -62,8 +65,6 @@ dev = [
     "isort>=5.12.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
-    "tenacity>=8.0.0",
-    "pybreaker>=0.6.0",
 ]
 
 [project.urls]
@@ -73,6 +74,7 @@ Issues = "https://github.com/yourusername/astroagent/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
