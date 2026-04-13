@@ -117,23 +117,6 @@ class AstronomyConfig(BaseSettings):
         },
         description="星系别名到标准名的映射"
     )
-    PLANET_VISIBILITY_BY_MONTH: Dict[int, Dict[str, str]] = Field(
-        default_factory=lambda: {
-            3: {'best': '土星', 'morning': '金星', 'evening': '木星'},
-            4: {'best': '土星', 'morning': '金星', 'evening': '木星'},
-            5: {'best': '土星', 'morning': '金星', 'evening': '木星'},
-            6: {'best': '土星', 'evening': '火星', 'morning': '木星'},
-            7: {'best': '土星', 'evening': '火星', 'morning': '木星'},
-            8: {'best': '土星', 'evening': '火星', 'morning': '木星'},
-            9: {'best': '木星', 'evening': '土星', 'evening2': '火星'},
-            10: {'best': '木星', 'evening': '土星', 'evening2': '火星'},
-            11: {'best': '木星', 'evening': '土星', 'evening2': '火星'},
-            12: {'best': '木星', 'evening': '木星', 'late_night': '土星', 'morning': '金星'},
-            1: {'best': '木星', 'evening': '木星', 'late_night': '土星', 'morning': '金星'},
-            2: {'best': '木星', 'evening': '木星', 'late_night': '土星', 'morning': '金星'},
-        },
-        description="各月份最佳观测行星建议"
-    )
     MOON_PHASE_THRESHOLDS: List[tuple] = Field(
         default_factory=lambda: [
             (22.5, "🌑 新月", "月光微弱，适合观测深空天体"),

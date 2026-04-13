@@ -31,11 +31,13 @@ class TestExtremeAstronomicalValues:
         calc = PlanetaryCalculator(ephemeris=mock_eph)
 
         result = calc.coordinate_transformation(ra=0.0, dec=-90.0, target_system="fk5")
-        assert "ra" in result
+        assert "ra_hours" in result
+        assert "ra_degrees" in result
         assert "dec" in result
 
         result2 = calc.coordinate_transformation(ra=24.0, dec=90.0, target_system="fk5")
-        assert "ra" in result2
+        assert "ra_hours" in result2
+        assert "ra_degrees" in result2
         assert "dec" in result2
 
     def test_extreme_distance_values(self):

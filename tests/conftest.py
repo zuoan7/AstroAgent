@@ -77,10 +77,6 @@ def mock_settings():
             'Milky Way': 'Milky Way Galaxy', '银河系': 'Milky Way Galaxy',
             'Andromeda Galaxy': 'M31', '仙女座星系': 'M31',
         }
-        instance.PLANET_VISIBILITY_BY_MONTH = {
-            3: {'best': '土星', 'morning': '金星', 'evening': '木星'},
-            4: {'best': '土星', 'morning': '金星', 'evening': '木星'},
-        }
         instance.MOON_PHASE_THRESHOLDS = [
             (22.5, "🌑 新月", "月光微弱，适合观测深空天体"),
             (67.5, "🌒 娥眉月", "傍晚可见，适合观测"),
@@ -240,7 +236,8 @@ def sample_neo_response():
 @pytest.fixture
 def sample_planet_position():
     return {
-        "ra": 10.5,
+        "ra_hours": 10.5,
+        "ra_degrees": 157.5,
         "dec": 20.3,
         "distance_au": 1.5,
     }
@@ -363,7 +360,6 @@ def skill_manager():
         mock_settings.SUPPORTED_BODIES = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn']
         mock_settings.CELESTIAL_NAME_MAPPING = {}
         mock_settings.GALAXY_NAME_MAPPING = {}
-        mock_settings.PLANET_VISIBILITY_BY_MONTH = {}
         mock_settings.MOON_PHASE_THRESHOLDS = []
         mock_settings.OBSERVING_TIPS_TEMPLATES = {}
         mock_settings.NASA_API_KEY = "test-nasa-key"

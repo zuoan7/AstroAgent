@@ -143,6 +143,15 @@ def get_planet_position(planet_name: str, observation_time: str = None,
 
 @mcp.tool()
 @safe_tool_call
+def get_altaz(planet_name: str, observation_time: str = None,
+              latitude: float = None, longitude: float = None) -> str:
+    _require_planetary()
+    result = planetary.get_altaz(planet_name, observation_time, latitude, longitude)
+    return json.dumps(result, ensure_ascii=False)
+
+
+@mcp.tool()
+@safe_tool_call
 def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5") -> str:
     _require_planetary()
     return json.dumps(planetary.coordinate_transformation(ra, dec, epoch, target_system), ensure_ascii=False)

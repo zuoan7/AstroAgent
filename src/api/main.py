@@ -58,6 +58,53 @@ def validate_file_type(filename: str, allowed_extensions: set) -> bool:
     return ext in allowed_extensions
 
 
+class _AgentHolder:
+    """懒加载Agent持有器，支持初始化失败降级"""
+
+    def __init__(self):
+        self._agent = None
+        self._initialized = False
+        self._init_error = None
+
+    def get(self):
+        if not self._initialized:
+            self._initialize()
+        return self._agent
+
+    def _initialize(self):
+        self._initialized = True
+        try:
+            self._agent = AstroAgent()
+            logger.info("✅ AstroAgent懒加载初始化成功")
+        except Exception as e:
+            self._init_error = str(e)
+            logger.error(f"⚠️ AstroAgent初始化失败: {e}")
+            self._agent = None
+
+    @property
+    def is_available(self):
+        if not self._initialized:
+            self._initialize()
+        return self._agent is not None
+
+    @property
+    def init_error(self):
+        return self._init_error
+
+
+_agent_holder = _AgentHolder()
+
+
+def get_agent():
+    agent = _agent_holder.get()
+    if agent is None:
+        raise AgentError(
+            code=ErrorCode.TOOL_CALL_FAILED,
+            message=f"Agent服务暂时不可用: {_agent_holder.init_error or '初始化失败'}",
+        )
+    return agent
+
+
 class SessionData:
     def __init__(self, user_id: str, agent: AstroAgent):
         self.user_id = user_id
@@ -73,8 +120,7 @@ class SessionData:
 
 
 class SessionManager:
-    def __init__(self, agent: AstroAgent, max_age: int = None, cleanup_interval: int = None):
-        self._agent = agent
+    def __init__(self, max_age: int = None, cleanup_interval: int = None):
         self._sessions: Dict[str, SessionData] = {}
         self._lock = threading.Lock()
         self._max_age = max_age or settings.SESSION_MAX_AGE_SECONDS
@@ -88,8 +134,9 @@ class SessionManager:
                 self._cleanup_stale_sessions()
 
             if user_id not in self._sessions:
+                agent = get_agent()
                 logger.info(f"创建新会话: user_id={user_id}")
-                self._sessions[user_id] = SessionData(user_id, self._agent)
+                self._sessions[user_id] = SessionData(user_id, agent)
 
             session = self._sessions[user_id]
             session.last_access_time = now
@@ -122,8 +169,7 @@ class SessionManager:
             return len(self._sessions)
 
 
-agent = AstroAgent()
-session_manager = SessionManager(agent)
+session_manager = SessionManager()
 
 
 class QueryRequest(BaseModel):
@@ -265,7 +311,7 @@ async def query_with_audio_endpoint(
     session = session_manager.get_session(effective_user_id)
 
     augmented_query = await asyncio.to_thread(
-        agent.speech_service.build_speech_query, query, save_path
+        get_agent().speech_service.build_speech_query, query, save_path
     )
 
     async def generate():
@@ -279,7 +325,7 @@ async def query_with_audio_endpoint(
 @app.post("/add_knowledge")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def add_knowledge_endpoint(request: Request, body: KnowledgeRequest):
-    agent.add_astronomy_knowledge(body.knowledge)
+    get_agent().add_astronomy_knowledge(body.knowledge)
     return {"status": "success", "message": "知识添加成功"}
 
 
@@ -287,7 +333,7 @@ async def add_knowledge_endpoint(request: Request, body: KnowledgeRequest):
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def get_profile_endpoint(request: Request, user_id: Optional[str] = None):
     effective_user_id = user_id or settings.DEFAULT_USER_ID
-    profile = agent.long_term_memory.load_profile(effective_user_id)
+    profile = get_agent().long_term_memory.load_profile(effective_user_id)
     if profile:
         return {
             "status": "success",
@@ -313,7 +359,7 @@ async def get_profile_endpoint(request: Request, user_id: Optional[str] = None):
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def delete_profile_endpoint(request: Request, user_id: Optional[str] = None):
     effective_user_id = user_id or settings.DEFAULT_USER_ID
-    deleted = agent.long_term_memory.delete_profile(effective_user_id)
+    deleted = get_agent().long_term_memory.delete_profile(effective_user_id)
     if deleted:
         return {"status": "success", "message": "用户画像已删除", "user_id": effective_user_id}
     else:
@@ -330,7 +376,20 @@ async def clear_memory_endpoint(request: Request, user_id: Optional[str] = None)
 
 @app.get("/")
 async def root():
-    return {"message": "天文Agent API", "version": "1.0.0"}
+    return {
+        "message": "天文Agent API",
+        "version": "1.0.0",
+        "agent_available": _agent_holder.is_available,
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "running" if _agent_holder.is_available else "degraded",
+        "agent_available": _agent_holder.is_available,
+        "active_sessions": session_manager.get_active_session_count(),
+    }
 
 
 if __name__ == "__main__":

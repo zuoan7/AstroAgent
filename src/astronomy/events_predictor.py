@@ -140,6 +140,9 @@ class EventsPredictor:
         """
         计算指定日期的月相
         
+        基于skyfield库计算日月地心夹角(elongation)确定月相，
+        正确处理0h/24h时间边界条件。
+        
         Args:
             date: datetime对象
             
@@ -151,30 +154,44 @@ class EventsPredictor:
         
         t = self.ephemeris.timescale.utc(date.year, date.month, date.day)
         
-        # 获取月亮和太阳的位置
         e = self.ephemeris.planets['earth']
         m = self.ephemeris.planets['moon']
         s = self.ephemeris.planets['sun']
         
-        moon_earth = e.at(t).observe(m).apparent()
-        sun_earth = e.at(t).observe(s).apparent()
+        earth_pos = e.at(t)
+        moon_pos = earth_pos.observe(m).apparent()
+        sun_pos = earth_pos.observe(s).apparent()
         
-        moon_ra, _, _ = moon_earth.radec()
-        sun_ra, _, _ = sun_earth.radec()
+        phase_angle = almanac.moon_phase(self.ephemeris.planets, t)
+        elongation = phase_angle.degrees
         
-        # 计算相位角
-        ra_diff = (moon_ra.hours - sun_ra.hours) * 15
-        if ra_diff < 0:
-            ra_diff += 360
+        moon_ecl_lat, moon_ecl_lon, _ = moon_pos.ecliptic_latlon()
+        sun_ecl_lat, sun_ecl_lon, _ = sun_pos.ecliptic_latlon()
         
-        phase_angle = ra_diff
+        moon_lon = moon_ecl_lon.degrees
+        sun_lon = sun_ecl_lon.degrees
+        lon_diff = (moon_lon - sun_lon) % 360
+        is_waxing = lon_diff <= 180
         
-        # 根据角度判断月相
-        for threshold, name, desc in settings.MOON_PHASE_THRESHOLDS:
-            if phase_angle < threshold:
-                return (name, desc)
-        
-        return (settings.MOON_PHASE_THRESHOLDS[0][1], settings.MOON_PHASE_THRESHOLDS[0][2])
+        if elongation < 22.5:
+            return ("🌑 新月", "月光微弱，适合观测深空天体")
+        elif elongation < 67.5:
+            if is_waxing:
+                return ("🌒 娥眉月", "傍晚可见，适合观测")
+            else:
+                return ("🌘 残月", "凌晨可见")
+        elif elongation < 112.5:
+            if is_waxing:
+                return ("🌓 上弦月", "下午至前半夜可见")
+            else:
+                return ("🌗 下弦月", "后半夜可见")
+        elif elongation < 157.5:
+            if is_waxing:
+                return ("🌔 盈凸月", "傍晚至后半夜可见")
+            else:
+                return ("🌖 亏凸月", "前半夜可见")
+        else:
+            return ("🌕 满月", "整夜可见，月光强，不适合深空观测")
     
     def get_sunrise_sunset(self, date) -> tuple:
         """
@@ -240,6 +257,139 @@ class EventsPredictor:
         
         return visible
     
+    def compute_planet_visibility(self, date) -> Dict[str, Any]:
+        """
+        基于skyfield实时计算行星可见性
+
+        通过计算行星在傍晚/午夜/凌晨的高度角和冲日/合日状态，
+        判断行星可见性和最佳观测时段。
+
+        Args:
+            date: datetime对象
+
+        Returns:
+            行星可见性字典，包含各行星的可见时段和状态
+        """
+        if not self.ephemeris.is_loaded:
+            return {}
+
+        result = {}
+        planets_list = ['mercury', 'venus', 'mars', 'jupiter', 'saturn']
+
+        for planet_key in planets_list:
+            planet_id = settings.PLANET_MAPPING[planet_key]
+            planet_obj = self.ephemeris.planets[planet_id]
+            name_cn = settings.PLANET_NAMES_CN.get(planet_key, planet_key)
+
+            t_evening = self.ephemeris.timescale.utc(
+                date.year, date.month, date.day, 20
+            )
+            t_midnight = self.ephemeris.timescale.utc(
+                date.year, date.month, date.day, 0
+            )
+            t_morning = self.ephemeris.timescale.utc(
+                date.year, date.month, date.day, 5
+            )
+
+            observer = self.earth + self.observer_location
+
+            alt_evening = observer.at(t_evening).observe(planet_obj).apparent().altaz()[0].degrees
+            alt_midnight = observer.at(t_midnight).observe(planet_obj).apparent().altaz()[0].degrees
+            alt_morning = observer.at(t_morning).observe(planet_obj).apparent().altaz()[0].degrees
+
+            earth_pos = self.ephemeris.earth.at(t_evening)
+            planet_pos = earth_pos.observe(planet_obj).apparent()
+            sun_pos = earth_pos.observe(self.ephemeris.planets['sun']).apparent()
+
+            _, planet_lon, _ = planet_pos.ecliptic_latlon()
+            _, sun_lon, _ = sun_pos.ecliptic_latlon()
+            lon_diff = abs(planet_lon.degrees - sun_lon.degrees)
+            if lon_diff > 180:
+                lon_diff = 360 - lon_diff
+
+            is_opposition = lon_diff > 150
+            is_conjunction = lon_diff < 30
+
+            time_slots = []
+            if alt_evening > 15:
+                time_slots.append('evening')
+            if alt_midnight > 15:
+                time_slots.append('midnight')
+            if alt_morning > 15:
+                time_slots.append('morning')
+
+            if not time_slots:
+                visibility = 'not_visible'
+            elif is_opposition:
+                visibility = 'best'
+            elif len(time_slots) >= 2:
+                visibility = 'good'
+            else:
+                visibility = 'fair'
+
+            result[planet_key] = {
+                'name_cn': name_cn,
+                'visibility': visibility,
+                'time_slots': time_slots,
+                'is_opposition': is_opposition,
+                'is_conjunction': is_conjunction,
+                'alt_evening': round(alt_evening, 1),
+                'alt_midnight': round(alt_midnight, 1),
+                'alt_morning': round(alt_morning, 1),
+            }
+
+        return result
+
+    def _format_planet_visibility(self, visibility_data: Dict) -> str:
+        """
+        格式化行星可见性数据为可读文本
+
+        Args:
+            visibility_data: compute_planet_visibility返回的数据
+
+        Returns:
+            格式化的行星可见性文本
+        """
+        lines = []
+
+        best_planets = []
+        evening_planets = []
+        morning_planets = []
+        midnight_planets = []
+
+        for planet_key, info in visibility_data.items():
+            if info['is_conjunction']:
+                continue
+
+            if info['visibility'] == 'best':
+                best_planets.append(info['name_cn'])
+            if 'evening' in info['time_slots']:
+                evening_planets.append(info['name_cn'])
+            if 'morning' in info['time_slots']:
+                morning_planets.append(info['name_cn'])
+            if 'midnight' in info['time_slots']:
+                midnight_planets.append(info['name_cn'])
+
+        if best_planets:
+            lines.append(f"• {'、'.join(best_planets)}：冲日附近，整夜可见，是最佳观测目标")
+        if evening_planets:
+            non_best = [p for p in evening_planets if p not in best_planets]
+            if non_best:
+                lines.append(f"• {'、'.join(non_best)}：傍晚西方低空可见")
+        if midnight_planets:
+            non_best = [p for p in midnight_planets if p not in best_planets]
+            if non_best:
+                lines.append(f"• {'、'.join(non_best)}：前半夜可见")
+        if morning_planets:
+            non_best = [p for p in morning_planets if p not in best_planets]
+            if non_best:
+                lines.append(f"• {'、'.join(non_best)}：凌晨东方低空可见")
+
+        if not lines:
+            lines.append("本月行星观测条件一般，建议关注月相和深空天体")
+
+        return '\n'.join(lines)
+    
     def get_weekly_events(self, start_date=None) -> str:
         """
         获取未来一周的天象预报
@@ -289,19 +439,11 @@ class EventsPredictor:
             
             # 添加行星可见性建议
             forecast += "\n🪐 **本周行星可见性**\n"
-            month = current_date.month
-            visibility = settings.PLANET_VISIBILITY_BY_MONTH.get(month, {})
-            
-            if visibility.get('best'):
-                forecast += f"• {visibility['best']}：整夜可见，是本周最佳观测目标\n"
-            if visibility.get('morning'):
-                forecast += f"• {visibility['morning']}：早晨东方低空可见\n"
-            if visibility.get('evening'):
-                forecast += f"• {visibility['evening']}：傍晚西方低空可见\n"
-            if visibility.get('evening2'):
-                forecast += f"• {visibility['evening2']}：前半夜可见\n"
-            if visibility.get('late_night'):
-                forecast += f"• {visibility['late_night']}：后半夜可见\n"
+            visibility_data = self.compute_planet_visibility(current_date)
+            if visibility_data:
+                forecast += self._format_planet_visibility(visibility_data)
+            else:
+                forecast += "行星数据未加载，无法计算可见性\n"
             
             logger.debug(f"生成周预报: {start_str} 至 {end_str}")
             return forecast
@@ -374,18 +516,12 @@ class EventsPredictor:
             
             # 添加行星可见性建议
             forecast += "🪐 **本月行星可见性**\n"
-            visibility = settings.PLANET_VISIBILITY_BY_MONTH.get(month_val, {})
-            
-            if visibility.get('best'):
-                forecast += f"• {visibility['best']}：整夜可见，是本月最佳观测目标\n"
-            if visibility.get('morning'):
-                forecast += f"• {visibility['morning']}：早晨东方低空可见\n"
-            if visibility.get('evening'):
-                forecast += f"• {visibility['evening']}：傍晚可见\n"
-            if visibility.get('evening2'):
-                forecast += f"• {visibility['evening2']}：前半夜可见\n"
-            if visibility.get('late_night'):
-                forecast += f"• {visibility['late_night']}：后半夜可见\n"
+            mid_month = datetime(year_val, month_val, 15)
+            visibility_data = self.compute_planet_visibility(mid_month)
+            if visibility_data:
+                forecast += self._format_planet_visibility(visibility_data)
+            else:
+                forecast += "行星数据未加载，无法计算可见性\n"
             
             logger.debug(f"生成月预报: {year_val}年{month_val}月")
             return forecast

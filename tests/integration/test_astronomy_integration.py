@@ -22,11 +22,20 @@ class TestAstronomyModuleIntegration:
         mock_astrometric = MagicMock()
         mock_ra = MagicMock()
         mock_ra.hours = 10.5
+        mock_ra._degrees = 157.5
         mock_dec = MagicMock()
         mock_dec.degrees = 20.3
         mock_distance = MagicMock()
         mock_distance.au = 1.5
         mock_astrometric.radec.return_value = (mock_ra, mock_dec, mock_distance)
+
+        mock_alt = MagicMock()
+        mock_alt.degrees = 45.0
+        mock_az = MagicMock()
+        mock_az.degrees = 180.0
+        mock_apparent = MagicMock()
+        mock_apparent.altaz.return_value = (mock_alt, mock_az, mock_distance)
+        mock_astrometric.apparent.return_value = mock_apparent
 
         mock_observer = MagicMock()
         mock_observer.at.return_value.observe.return_value = mock_astrometric
@@ -46,7 +55,8 @@ class TestAstronomyModuleIntegration:
                     mock_s.PLANET_MAPPING = {"mars": 499}
                     result = calc.get_planet_position("mars", latitude=39.9, longitude=116.4)
 
-        assert "ra" in result
+        assert "ra_hours" in result
+        assert "ra_degrees" in result
         assert "dec" in result
         assert "distance_au" in result
 
@@ -136,6 +146,7 @@ class TestAstronomyModuleIntegration:
 
         mock_fk5_coord = MagicMock()
         mock_fk5_coord.ra.hour = 10.5
+        mock_fk5_coord.ra.degree = 157.5
         mock_fk5_coord.dec.degree = 20.3
         mock_sky = MagicMock()
         mock_sky.transform_to.return_value = mock_fk5_coord
@@ -145,19 +156,34 @@ class TestAstronomyModuleIntegration:
                 ra=10.5, dec=20.3, epoch="J2000", target_system="fk5"
             )
 
-        assert "ra" in result
+        assert "ra_hours" in result
+        assert "ra_degrees" in result
         assert "dec" in result
-        assert isinstance(result["ra"], float)
+        assert isinstance(result["ra_hours"], float)
         assert isinstance(result["dec"], float)
 
     def test_rise_set_times_data_flow(self):
         from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from datetime import timezone
+        import zoneinfo
 
         mock_eph = MagicMock(spec=EphemerisManager)
+        mock_eph.is_loaded = True
+        mock_eph.planets = MagicMock()
+        mock_eph.earth = MagicMock()
+        mock_eph.timescale = MagicMock()
+        
         calc = PlanetaryCalculator(ephemeris=mock_eph)
 
-        result = calc.get_rise_set_times("sun", 39.9, 116.4, "2026-04-08")
+        with patch("src.astronomy.planetary.skyfield_almanac.find_discrete") as mock_find:
+            mock_times = [MagicMock(), MagicMock()]
+            mock_times[0].utc_datetime.return_value = datetime(2026, 4, 8, 5, 30, tzinfo=timezone.utc)
+            mock_times[1].utc_datetime.return_value = datetime(2026, 4, 8, 18, 45, tzinfo=timezone.utc)
+            mock_events = [1, 0]
+            mock_find.return_value = (mock_times, mock_events)
+            
+            result = calc.get_rise_set_times("sun", 39.9, 116.4, "2026-04-08")
 
         assert "rise_time" in result or "error" in result
 
