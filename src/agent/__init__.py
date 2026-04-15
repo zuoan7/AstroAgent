@@ -22,7 +22,7 @@ class AstroAgent:
             raise ValueError("❌ DashScope API Key未配置！请在settings中设置DASHSCOPE_API_KEY")
 
         self.rag = OnlineRetriever()
-        self.memory = ShortTermMemory()
+        self.memory = ShortTermMemory(session_id=f"stm_{self.user_id}", user_id=self.user_id)
         self.long_term_memory = LongTermMemory(settings.LONG_TERM_MEMORY_PATH)
         self.llm = self._init_llm()
 

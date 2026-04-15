@@ -187,6 +187,22 @@ class MemoryConfig(BaseSettings):
         description="长期记忆 SQLite 数据库路径"
     )
     DEFAULT_USER_ID: str = Field("anonymous", description="默认用户 ID")
+
+    STM_CONTEXT_MAX_TOKENS: int = Field(4000, description="短期记忆上下文最大 token 数")
+    STM_SUMMARY_MAX_TOKENS: int = Field(500, description="短期记忆摘要最大 token 数")
+    STM_SUMMARY_TRIGGER_MESSAGES: int = Field(10, description="触发摘要的消息数阈值")
+    STM_SUMMARY_TRIGGER_TOKENS: int = Field(3000, description="触发摘要的 token 数阈值")
+    STM_PERSISTENCE_ENABLED: bool = Field(True, description="是否启用短期记忆持久化")
+    STM_PERSISTENCE_PATH: str = Field(
+        "./memory/short_term_memory/sessions.sqlite",
+        description="短期记忆持久化 SQLite 数据库路径"
+    )
+    STM_IMPORTANCE_HIGH_ROLES: set = Field(
+        default_factory=lambda: {"user", "system"},
+        description="高重要性角色集合"
+    )
+    STM_TOOL_RESULT_MAX_LENGTH: int = Field(500, description="工具结果摘要最大字符数")
+
     RAG_ENABLED: bool = Field(True, description="是否启用 RAG 检索")
     VECTOR_DB_PATH: str = Field("./vector_db", description="向量数据库存储路径")
 

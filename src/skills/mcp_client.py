@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import threading
 import time
@@ -51,6 +52,11 @@ class _AsyncBridge:
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         try:
             return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise TimeoutError(
+                f"异步操作超时({timeout}s)，可能原因：MCP服务器无响应、死锁或LLM调用阻塞"
+            ) from None
         except Exception as e:
             future.cancel()
             raise e
@@ -81,6 +87,17 @@ class MCPClient:
         self._http_client: Optional[httpx.AsyncClient] = None
         self._reconnect_attempts = 0
         self._async_bridge = _AsyncBridge()
+        self._init_lock: Optional[asyncio.Lock] = None
+        self._initializing = False
+
+    def _get_init_lock(self) -> asyncio.Lock:
+        if self._init_lock is None:
+            try:
+                loop = asyncio.get_running_loop()
+                self._init_lock = asyncio.Lock()
+            except RuntimeError:
+                self._init_lock = asyncio.Lock()
+        return self._init_lock
 
     def call_tool(self, tool_name: str, **kwargs) -> str:
         return self._async_bridge.run(
@@ -89,7 +106,7 @@ class MCPClient:
 
     def call_tools_parallel(self, calls: list[dict]) -> list[str]:
         """
-        Parallel MCP tool calls using asyncio.gather.
+        Batch MCP tool calls with a shared session.
 
         Args:
             calls: list of {"tool_name": str, "kwargs": dict}
@@ -98,13 +115,37 @@ class MCPClient:
             Results list corresponding to calls order
         """
         async def _gather():
-            coros = [
-                self._async_call_tool(c["tool_name"], **c.get("kwargs", {}))
+            session_ok = await self._ensure_session()
+            if not session_ok:
+                return [
+                    json.dumps(AgentError(
+                        code=ErrorCode.MCP_SESSION_ERROR,
+                        message="MCP会话不可用且重连失败，请检查桥服务器是否运行",
+                        details={"tool_name": c["tool_name"], "parallel_call": True}
+                    ).to_dict(), ensure_ascii=False)
+                    for c in calls
+                ]
+            results = []
+            for call in calls:
+                try:
+                    result = await self._async_call_tool(
+                        call["tool_name"],
+                        _skip_session_check=True,
+                        **call.get("kwargs", {}),
+                    )
+                except Exception as e:
+                    result = e
+                results.append(result)
+            return results
+
+        try:
+            results = self._async_bridge.run(_gather())
+        except TimeoutError:
+            logger.warning("MCP批量调用超时，回退为同步串行调用")
+            return [
+                self.call_tool(c["tool_name"], **c.get("kwargs", {}))
                 for c in calls
             ]
-            return await asyncio.gather(*coros, return_exceptions=True)
-
-        results = self._async_bridge.run(_gather())
         final = []
         for r in results:
             if isinstance(r, Exception):
@@ -134,24 +175,48 @@ class MCPClient:
         if self._initialized and self._is_session_valid():
             return True
 
+        async with self._get_init_lock():
+            if self._initialized and self._is_session_valid():
+                return True
+
+            if self._initializing:
+                logger.debug("MCP会话正在初始化中，等待完成...")
+                for _ in range(30):
+                    await asyncio.sleep(0.1)
+                    if self._initialized and self._is_session_valid():
+                        return True
+                    if not self._initializing:
+                        break
+                return self._initialized and self._is_session_valid()
+
+            self._initializing = True
+
+            try:
+                return await self._do_init_session()
+            finally:
+                self._initializing = False
+
+    async def _do_init_session(self) -> bool:
         try:
             if self._http_client and not self._http_client.is_closed:
                 await self._http_client.aclose()
 
             client = httpx.AsyncClient(timeout=30.0)
 
-            logger.info("正在建立SSE连接（异步）...")
-            sse_response = await client.get(
-                settings.MCP_SERVER_URL,
-                headers={"Accept": "text/event-stream"}
-            )
+            logger.info("正在连接MCP服务器...")
+            try:
+                health_resp = await client.get(
+                    settings.MCP_SERVER_URL,
+                    headers={"Accept": "text/event-stream"},
+                    timeout=5.0
+                )
+                logger.debug(f"MCP服务器健康检查: HTTP {health_resp.status_code}")
+            except httpx.ConnectError:
+                raise Exception(f"MCP服务器不可达: {settings.MCP_SERVER_URL}")
+            except httpx.TimeoutException:
+                raise Exception(f"MCP服务器连接超时: {settings.MCP_SERVER_URL}")
 
-            session_id = sse_response.headers.get("mcp-session-id")
-            if not session_id:
-                raise Exception("无法获取session ID")
-
-            logger.info(f"✅ 获取到session ID: {session_id}")
-
+            logger.info("正在初始化MCP会话（POST initialize）...")
             init_request = {
                 "jsonrpc": "2.0",
                 "method": "initialize",
@@ -171,24 +236,30 @@ class MCPClient:
                 json=init_request,
                 headers={
                     "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": session_id
+                    "Accept": "application/json, text/event-stream"
                 }
             )
 
             if response.status_code != 200:
-                raise Exception(f"初始化失败: {response.status_code}")
+                raise Exception(f"初始化请求失败: HTTP {response.status_code}")
+
+            session_id = response.headers.get("mcp-session-id")
+            if not session_id:
+                raise Exception("初始化响应中未返回session ID")
+
+            logger.info(f"✅ 获取到session ID: {session_id}")
 
             init_result = _parse_sse_response(response.text)
             if init_result:
-                logger.debug(f"初始化成功，服务器信息: {init_result.get('result', {}).get('serverInfo', {})}")
+                server_info = init_result.get("result", {}).get("serverInfo", {})
+                logger.debug(f"初始化成功，服务器信息: {server_info}")
 
             notif_request = {
                 "jsonrpc": "2.0",
                 "method": "notifications/initialized"
             }
 
-            await client.post(
+            notif_resp = await client.post(
                 settings.MCP_SERVER_URL,
                 json=notif_request,
                 headers={
@@ -197,6 +268,9 @@ class MCPClient:
                     "Mcp-Session-Id": session_id
                 }
             )
+
+            if notif_resp.status_code not in (200, 202):
+                logger.warning(f"initialized通知返回非预期状态: {notif_resp.status_code}")
 
             logger.info("获取工具列表...")
             list_request = {
@@ -267,8 +341,11 @@ class MCPClient:
         self._reconnect_attempts += MCP_RECONNECT_MAX_RETRIES
         return False
 
-    async def _async_call_tool(self, tool_name: str, **kwargs) -> str:
-        session_ok = await self._ensure_session()
+    async def _async_call_tool(self, tool_name: str, _skip_session_check: bool = False, **kwargs) -> str:
+        if _skip_session_check:
+            session_ok = self._is_session_valid()
+        else:
+            session_ok = await self._ensure_session()
         if not session_ok:
             logger.error("❌ MCP会话不可用且重连失败")
             return json.dumps(AgentError(

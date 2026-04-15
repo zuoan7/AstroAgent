@@ -108,7 +108,7 @@ def get_agent():
 class SessionData:
     def __init__(self, user_id: str, agent: AstroAgent):
         self.user_id = user_id
-        self.memory = ShortTermMemory()
+        self.memory = ShortTermMemory(session_id=f"stm_{user_id}", user_id=user_id)
         self.streaming_service = StreamingService(
             agent_executor=agent._agent_executor,
             memory=self.memory,

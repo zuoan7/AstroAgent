@@ -38,6 +38,14 @@ def mock_settings():
         instance.MEMORY_WINDOW = 8
         instance.LONG_TERM_MEMORY_PATH = "/tmp/test_memory/user_profiles.sqlite"
         instance.DEFAULT_USER_ID = "test_user"
+        instance.STM_CONTEXT_MAX_TOKENS = 4000
+        instance.STM_SUMMARY_MAX_TOKENS = 500
+        instance.STM_SUMMARY_TRIGGER_MESSAGES = 100
+        instance.STM_SUMMARY_TRIGGER_TOKENS = 100000
+        instance.STM_PERSISTENCE_ENABLED = False
+        instance.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
+        instance.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+        instance.STM_TOOL_RESULT_MAX_LENGTH = 500
         instance.API_HOST = "0.0.0.0"
         instance.API_PORT = 8000
         instance.MCP_PORT = 8001

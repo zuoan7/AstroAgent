@@ -99,3 +99,10 @@ test_reports/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+#skill
+.trae/
+.skill/
+
+#docs
+docs/

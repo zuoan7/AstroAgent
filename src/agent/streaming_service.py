@@ -46,6 +46,25 @@ class BaseStreamingGenerator:
         )
 
     def _format_chat_history(self) -> str:
+        if hasattr(self._memory, 'build_context'):
+            try:
+                context = self._memory.build_context()
+                context_text = context.get("context_text", "")
+                if context_text and hasattr(self._memory, '_estimate_tokens'):
+                    token_count = self._memory._estimate_tokens(context_text)
+                    if token_count > 3000:
+                        logger.warning(f"短期记忆上下文过大({token_count} tokens)，降级为最近消息")
+                        messages = self._memory.get_recent_messages(window=4)
+                        if not messages:
+                            return "无历史对话"
+                        formatted = []
+                        for msg in messages:
+                            role = "用户" if msg["role"] == "user" else "助手"
+                            formatted.append(f"{role}: {msg['content']}")
+                        return "\n".join(formatted)
+                return context_text
+            except Exception as e:
+                logger.warning(f"build_context失败，降级为get_recent_messages: {type(e).__name__}: {e}")
         messages = self._memory.get_recent_messages()
         if not messages:
             return "无历史对话"
@@ -237,9 +256,16 @@ class BaseStreamingGenerator:
         }
 
     def _save_to_memory(self, query: str, response: str):
-        self._memory.add_message("user", query, time.time())
-        self._memory.add_message("assistant", response, time.time())
-        self._extract_and_update_long_term_memory(query, response)
+        try:
+            self._memory.add_message("user", query, time.time())
+            self._memory.add_message("assistant", response, time.time())
+        except Exception as e:
+            logger.error(f"❌ 短期记忆写入失败: {type(e).__name__}: {e}")
+
+        try:
+            self._extract_and_update_long_term_memory(query, response)
+        except Exception as e:
+            logger.error(f"❌ 长期记忆更新失败: {type(e).__name__}: {e}")
 
     def _finalize_request(self, request_id: Optional[str]):
         self._current_request_id = None
@@ -348,7 +374,7 @@ class StreamingService(BaseStreamingGenerator):
                 logger.info(f"✅ 对话已存入记忆 | 助手响应长度：{len(final_response)} 字符")
 
         except Exception as e:
-            logger.error(f"❌ 生成响应失败：{str(e)}")
+            logger.error(f"❌ 生成响应失败：{type(e).__name__}: {str(e) or '(无错误消息)'}", exc_info=True)
 
             if self._fallback_service and not tool_call_failed:
                 logger.warning("检测到异常，尝试使用联网搜索降级...")

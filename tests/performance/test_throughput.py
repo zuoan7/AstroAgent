@@ -136,6 +136,16 @@ class TestAstronomyDataProcessingThroughput:
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 100
             mock_s.MEMORY_WINDOW = 10
+            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
+            mock_s.STM_SUMMARY_MAX_TOKENS = 500
+            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
+            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
+            mock_s.STM_PERSISTENCE_ENABLED = False
+            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
+            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
+            mock_s.DEFAULT_USER_ID = "test_user"
+            mock_s.DASHSCOPE_API_KEY = None
             memory = ShortTermMemory()
 
         for i in range(500):
@@ -282,6 +292,16 @@ class TestResourceUtilization:
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 1000
             mock_s.MEMORY_WINDOW = 50
+            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
+            mock_s.STM_SUMMARY_MAX_TOKENS = 500
+            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
+            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
+            mock_s.STM_PERSISTENCE_ENABLED = False
+            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
+            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
+            mock_s.DEFAULT_USER_ID = "test_user"
+            mock_s.DASHSCOPE_API_KEY = None
             memory = ShortTermMemory()
 
         tracemalloc.start()
@@ -409,6 +429,16 @@ class TestConcurrentUserSimulation:
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 100
             mock_s.MEMORY_WINDOW = 10
+            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
+            mock_s.STM_SUMMARY_MAX_TOKENS = 500
+            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
+            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
+            mock_s.STM_PERSISTENCE_ENABLED = False
+            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
+            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
+            mock_s.DEFAULT_USER_ID = "test_user"
+            mock_s.DASHSCOPE_API_KEY = None
             memory = ShortTermMemory()
 
         errors = []
