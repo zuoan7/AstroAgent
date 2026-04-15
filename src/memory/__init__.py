@@ -7,9 +7,11 @@ from src.memory.memory import (
     ToolCallRecord,
     UserProfile,
 )
+from src.memory.long_term_memory import LongTermMemoryManager
 
 __all__ = [
     "LongTermMemory",
+    "LongTermMemoryManager",
     "MemoryEvent",
     "Message",
     "SalientFact",

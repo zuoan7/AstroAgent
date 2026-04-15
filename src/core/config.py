@@ -203,6 +203,18 @@ class MemoryConfig(BaseSettings):
     )
     STM_TOOL_RESULT_MAX_LENGTH: int = Field(500, description="工具结果摘要最大字符数")
 
+    LTM_MIN_CONFIDENCE_TO_STORE: float = Field(0.3, description="长期记忆最低存储置信度")
+    LTM_DEDUP_SIMILARITY_THRESHOLD: float = Field(0.85, description="去重相似度阈值")
+    LTM_CANDIDATE_OCCURRENCE_THRESHOLD: int = Field(2, description="候选记忆提升出现次数阈值")
+    LTM_CANDIDATE_CONFIDENCE_THRESHOLD: float = Field(0.6, description="候选记忆提升置信度阈值")
+    LTM_MAX_PROMPT_TOKENS: int = Field(800, description="长期记忆注入Prompt最大token数")
+    LTM_MAX_MEMORIES_IN_PROMPT: int = Field(15, description="Prompt注入最大记忆条数")
+    LTM_AUTO_BACKUP_INTERVAL_HOURS: int = Field(24, description="自动备份间隔(小时)")
+    LTM_DEFAULT_EXPIRY_DAYS: int = Field(180, description="默认记忆过期天数")
+    LTM_CONSTRAINT_EXPIRY_DAYS: int = Field(365, description="约束记忆过期天数")
+    LTM_FACT_EXPIRY_DAYS: int = Field(730, description="事实记忆过期天数")
+    LTM_ARCHIVE_AFTER_DAYS_UNUSED: int = Field(90, description="未使用记忆归档天数")
+
     RAG_ENABLED: bool = Field(True, description="是否启用 RAG 检索")
     VECTOR_DB_PATH: str = Field("./vector_db", description="向量数据库存储路径")
 

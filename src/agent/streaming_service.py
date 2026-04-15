@@ -77,24 +77,33 @@ class BaseStreamingGenerator:
     def _format_user_profile(self) -> str:
         if not self._long_term_memory:
             return "暂无用户偏好信息"
-        return self._long_term_memory.format_profile_for_prompt(self._user_id)
+        if hasattr(self._long_term_memory, 'format_profile_for_prompt'):
+            return self._long_term_memory.format_profile_for_prompt(self._user_id)
+        return "暂无用户偏好信息"
 
     def _extract_and_update_long_term_memory(self, user_message: str, assistant_message: str):
         if not self._long_term_memory:
             return
 
         try:
-            extracted = self._long_term_memory.extract_from_conversation(user_message, assistant_message)
-
-            has_info = (
-                extracted.get("preferences") or
-                extracted.get("habits") or
-                extracted.get("constraints")
-            )
-
-            if has_info:
-                self._long_term_memory.merge_and_update(self._user_id, extracted)
-                logger.info(f"✅ 已提取并更新长期记忆 (user_id: {self._user_id})")
+            if hasattr(self._long_term_memory, 'extract_and_store'):
+                results = self._long_term_memory.extract_and_store(
+                    user_message=user_message,
+                    assistant_message=assistant_message,
+                    user_id=self._user_id,
+                )
+                if results:
+                    logger.info(f"✅ 已提取并更新长期记忆 (user_id: {self._user_id}, count: {len(results)})")
+            elif hasattr(self._long_term_memory, 'extract_from_conversation'):
+                extracted = self._long_term_memory.extract_from_conversation(user_message, assistant_message)
+                has_info = (
+                    extracted.get("preferences") or
+                    extracted.get("habits") or
+                    extracted.get("constraints")
+                )
+                if has_info:
+                    self._long_term_memory.merge_and_update(self._user_id, extracted)
+                    logger.info(f"✅ 已提取并更新长期记忆 (user_id: {self._user_id})")
         except Exception as e:
             logger.error(f"❌ 更新长期记忆失败: {e}")
 

@@ -1,0 +1,37 @@
+from src.memory.long_term_memory.manager import LongTermMemoryManager
+from src.memory.long_term_memory.models import (
+    ConfirmationStatus,
+    ConflictInfo,
+    ConflictResolution,
+    EventLogEntry,
+    EventType,
+    ExtractionResult,
+    MemoryCandidate,
+    MemoryConfirmation,
+    MemoryItem,
+    MemoryQuery,
+    MemoryStatus,
+    MemoryType,
+    MemoryVersion,
+    SourceType,
+    UserProfile,
+)
+
+__all__ = [
+    "ConfirmationStatus",
+    "ConflictInfo",
+    "ConflictResolution",
+    "EventLogEntry",
+    "EventType",
+    "ExtractionResult",
+    "LongTermMemoryManager",
+    "MemoryCandidate",
+    "MemoryConfirmation",
+    "MemoryItem",
+    "MemoryQuery",
+    "MemoryStatus",
+    "MemoryType",
+    "MemoryVersion",
+    "SourceType",
+    "UserProfile",
+]

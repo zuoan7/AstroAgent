@@ -24,13 +24,16 @@ class TestAPIEndpointsIntegration:
             mock_agent.user_id = "test_user"
             mock_agent.long_term_memory = MagicMock()
 
-            mock_profile = MagicMock()
-            mock_profile.user_id = "test_user"
-            mock_profile.preferences = {"style": "详细"}
-            mock_profile.habits = {"topics": ["火星"]}
-            mock_profile.constraints = []
-            mock_profile.created_at = "2026-01-01T00:00:00"
-            mock_profile.updated_at = "2026-04-08T00:00:00"
+            mock_profile = {
+                "user_id": "test_user",
+                "preferences": {"style": "详细"},
+                "habits": {"topics": ["火星"]},
+                "constraints": [],
+                "background": {},
+                "facts": [],
+                "created_at": "2026-01-01T00:00:00",
+                "updated_at": "2026-04-08T00:00:00",
+            }
             mock_agent.long_term_memory.load_profile.return_value = mock_profile
             mock_agent.long_term_memory.delete_profile.return_value = True
 

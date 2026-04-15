@@ -4,6 +4,7 @@ from langchain_core.prompts import PromptTemplate
 from src.core.config import settings
 from src.rag.online_retriever import OnlineRetriever
 from src.memory.memory import ShortTermMemory, LongTermMemory
+from src.memory.long_term_memory import LongTermMemoryManager
 from src.agent.skill_manager import SkillManager
 from src.agent.fallback_service import FallbackService
 from src.agent.vision_service import VisionService
@@ -23,7 +24,7 @@ class AstroAgent:
 
         self.rag = OnlineRetriever()
         self.memory = ShortTermMemory(session_id=f"stm_{self.user_id}", user_id=self.user_id)
-        self.long_term_memory = LongTermMemory(settings.LONG_TERM_MEMORY_PATH)
+        self.long_term_memory = LongTermMemoryManager(settings.LONG_TERM_MEMORY_PATH)
         self.llm = self._init_llm()
 
         self.skill_manager = SkillManager(rag_retriever=self.rag)
