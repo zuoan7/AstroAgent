@@ -25,7 +25,24 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 
 ## 关键设计文档
 
+- [Memory Directory Structure](docs/MEMORY_DIRECTORY_STRUCTURE.md)：记忆模块目录拆分、分层职责与迁移结构
+- [Memory Module Documentation](docs/MEMORY_MODULE_DOCUMENTATION.md)：短期记忆、长期记忆、兼容层与仓储实现说明
 - [Streaming Event Bus](docs/streaming-event-bus.md)：流式输出统一事件总线、适配器接口、插件机制与兼容性说明
+
+## 近期变更
+
+### 2026-04-15
+
+- 完成长短期记忆重构：记忆能力从单体 `src/memory/memory.py` 拆分为 `core / infrastructure / short_term_memory / long_term_memory` 分层结构，同时保留兼容门面。
+- 新增长期记忆管理链路：支持事件记录、候选筛选、质量控制、画像合并、Prompt 注入与备份相关模块。
+- 新增短期记忆上下文构建、摘要、持久化仓储等模块，统一短期记忆预算与上下文组织。
+- MCP 协议统一为 JSON envelope，技能注册与路由层同步重构，减少上层对底层返回形态的猜测。
+
+### 2026-04-16
+
+- 流式输出重构为统一内部事件总线：新增标准 `StreamEvent`、文本/JSON/SSE 适配器以及可插拔事件处理器。
+- FastAPI 的 `/query`、`/query_with_image`、`/query_with_audio` 现在通过统一 SSE 适配层输出，避免 API 层重复拼装流式事件。
+- 短期记忆中的工具结果摘要增加显式摘要/截断标记，避免上游把压缩内容误当完整原文。
 
 ## 核心功能
 
@@ -51,15 +68,16 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 
 ### 4. 记忆系统
 
-- 短期记忆：维护最近对话窗口，用于上下文续写
-- 长期记忆：将用户偏好、习惯、限制持久化到 SQLite
+- 短期记忆：由 `src/memory/short_term_memory/` 管理最近消息、工具调用摘要、上下文预算与持久化
+- 长期记忆：由 `src/memory/long_term_memory/` 管理用户偏好、事实、约束、事件与画像合并
+- `src/memory/memory.py`：提供对旧调用方兼容的门面导出
 - 用户画像提取：优先通过 LLM 结构化抽取，失败时降级为关键词提取
 
 ### 5. 多模态交互
 
 - 图片问答：上传图片后，调用视觉服务补全查询语义
 - 语音问答：上传或录制音频后，先转写再进入 Agent 处理流程
-- API 采用 SSE 流式返回，可逐步输出思考过程与最终文本
+- API 采用统一事件总线驱动的 SSE 流式返回，可逐步输出思考过程、文本、图片与转写结果
 
 ## 技术栈
 
@@ -130,7 +148,7 @@ AstroAgent/
 │   ├── api/                    # FastAPI 服务入口
 │   ├── astronomy/              # 天文计算与外部数据服务
 │   ├── core/                   # 配置、日志、错误处理
-│   ├── memory/                 # 短期/长期记忆
+│   ├── memory/                 # 分层记忆模块（core / infrastructure / short_term_memory / long_term_memory）
 │   ├── rag/                    # 检索、融合、重排序、缓存
 │   ├── services/               # MCP Server 与 Streamlit App
 │   ├── skills/                 # 技能路由、MCP 客户端、处理器
@@ -152,13 +170,17 @@ AstroAgent/
 | --- | --- |
 | `src/agent/__init__.py` | `AstroAgent` 主入口，初始化 LLM、RAG、记忆和技能工具 |
 | `src/agent/skill_manager.py` | 高层技能注册与统一入口 |
+| `src/agent/streaming_events.py` | 流式事件模型、校验器与文本/JSON/SSE 适配器 |
+| `src/agent/streaming_service.py` | 统一事件总线驱动的流式输出与记忆写入 |
 | `src/skills/router.py` | 技能路由，连接技能处理器与 MCP 工具 |
 | `src/skills/skill_handlers.py` | 观测计划、天象预报、深空观测等复杂技能实现 |
 | `src/skills/mcp_client.py` | Streamable HTTP MCP 客户端，负责会话与工具调用 |
 | `src/services/mcp_server.py` | FastMCP 服务入口，注册天文工具并暴露 MCP 服务 |
 | `src/api/main.py` | FastAPI 服务入口，暴露问答与记忆管理接口 |
 | `src/rag/online_retriever.py` | 三级混合检索主流程 |
-| `src/memory/memory.py` | 短期记忆、用户画像持久化与提取逻辑 |
+| `src/memory/memory.py` | 记忆兼容门面，复用新的短期/长期记忆实现 |
+| `src/memory/short_term_memory/manager.py` | 短期记忆主管理器，负责消息、工具记录、摘要与上下文预算 |
+| `src/memory/long_term_memory/manager.py` | 长期记忆主管理器，负责画像抽取、融合、查询与持久化 |
 
 ## 核心实现逻辑
 
@@ -169,7 +191,7 @@ AstroAgent/
 3. `StreamingService` 组织上下文、用户画像和工具执行过程
 4. `AstroAgent` 调用 ReAct Agent，选择 RAG 或高层技能工具
 5. 高层技能通过 `SkillManager -> AstronomySkillRouter -> MCPClient` 调用 MCP 工具，或直接访问 RAG
-6. 底层天文服务返回结果，流式组装成 SSE 事件输出给客户端
+6. 底层天文服务返回结果后，统一内部事件总线生成标准事件，再按文本流 / JSON / SSE 适配输出给客户端
 
 ### MCP 工具集合
 
@@ -474,6 +496,11 @@ data: {"type":"text","content":"今晚上海可以观测到木星..."}
 - `text`：最终文本内容
 - `image`：图片 URL
 - `transcription`：语音识别文本
+
+说明：
+
+- 这些对外事件由统一内部事件总线生成，再经 `FrontendJsonEventAdapter` / `SSEEventAdapter` 转换输出。
+- 纯文本流、JSON 事件流和 SSE 流已收敛到同一底层事件序列，减少不同输出路径之间的逻辑漂移。
 
 ### 3. 知识库接口
 
