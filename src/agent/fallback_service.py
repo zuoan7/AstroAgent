@@ -2,6 +2,7 @@ import json
 from typing import Any, Optional
 from src.core.logger import logger
 from src.core.errors import ErrorCode, ErrorHandler
+from src.core.mcp_protocol import is_tool_error, parse_tool_response
 
 
 _FALLBACK_ERROR_CODES = {
@@ -51,6 +52,11 @@ class FallbackService:
             condensed = output.strip()
             if not condensed:
                 return True
+            if is_tool_error(condensed):
+                parsed = parse_tool_response(condensed)
+                code = parsed.error.code if parsed is not None else None
+                if code and code in _FALLBACK_ERROR_CODES:
+                    return True
             for kw in _FALLBACK_ERROR_KEYWORDS:
                 if kw in condensed:
                     return True
@@ -82,7 +88,8 @@ class FallbackService:
 
     def format_fallback_response(self, query: str, search_result: str) -> str:
         try:
-            result_data = json.loads(search_result)
+            envelope = parse_tool_response(search_result)
+            result_data = envelope.data if envelope and envelope.ok else json.loads(search_result)
 
             if ErrorHandler.is_error_response(result_data):
                 msg = result_data.get("message", str(result_data))

@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from src.core.logger import logger
 from src.memory.long_term_memory.models import (
+    MemoryEvent,
     MemoryItem,
     MemoryQuery,
     MemoryStatus,
@@ -197,11 +198,7 @@ class PromptInjector:
 
         return "\n\n".join(parts) if parts else "暂无用户偏好信息"
 
-    def format_profile_for_prompt(self, user_id: str) -> str:
-        profile = self._repo.load_profile(user_id)
-        if not profile:
-            return "暂无用户偏好信息"
-
+    def _format_profile(self, profile: Dict[str, Any]) -> str:
         parts = []
         if profile.get("preferences"):
             lines = [f"- {k}: {v}" for k, v in profile["preferences"].items()]
@@ -223,5 +220,31 @@ class PromptInjector:
         if profile.get("facts"):
             lines = [f"- {f.get('key', '')}: {f.get('value', '')}" for f in profile["facts"]]
             parts.append("【稳定事实】\n" + "\n".join(lines))
+        return "\n\n".join(parts)
 
+    def _select_events_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> List[MemoryEvent]:
+        events = self._repo.get_active_events(user_id, limit=self.max_memories)
+        return sorted(
+            events,
+            key=lambda event: (event.confidence, event.last_confirmed_at or event.created_at, event.created_at),
+            reverse=True,
+        )[: self.max_memories]
+
+    def _format_events(self, events: List[MemoryEvent]) -> str:
+        if not events:
+            return ""
+        lines = [f"- {event.event_type}.{event.key}: {event.value}" for event in events]
+        return "【近期记忆事件】\n" + "\n".join(lines)
+
+    def format_profile_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> str:
+        profile = self._repo.load_profile(user_id)
+        if not profile:
+            return "暂无用户偏好信息"
+        parts = []
+        formatted_profile = self._format_profile(profile)
+        if formatted_profile:
+            parts.append(formatted_profile)
+        formatted_events = self._format_events(self._select_events_for_prompt(user_id, task_type=task_type))
+        if formatted_events:
+            parts.append(formatted_events)
         return "\n\n".join(parts) if parts else "暂无用户偏好信息"

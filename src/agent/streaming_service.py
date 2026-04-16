@@ -6,8 +6,12 @@ from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, Generator, Optional
 from src.core.logger import logger
 from src.core.errors import ErrorHandler
+from src.core.mcp_protocol import extract_tool_data, is_tool_error
 
 MAX_ACTION_HISTORY_ENTRIES = 100
+TOOL_INPUT_LOG_PREVIEW_CHARS = 300
+TOOL_OUTPUT_LOG_PREVIEW_CHARS = 200
+FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS = 500
 
 
 class BaseStreamingGenerator:
@@ -46,10 +50,9 @@ class BaseStreamingGenerator:
         )
 
     def _format_chat_history(self) -> str:
-        if hasattr(self._memory, 'build_context'):
+        if hasattr(self._memory, 'get_context'):
             try:
-                context = self._memory.build_context()
-                context_text = context.get("context_text", "")
+                context_text = self._memory.get_context()
                 if context_text and hasattr(self._memory, '_estimate_tokens'):
                     token_count = self._memory._estimate_tokens(context_text)
                     if token_count > 3000:
@@ -63,6 +66,14 @@ class BaseStreamingGenerator:
                             formatted.append(f"{role}: {msg['content']}")
                         return "\n".join(formatted)
                 return context_text
+            except Exception as e:
+                logger.warning(f"get_context失败，降级为get_recent_messages: {type(e).__name__}: {e}")
+        if hasattr(self._memory, 'build_context'):
+            try:
+                context = self._memory.build_context()
+                context_text = context.get("context_text", "")
+                if context_text:
+                    return context_text
             except Exception as e:
                 logger.warning(f"build_context失败，降级为get_recent_messages: {type(e).__name__}: {e}")
         messages = self._memory.get_recent_messages()
@@ -138,16 +149,20 @@ class BaseStreamingGenerator:
                 tool_name = getattr(action, 'tool', 'unknown')
                 tool_input = getattr(action, 'tool_input', '')
                 if observation and not ErrorHandler.is_error_response(observation):
+                    if is_tool_error(observation):
+                        continue
                     try:
-                        obs_data = json.loads(str(observation))
+                        obs_data = extract_tool_data(str(observation))
+                        if isinstance(obs_data, str):
+                            obs_data = json.loads(obs_data)
                         if isinstance(obs_data, dict) and obs_data.get("error"):
                             continue
                     except (json.JSONDecodeError, TypeError):
                         pass
                     tool_results.append({
                         "tool": tool_name,
-                        "input": str(tool_input)[:100],
-                        "output": str(observation)[:500]
+                        "input": self._preview_text(tool_input, 100),
+                        "output": self._preview_text(observation, FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS),
                     })
 
         if not tool_results:
@@ -193,6 +208,13 @@ class BaseStreamingGenerator:
             "user_profile": user_profile
         }
 
+    @staticmethod
+    def _preview_text(value: Any, max_len: int) -> str:
+        text = "" if value is None else str(value)
+        if len(text) <= max_len:
+            return text
+        return text[:max_len] + "..."
+
     def _handle_tool_start(self, request_id: str, run_id: str, data: dict, check_repeated: bool = False) -> Optional[str]:
         tool_name = data.get("name") or data.get("tool")
         tool_input = data.get("input")
@@ -214,7 +236,7 @@ class BaseStreamingGenerator:
                     "request_id": request_id,
                     "run_id": run_id,
                     "tool_name": tool_name or "unknown_tool",
-                    "input": str(tool_input),
+                    "input": self._preview_text(tool_input, TOOL_INPUT_LOG_PREVIEW_CHARS),
                 },
                 ensure_ascii=False,
             )
@@ -228,6 +250,15 @@ class BaseStreamingGenerator:
             duration = time.time() - meta["start_time"]
         tool_output = data.get("output")
         tool_output_str = "" if tool_output is None else str(tool_output)
+        success = True
+        if ErrorHandler.is_error_response(tool_output):
+            success = False
+        elif tool_output_str.strip().startswith("{"):
+            try:
+                parsed_output = json.loads(tool_output_str)
+                success = not ErrorHandler.is_error_response(parsed_output)
+            except Exception:
+                success = "error" not in tool_output_str.lower()
 
         logger.info(
             json.dumps(
@@ -237,11 +268,24 @@ class BaseStreamingGenerator:
                     "run_id": run_id,
                     "tool_name": meta.get("name"),
                     "duration_sec": duration,
-                    "output_preview": tool_output_str[:200],
+                    "success": success,
+                    "output_preview": self._preview_text(tool_output_str, TOOL_OUTPUT_LOG_PREVIEW_CHARS),
                 },
                 ensure_ascii=False,
             )
         )
+
+        if meta and hasattr(self._memory, "add_tool_call"):
+            try:
+                self._memory.add_tool_call(
+                    tool_name=meta.get("name") or "unknown_tool",
+                    tool_input=meta.get("input", ""),
+                    result=tool_output_str,
+                    timestamp=time.time(),
+                    success=success,
+                )
+            except Exception as e:
+                logger.error(f"❌ 工具调用写入短期记忆失败: {type(e).__name__}: {e}")
 
         extracted_url = None
         if tool_output_str.strip().startswith("{"):

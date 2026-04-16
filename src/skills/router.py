@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from src.core.logger import logger
-from src.agent.param_parser import ParamParser
 from src.skills.mcp_client import MCPClient
+from src.skills import registry
 from src.skills.skill_handlers import SKILL_HANDLERS
 
 
@@ -19,6 +19,7 @@ class AstronomySkillRouter:
     """
 
     def __init__(self) -> None:
+        registry.validate_skill_registry(handler_names=set(SKILL_HANDLERS.keys()))
         self._mcp = MCPClient()
 
         self._handlers: Dict[str, Any] = {}
@@ -26,29 +27,12 @@ class AstronomySkillRouter:
             self._handlers[skill_name] = handler_cls()
 
         self._simple_skills: Dict[str, Dict[str, Any]] = {}
-
-        self.register_simple_skill(
-            skill_name="weather-lookup",
-            tool_name="get_weather",
-            param_mapping={
-                "city": "city",
-                "location": "city",
-                "extensions": "extensions",
-            },
-        )
+        self._register_registry_simple_skills()
 
         logger.info("✅ AstronomySkillRouter初始化完成（MCP延迟连接模式）")
 
     def list_skills(self) -> Dict[str, str]:
-        return {
-            "observation-planner": "生成指定日期和地点的天文观测计划",
-            "celestial-events-forecast": "查询指定时间段的天象事件",
-            "deep-sky-observing-guide": "为指定深空天体提供观测指导",
-            "neo-tracker": "追踪近地天体飞掠事件",
-            "astrophotography-calculator": "计算天文摄影参数与建议",
-            "celestial-position-calculator": "计算天体在指定时间的位置",
-            "weather-lookup": "查询指定城市的观测相关天气信息",
-        }
+        return registry.list_skill_descriptions()
 
     def register_simple_skill(
         self,
@@ -60,6 +44,16 @@ class AstronomySkillRouter:
             "tool_name": tool_name,
             "param_mapping": param_mapping or {},
         }
+
+    def _register_registry_simple_skills(self) -> None:
+        for spec in registry.get_skill_specs():
+            if spec.route_type != "simple" or not spec.mcp_tool_name:
+                continue
+            self.register_simple_skill(
+                skill_name=spec.skill_name,
+                tool_name=spec.mcp_tool_name,
+                param_mapping=spec.param_mapping,
+            )
 
     def call(self, name: str, **params: Any) -> str:
         if name in self._handlers:
@@ -74,7 +68,7 @@ class AstronomySkillRouter:
                 tool_key = mapping.get(k, k)
                 tool_kwargs[tool_key] = v
             raw = self.call_mcp_tool(tool_name, **tool_kwargs)
-            return ParamParser.shorten_text(raw, 1200)
+            return raw
 
         raise ValueError(f"未知技能：{name}")
 

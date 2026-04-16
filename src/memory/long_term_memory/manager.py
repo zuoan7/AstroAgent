@@ -8,11 +8,13 @@ from src.memory.long_term_memory.candidate import CandidateManager
 from src.memory.long_term_memory.event_log import ConfirmationManager, EventLogger
 from src.memory.long_term_memory.extractor import MemoryExtractor
 from src.memory.long_term_memory.models import (
+    CandidateMemory,
     ConflictInfo,
     ConflictResolution,
     EventLogEntry,
     EventType,
     ExtractionResult,
+    MemoryEvent,
     MemoryCandidate,
     MemoryConfirmation,
     MemoryItem,
@@ -33,6 +35,11 @@ class LongTermMemoryManager:
     def __init__(self, db_path: Optional[str] = None):
         self.config = {
             "db_path": db_path or settings.LONG_TERM_MEMORY_PATH,
+            "recent_events_limit": 10,
+            "candidate_promote_threshold": 2,
+            "default_confidence": 0.5,
+            "high_confidence_threshold": 0.8,
+            "enable_candidate_memory": True,
             "min_confidence_to_store": 0.3,
             "dedup_similarity_threshold": 0.85,
             "candidate_occurrence_threshold": 2,
@@ -65,6 +72,139 @@ class LongTermMemoryManager:
         self._backup_mgr = BackupManager(
             self._repo,
             auto_backup_interval_hours=self.config["auto_backup_interval_hours"],
+        )
+
+    def _is_explicit_long_term_signal(self, text: str) -> bool:
+        return self._extractor.is_explicit_expression(text)
+
+    def _is_temporary_request(self, text: str) -> bool:
+        return self._extractor.is_temporary_request(text)
+
+    def _should_attempt_extraction(self, user_message: str) -> bool:
+        return self._extractor.should_attempt_extraction(user_message)
+
+    def _normalize_event_type(self, memory_type: str) -> str:
+        return str(memory_type)
+
+    def _create_memory_events(
+        self,
+        user_id: str,
+        extracted_items: List[ExtractionResult],
+        source_text: str,
+    ) -> List[MemoryEvent]:
+        events: List[MemoryEvent] = []
+        for item in extracted_items:
+            if not item.should_extract or item.is_temporary:
+                continue
+            status = "active" if self._should_promote_event(item) else "candidate"
+            events.append(
+                MemoryEvent(
+                    user_id=user_id,
+                    event_type=self._normalize_event_type(item.memory_type),
+                    key=item.key,
+                    value=item.value,
+                    source_text=source_text[:500],
+                    confidence=item.confidence or self.config["default_confidence"],
+                    status=status,
+                    metadata={
+                        "category": item.category,
+                        "source_type": item.source_type,
+                        "is_explicit": item.is_explicit,
+                        "raw_content": item.raw_content[:200],
+                    },
+                    last_confirmed_at=_utcnow_iso() if status == "active" else None,
+                )
+            )
+        return events
+
+    def _store_candidate_events(self, events: List[MemoryEvent]) -> List[MemoryEvent]:
+        return self._repo.add_events(events)
+
+    def _should_promote_event(self, event: ExtractionResult | MemoryEvent) -> bool:
+        metadata = getattr(event, "metadata", {}) or {}
+        is_explicit = getattr(event, "is_explicit", metadata.get("is_explicit", False))
+        confidence = getattr(event, "confidence", self.config["default_confidence"])
+        if is_explicit:
+            return True
+        if confidence >= self.config["high_confidence_threshold"]:
+            return True
+        user_id = getattr(event, "user_id", None)
+        key = getattr(event, "key", "")
+        value = getattr(event, "value", None)
+        if user_id and key:
+            similar_count = self._repo.count_similar_events(user_id, key, value)
+            if similar_count >= self.config["candidate_promote_threshold"]:
+                return True
+        return False
+
+    def _promote_candidate_event(self, event: MemoryEvent) -> bool:
+        updated = self._repo.confirm_event(event.event_id)
+        if updated:
+            event.status = "active"
+            event.last_confirmed_at = _utcnow_iso()
+        return updated
+
+    def _promote_events_if_needed(self, user_id: str) -> List[MemoryEvent]:
+        promoted: List[MemoryEvent] = []
+        for event in self._repo.get_candidate_events(user_id):
+            if self._should_promote_event(event) and self._promote_candidate_event(event):
+                promoted.append(event)
+        return promoted
+
+    def _load_profile_model(self, user_id: str) -> Optional[UserProfile]:
+        data = self._repo.load_profile(user_id)
+        if not data:
+            return None
+        return UserProfile(**data)
+
+    def _merge_preferences(self, existing: Dict[str, Any], events: List[MemoryEvent]) -> Dict[str, Any]:
+        merged = dict(existing)
+        existing_conf = {}
+        for event in events:
+            if event.event_type != MemoryType.PREFERENCE:
+                continue
+            old_conf = existing_conf.get(event.key, 0.0)
+            if event.confidence >= old_conf:
+                merged[event.key] = event.value
+                existing_conf[event.key] = event.confidence
+        return merged
+
+    def _merge_habits(self, existing: Dict[str, Any], events: List[MemoryEvent]) -> Dict[str, Any]:
+        merged = dict(existing)
+        for event in events:
+            if event.event_type != MemoryType.HABIT:
+                continue
+            current = merged.get(event.key)
+            if isinstance(event.value, list):
+                current_list = current if isinstance(current, list) else []
+                merged[event.key] = list(dict.fromkeys(current_list + event.value))
+            elif isinstance(current, list):
+                merged[event.key] = list(dict.fromkeys(current + [event.value]))
+            else:
+                merged[event.key] = event.value
+        return merged
+
+    def _merge_constraints(self, existing: List[str], events: List[MemoryEvent]) -> List[str]:
+        merged = list(existing)
+        for event in events:
+            if event.event_type != MemoryType.CONSTRAINT:
+                continue
+            value = event.value if isinstance(event.value, str) else event.key
+            if value not in merged:
+                merged.append(value)
+        return merged
+
+    def _merge_profile(self, existing: Optional[UserProfile], user_id: str, events: List[MemoryEvent]) -> UserProfile:
+        base = existing or UserProfile(user_id=user_id)
+        return UserProfile(
+            user_id=user_id,
+            preferences=self._merge_preferences(base.preferences, events),
+            habits=self._merge_habits(base.habits, events),
+            constraints=self._merge_constraints(base.constraints, events),
+            background=base.background,
+            facts=base.facts,
+            created_at=base.created_at,
+            updated_at=_utcnow_iso(),
         )
 
     def add_memory(
@@ -310,55 +450,51 @@ class LongTermMemoryManager:
         user_id: str,
         conversation_id: Optional[str] = None,
     ) -> List[MemoryItem]:
+        if not self._should_attempt_extraction(user_message):
+            return []
         extractions = self._extractor.extract_from_conversation(
             user_message, assistant_message, conversation_id
         )
-        stored = []
+        events = self._create_memory_events(user_id, extractions, user_message)
+        self._store_candidate_events(events)
+        promoted = self._promote_events_if_needed(user_id)
+        active_events = [event for event in events if event.status == "active"] + promoted
+        if active_events:
+            profile = self._merge_profile(self._load_profile_model(user_id), user_id, active_events)
+            self._repo.save_profile(
+                user_id,
+                profile.preferences,
+                profile.habits,
+                profile.constraints,
+                profile.background,
+                profile.facts,
+            )
+
+        stored: List[MemoryItem] = []
         for ext in extractions:
-            if not ext.should_extract:
+            if not ext.should_extract or ext.is_temporary:
                 continue
-            if ext.is_temporary:
-                continue
+            item = self.add_memory(
+                user_id=user_id,
+                memory_type=ext.memory_type,
+                category=ext.category,
+                key=ext.key,
+                value=ext.value,
+                confidence=ext.confidence,
+                source_type=SourceType.EXPLICIT if ext.is_explicit else SourceType.AUTO,
+                is_explicit=ext.is_explicit,
+                source_conversation_id=conversation_id,
+                source_content_snippet=ext.raw_content,
+            )
+            if item:
+                stored.append(item)
 
-            if ext.is_explicit:
-                item = self.add_memory(
-                    user_id=user_id,
-                    memory_type=ext.memory_type,
-                    category=ext.category,
-                    key=ext.key,
-                    value=ext.value,
-                    confidence=ext.confidence,
-                    source_type=SourceType.EXPLICIT if ext.is_explicit else SourceType.AUTO,
-                    is_explicit=ext.is_explicit,
-                    source_conversation_id=conversation_id,
-                    source_content_snippet=ext.raw_content,
-                )
-                if item:
-                    stored.append(item)
-            else:
-                result = self._candidate_mgr.process_extraction_as_candidate(
-                    user_id=user_id,
-                    memory_type=ext.memory_type,
-                    category=ext.category,
-                    key=ext.key,
-                    value=ext.value,
-                    confidence=ext.confidence,
-                    source_type=ext.source_type,
-                    is_explicit=ext.is_explicit,
-                    source_conversation_id=conversation_id,
-                    source_content_snippet=ext.raw_content,
-                )
-                if result:
-                    stored.append(result)
-
-        if stored:
-            self._sync_profile_from_memories(user_id)
-            logger.info(f"提取并存储 {len(stored)} 条记忆 (user_id: {user_id})")
-
+        if events:
+            logger.info(f"提取并存储 {len(events)} 条长期记忆事件 (user_id: {user_id})")
         return stored
 
-    def format_profile_for_prompt(self, user_id: str) -> str:
-        return self._prompt_injector.format_profile_for_prompt(user_id)
+    def format_profile_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> str:
+        return self._prompt_injector.format_profile_for_prompt(user_id, task_type=task_type)
 
     def format_smart_prompt(self, user_id: str, query: str) -> str:
         return self._prompt_injector.format_for_prompt(user_id, query)
@@ -477,71 +613,93 @@ class LongTermMemoryManager:
         }
 
     def merge_and_update(self, user_id: str, new_info: Dict[str, Any]) -> Dict[str, Any]:
-        stored_items = []
+        extraction_like: List[ExtractionResult] = []
         for key, value in (new_info.get("preferences") or {}).items():
-            item = self.add_memory(
-                user_id=user_id,
-                memory_type=MemoryType.PREFERENCE,
-                category=key,
-                key=key,
-                value=value,
-                source_type=SourceType.AUTO,
-            )
-            if item:
-                stored_items.append(item)
-
+            extraction_like.append(ExtractionResult(True, MemoryType.PREFERENCE, key, key, value, 0.9, SourceType.EXPLICIT, True, False, str(value)))
         for key, value in (new_info.get("habits") or {}).items():
-            item = self.add_memory(
-                user_id=user_id,
-                memory_type=MemoryType.HABIT,
-                category=key,
-                key=key,
-                value=value,
-                source_type=SourceType.AUTO,
-            )
-            if item:
-                stored_items.append(item)
-
+            extraction_like.append(ExtractionResult(True, MemoryType.HABIT, key, key, value, 0.8, SourceType.AUTO, False, False, str(value)))
         for constraint in (new_info.get("constraints") or []):
-            item = self.add_memory(
-                user_id=user_id,
-                memory_type=MemoryType.CONSTRAINT,
-                category="custom",
-                key=f"constraint_{hash(constraint) % 10000}",
-                value=constraint,
-                source_type=SourceType.AUTO,
-            )
-            if item:
-                stored_items.append(item)
-
+            extraction_like.append(ExtractionResult(True, MemoryType.CONSTRAINT, "custom", f"constraint_{abs(hash(constraint)) % 10000}", constraint, 0.9, SourceType.EXPLICIT, True, False, str(constraint)))
         for key, value in (new_info.get("background") or {}).items():
-            item = self.add_memory(
-                user_id=user_id,
-                memory_type=MemoryType.BACKGROUND,
-                category=key,
-                key=key,
-                value=value,
-                source_type=SourceType.AUTO,
-            )
-            if item:
-                stored_items.append(item)
-
+            extraction_like.append(ExtractionResult(True, MemoryType.BACKGROUND, key, key, value, 0.7, SourceType.AUTO, False, False, str(value)))
         for fact in (new_info.get("facts") or []):
             if isinstance(fact, dict):
-                item = self.add_memory(
-                    user_id=user_id,
-                    memory_type=MemoryType.FACT,
-                    category=fact.get("category", "basic_info"),
-                    key=fact.get("key", ""),
-                    value=fact.get("value"),
-                    source_type=SourceType.AUTO,
-                )
-                if item:
-                    stored_items.append(item)
+                extraction_like.append(ExtractionResult(True, MemoryType.FACT, fact.get("category", "basic_info"), fact.get("key", ""), fact.get("value"), 0.7, SourceType.AUTO, False, False, str(fact.get("value"))))
 
-        self._sync_profile_from_memories(user_id)
-        profile = self._repo.load_profile(user_id)
-        return profile or {}
+        events = self._create_memory_events(user_id, extraction_like, json.dumps(new_info, ensure_ascii=False))
+        self._store_candidate_events(events)
+        promoted = self._promote_events_if_needed(user_id)
+        active_events = [event for event in events if event.status == "active"] + promoted
+        profile = self._merge_profile(self._load_profile_model(user_id), user_id, active_events)
+        self._repo.save_profile(
+            user_id,
+            profile.preferences,
+            profile.habits,
+            profile.constraints,
+            profile.background,
+            profile.facts,
+        )
+
+        for ext in extraction_like:
+            self.add_memory(
+                user_id=user_id,
+                memory_type=ext.memory_type,
+                category=ext.category,
+                key=ext.key,
+                value=ext.value,
+                confidence=ext.confidence,
+                source_type=ext.source_type,
+                is_explicit=ext.is_explicit,
+                source_content_snippet=ext.raw_content,
+            )
+
+        return self._repo.load_profile(user_id) or {}
 
     def extract_from_conversation(self, user_message: str, assistant_message: str) -> Dict[str, Any]:
         return self._extractor.extract_legacy_format(user_message, assistant_message)
+
+    def record_memory_event(
+        self,
+        user_id: str,
+        event_type: str,
+        key: str,
+        value: Any,
+        source_text: str = "",
+        confidence: Optional[float] = None,
+        status: str = "candidate",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> MemoryEvent:
+        event = MemoryEvent(
+            user_id=user_id,
+            event_type=event_type,
+            key=key,
+            value=value,
+            source_text=source_text,
+            confidence=confidence if confidence is not None else self.config["default_confidence"],
+            status=status,
+            metadata=metadata or {},
+            last_confirmed_at=_utcnow_iso() if status == "active" else None,
+        )
+        return self._repo.add_event(event)
+
+    def confirm_memory_event(self, event_id: str) -> bool:
+        return self._repo.confirm_event(event_id)
+
+    def reject_memory_event(self, event_id: str) -> bool:
+        return self._repo.update_event_status(event_id, "stale")
+
+    def mark_event_stale(self, event_id: str) -> bool:
+        return self._repo.update_event_status(event_id, "stale")
+
+    def debug_user_memory(self, user_id: str) -> Dict[str, Any]:
+        return {
+            "profile": self._repo.load_profile(user_id),
+            "active_events": [event.to_dict() for event in self._repo.get_active_events(user_id, limit=50)],
+            "candidate_events": [event.to_dict() for event in self._repo.get_candidate_events(user_id)],
+        }
+
+    def debug_events(self, user_id: str) -> List[Dict[str, Any]]:
+        return [event.to_dict() for event in self._repo.get_recent_events(user_id, limit=100)]
+
+    def debug_candidate_events(self, user_id: str) -> List[Dict[str, Any]]:
+        return [event.to_dict() for event in self._repo.get_candidate_events(user_id)]

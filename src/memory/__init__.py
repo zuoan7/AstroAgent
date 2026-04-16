@@ -1,13 +1,14 @@
 from src.memory.memory import (
     LongTermMemory,
+    LongTermMemoryManager,
     MemoryEvent,
     Message,
     SalientFact,
     ShortTermMemory,
     ToolCallRecord,
     UserProfile,
+    settings,
 )
-from src.memory.long_term_memory import LongTermMemoryManager
 
 __all__ = [
     "LongTermMemory",
@@ -18,4 +19,5 @@ __all__ = [
     "ShortTermMemory",
     "ToolCallRecord",
     "UserProfile",
+    "settings",
 ]

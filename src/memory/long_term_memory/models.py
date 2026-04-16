@@ -503,13 +503,19 @@ class EventLogEntry:
 @dataclass
 class UserProfile:
     user_id: str
-    preferences: Dict[str, Any]
-    habits: Dict[str, Any]
-    constraints: List[str]
-    background: Dict[str, Any]
-    facts: List[Dict[str, Any]]
-    created_at: str
-    updated_at: str
+    preferences: Dict[str, Any] = field(default_factory=dict)
+    habits: Dict[str, Any] = field(default_factory=dict)
+    constraints: List[str] = field(default_factory=list)
+    background: Dict[str, Any] = field(default_factory=dict)
+    facts: List[Dict[str, Any]] = field(default_factory=list)
+    created_at: str = ""
+    updated_at: str = ""
+
+    def __post_init__(self):
+        if not self.created_at:
+            self.created_at = _utcnow_iso()
+        if not self.updated_at:
+            self.updated_at = self.created_at
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -521,6 +527,95 @@ class UserProfile:
             "facts": self.facts,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+        }
+
+
+@dataclass
+class MemoryEvent:
+    user_id: str
+    event_type: str
+    key: str
+    value: Any
+    source_text: str = ""
+    confidence: float = 0.5
+    status: str = "candidate"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    event_id: str = ""
+    last_confirmed_at: Optional[str] = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    def __post_init__(self):
+        if not self.event_id:
+            self.event_id = _generate_id()
+        if not self.created_at:
+            self.created_at = _utcnow_iso()
+        if not self.updated_at:
+            self.updated_at = self.created_at
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "user_id": self.user_id,
+            "event_type": self.event_type,
+            "key": self.key,
+            "value": self.value,
+            "source_text": self.source_text,
+            "confidence": self.confidence,
+            "status": self.status,
+            "last_confirmed_at": self.last_confirmed_at,
+            "metadata": self.metadata,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    def to_db_row(self) -> Dict[str, Any]:
+        payload = self.to_dict()
+        payload["value"] = _json_dumps(self.value)
+        payload["metadata"] = _json_dumps(self.metadata)
+        return payload
+
+    @classmethod
+    def from_db_row(cls, row: Any) -> "MemoryEvent":
+        return cls(
+            event_id=row["event_id"],
+            user_id=row["user_id"],
+            event_type=row["event_type"],
+            key=row["key"],
+            value=_json_loads(row["value"]),
+            source_text=row["source_text"],
+            confidence=row["confidence"],
+            status=row["status"],
+            last_confirmed_at=row["last_confirmed_at"],
+            metadata=_json_loads(row["metadata"], {}),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+
+@dataclass
+class CandidateMemory:
+    user_id: str
+    event_type: str
+    key: str
+    value: Any
+    confidence: float = 0.3
+    created_at: str = ""
+    promoted: bool = False
+
+    def __post_init__(self):
+        if not self.created_at:
+            self.created_at = _utcnow_iso()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "user_id": self.user_id,
+            "event_type": self.event_type,
+            "key": self.key,
+            "value": self.value,
+            "confidence": self.confidence,
+            "created_at": self.created_at,
+            "promoted": self.promoted,
         }
 
 

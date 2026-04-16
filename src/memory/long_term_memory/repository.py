@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from src.core.logger import logger
 from src.memory.long_term_memory.models import (
+    MemoryEvent,
     EventLogEntry,
     MemoryCandidate,
     MemoryConfirmation,
@@ -149,6 +150,27 @@ class LongTermMemoryRepository:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS memory_events (
+                    event_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    source_text TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    last_confirmed_at TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_events_user_time
+                    ON memory_events(user_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_memory_events_user_status
+                    ON memory_events(user_id, status, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_memory_events_user_key
+                    ON memory_events(user_id, key, created_at DESC);
+
                 CREATE TABLE IF NOT EXISTS schema_version (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
@@ -159,6 +181,37 @@ class LongTermMemoryRepository:
                 "INSERT OR IGNORE INTO schema_version (key, value) VALUES (?, ?)",
                 ("version", str(self.SCHEMA_VERSION)),
             )
+            self._ensure_legacy_migration(conn)
+
+    def _ensure_legacy_migration(self, conn: sqlite3.Connection):
+        if self._table_exists(conn, "user_profiles"):
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(user_profiles)").fetchall()}
+            if "background" not in cols:
+                conn.execute("ALTER TABLE user_profiles ADD COLUMN background TEXT NOT NULL DEFAULT '{}'")
+            if "facts" not in cols:
+                conn.execute("ALTER TABLE user_profiles ADD COLUMN facts TEXT NOT NULL DEFAULT '[]'")
+        if self._table_exists(conn, "memory_events"):
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(memory_events)").fetchall()}
+            required = {
+                "key": "TEXT NOT NULL DEFAULT ''",
+                "value": "TEXT NOT NULL DEFAULT '\"\"'",
+                "source_text": "TEXT NOT NULL DEFAULT ''",
+                "status": "TEXT NOT NULL DEFAULT 'active'",
+                "confidence": "REAL NOT NULL DEFAULT 0.5",
+                "last_confirmed_at": "TEXT",
+                "metadata": "TEXT NOT NULL DEFAULT '{}'",
+                "updated_at": "TEXT NOT NULL DEFAULT ''",
+            }
+            for name, ddl in required.items():
+                if name not in cols:
+                    conn.execute(f"ALTER TABLE memory_events ADD COLUMN {name} {ddl}")
+
+    def _table_exists(self, conn: sqlite3.Connection, table_name: str) -> bool:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+        return row is not None
 
     def add_memory(self, item: MemoryItem) -> MemoryItem:
         with self._connect() as conn:
@@ -398,6 +451,140 @@ class LongTermMemoryRepository:
             )
             return cursor.lastrowid
 
+    def add_event(self, event: MemoryEvent) -> MemoryEvent:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO memory_events (
+                    event_id, user_id, event_type, key, value, source_text, status,
+                    confidence, last_confirmed_at, metadata, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.event_id,
+                    event.user_id,
+                    event.event_type,
+                    event.key,
+                    event.to_db_row()["value"],
+                    event.source_text,
+                    event.status,
+                    event.confidence,
+                    event.last_confirmed_at,
+                    event.to_db_row()["metadata"],
+                    event.created_at,
+                    event.updated_at,
+                ),
+            )
+        return event
+
+    def add_events(self, events: List[MemoryEvent]) -> List[MemoryEvent]:
+        if not events:
+            return []
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO memory_events (
+                    event_id, user_id, event_type, key, value, source_text, status,
+                    confidence, last_confirmed_at, metadata, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        event.event_id,
+                        event.user_id,
+                        event.event_type,
+                        event.key,
+                        event.to_db_row()["value"],
+                        event.source_text,
+                        event.status,
+                        event.confidence,
+                        event.last_confirmed_at,
+                        event.to_db_row()["metadata"],
+                        event.created_at,
+                        event.updated_at,
+                    )
+                    for event in events
+                ],
+            )
+        return events
+
+    def get_recent_events(self, user_id: str, limit: int = 10) -> List[MemoryEvent]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memory_events
+                WHERE user_id=? ORDER BY created_at DESC, updated_at DESC LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [MemoryEvent.from_db_row(row) for row in rows]
+
+    def get_candidate_events(self, user_id: str) -> List[MemoryEvent]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memory_events
+                WHERE user_id=? AND status='candidate'
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [MemoryEvent.from_db_row(row) for row in rows]
+
+    def count_similar_events(self, user_id: str, key: str, value: Any) -> int:
+        value_str = json.dumps(value, ensure_ascii=False)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt FROM memory_events
+                WHERE user_id=? AND key=? AND value=? AND status IN ('candidate', 'active')
+                """,
+                (user_id, key, value_str),
+            ).fetchone()
+        return row["cnt"] if row else 0
+
+    def update_event_status(self, event_id: str, status: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE memory_events SET status=?, updated_at=? WHERE event_id=?",
+                (status, _utcnow_iso(), event_id),
+            )
+            return cursor.rowcount > 0
+
+    def update_event_confidence(self, event_id: str, confidence: float) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE memory_events SET confidence=?, updated_at=? WHERE event_id=?",
+                (confidence, _utcnow_iso(), event_id),
+            )
+            return cursor.rowcount > 0
+
+    def confirm_event(self, event_id: str) -> bool:
+        now = _utcnow_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE memory_events
+                SET status='active', last_confirmed_at=?, updated_at=?
+                WHERE event_id=?
+                """,
+                (now, now, event_id),
+            )
+            return cursor.rowcount > 0
+
+    def get_active_events(self, user_id: str, limit: int = 100) -> List[MemoryEvent]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memory_events
+                WHERE user_id=? AND status='active'
+                ORDER BY confidence DESC, COALESCE(last_confirmed_at, created_at) DESC, created_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [MemoryEvent.from_db_row(row) for row in rows]
+
     def get_event_logs(
         self, user_id: str, memory_id: Optional[str] = None, limit: int = 50, offset: int = 0
     ) -> List[EventLogEntry]:
@@ -490,7 +677,6 @@ class LongTermMemoryRepository:
         }
 
     def save_profile(self, user_id: str, preferences: Dict, habits: Dict, constraints: list, background: Dict, facts: list):
-        import json
         now = _utcnow_iso()
         with self._connect() as conn:
             conn.execute(

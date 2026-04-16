@@ -4,10 +4,12 @@ import tempfile
 import pytest
 
 from src.memory.long_term_memory.models import (
+    CandidateMemory,
     ConfirmationStatus,
     ConflictResolution,
     EventType,
     ExtractionResult,
+    MemoryEvent,
     MemoryCandidate,
     MemoryConfirmation,
     MemoryItem,
@@ -56,6 +58,30 @@ def manager(tmp_db):
 
 
 class TestModels:
+    def test_memory_event_model(self):
+        event = MemoryEvent(
+            user_id="u1",
+            event_type=MemoryType.PREFERENCE,
+            key="response_style",
+            value="简短",
+            source_text="以后都简短回答",
+            confidence=0.9,
+            status="active",
+        )
+        assert event.event_id
+        assert event.status == "active"
+        assert event.to_dict()["key"] == "response_style"
+
+    def test_candidate_memory_model(self):
+        candidate = CandidateMemory(
+            user_id="u1",
+            event_type=MemoryType.HABIT,
+            key="frequent_topics",
+            value=["火星"],
+        )
+        assert candidate.promoted is False
+        assert candidate.to_dict()["event_type"] == MemoryType.HABIT
+
     def test_memory_item_create(self):
         item = MemoryItem.create(
             user_id="u1", memory_type=MemoryType.PREFERENCE,
@@ -244,6 +270,27 @@ class TestRepository:
         profile = repo.load_profile("u1")
         assert profile is not None
         assert profile["preferences"]["style"] == "简短"
+
+    def test_memory_events_repository(self, repo):
+        event = MemoryEvent(
+            user_id="u1",
+            event_type=MemoryType.PREFERENCE,
+            key="response_style",
+            value="详细",
+            source_text="请详细一点",
+            confidence=0.85,
+            status="candidate",
+        )
+        repo.add_event(event)
+        recent = repo.get_recent_events("u1", limit=5)
+        assert len(recent) == 1
+        assert recent[0].key == "response_style"
+        assert repo.count_similar_events("u1", "response_style", "详细") == 1
+        assert repo.update_event_status(event.event_id, "active")
+        assert repo.update_event_confidence(event.event_id, 0.95)
+        active = repo.get_active_events("u1", limit=5)
+        assert len(active) == 1
+        assert active[0].confidence == 0.95
 
     def test_user_isolation(self, repo):
         item1 = MemoryItem.create(
@@ -623,6 +670,19 @@ class TestLongTermMemoryManager:
             "facts": [],
         })
         assert result is not None
+
+    def test_event_promotion_and_debug(self, manager):
+        result = manager.merge_and_update("u1", {
+            "preferences": {"response_style": "详细"},
+            "constraints": ["避免术语"],
+        })
+        assert result["preferences"]["response_style"] == "详细"
+        events = manager.debug_events("u1")
+        assert any(event["key"] == "response_style" for event in events)
+        debug = manager.debug_user_memory("u1")
+        assert debug["profile"]["preferences"]["response_style"] == "详细"
+        formatted = manager.format_profile_for_prompt("u1", task_type="qa")
+        assert "近期记忆事件" in formatted
 
     def test_user_isolation(self, manager):
         manager.add_memory(

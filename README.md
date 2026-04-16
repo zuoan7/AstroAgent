@@ -188,6 +188,25 @@ AstroAgent/
 
 说明：启动日志中显示“13 个工具”，但代码实际定义了 14 个 `@mcp.tool()` 工具；README 以代码实现为准。
 
+### MCP 返回协议
+
+所有 MCP 工具统一返回 JSON envelope 字符串，不再混用普通字符串、裸 dict、错误 dict 或手工 `json.dumps(...)`：
+
+```json
+{"ok": true, "data": "... or {...}", "meta": {"tool_name": "get_weather", "schema_version": "1.0"}}
+```
+
+```json
+{"ok": false, "error": {"code": "TOOL_CALL_FAILED", "message": "...", "details": {}}, "meta": {"tool_name": "get_weather", "schema_version": "1.0"}}
+```
+
+实现约束：
+
+- 服务端入口统一由 `src/core/errors.py::safe_tool_call` 包装输出。
+- 协议模型、输入校验和解析辅助函数统一放在 `src/core/mcp_protocol.py`。
+- `src/services/mcp_server.py` 中每个工具都使用对应的 Pydantic 输入模型校验参数。
+- `src/skills/mcp_client.py`、Router、Streaming、Fallback 等上层模块按 envelope 解析，不再猜测底层返回形态。
+
 ### 高层技能集合
 
 当前系统向 Agent 暴露的高层技能如下：
@@ -516,9 +535,9 @@ pytest tests/ -v
 2. 修改前先确认 README、配置和实现保持一致
 3. 新增能力时同步补充测试
 4. 如新增技能，需要同步更新：
-   - `config/skills/definitions.yaml`
-   - `src/skills/router.py` 或 `src/skills/skill_handlers.py`
-   - `src/agent/skill_manager.py`
+   - 新增 simple skill：`src/skills/registry.py`、`src/services/mcp_server.py`（如缺底层 MCP 工具）以及相关测试
+   - 新增 handler skill：`src/skills/registry.py`、`src/skills/skill_handlers.py`（或对应 handler 文件）、必要的 MCP 工具与相关测试
+   - `src/agent/skill_manager.py` 与 `src/skills/router.py` 默认会自动读取 registry，通常不需要手改
 5. 提交前运行至少一轮相关测试与格式化检查
 
 推荐本地开发流程：

@@ -9,8 +9,9 @@ from typing import Any, Optional
 
 import httpx
 from src.core.logger import logger
-from src.core.errors import AgentError, ErrorHandler, ErrorCode
+from src.core.errors import ErrorHandler, ErrorCode
 from src.core.config import settings
+from src.core.mcp_protocol import error_envelope, parse_tool_response, serialize_envelope
 
 
 MCP_RECONNECT_MAX_RETRIES = 3
@@ -118,11 +119,14 @@ class MCPClient:
             session_ok = await self._ensure_session()
             if not session_ok:
                 return [
-                    json.dumps(AgentError(
-                        code=ErrorCode.MCP_SESSION_ERROR,
-                        message="MCP会话不可用且重连失败，请检查桥服务器是否运行",
-                        details={"tool_name": c["tool_name"], "parallel_call": True}
-                    ).to_dict(), ensure_ascii=False)
+                    serialize_envelope(
+                        error_envelope(
+                            tool_name=c["tool_name"],
+                            code=ErrorCode.MCP_SESSION_ERROR.value,
+                            message="MCP会话不可用且重连失败，请检查桥服务器是否运行",
+                            details={"tool_name": c["tool_name"], "parallel_call": True},
+                        )
+                    )
                     for c in calls
                 ]
             results = []
@@ -150,7 +154,16 @@ class MCPClient:
         for r in results:
             if isinstance(r, Exception):
                 error = ErrorHandler.handle(r, {"parallel_call": True})
-                final.append(json.dumps(error.to_dict(), ensure_ascii=False))
+                final.append(
+                    serialize_envelope(
+                        error_envelope(
+                            tool_name=error.details.get("tool_name", "parallel_call"),
+                            code=error.code.value,
+                            message=error.message,
+                            details=error.details,
+                        )
+                    )
+                )
             else:
                 final.append(r)
         return final
@@ -348,11 +361,14 @@ class MCPClient:
             session_ok = await self._ensure_session()
         if not session_ok:
             logger.error("❌ MCP会话不可用且重连失败")
-            return json.dumps(AgentError(
-                code=ErrorCode.MCP_SESSION_ERROR,
-                message="MCP会话不可用且重连失败，请检查桥服务器是否运行",
-                details={"tool_name": tool_name}
-            ).to_dict(), ensure_ascii=False)
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.MCP_SESSION_ERROR.value,
+                    message="MCP会话不可用且重连失败，请检查桥服务器是否运行",
+                    details={"tool_name": tool_name},
+                )
+            )
 
         try:
             processed_kwargs = {}
@@ -395,31 +411,40 @@ class MCPClient:
                 if response.status_code in (404, 410, 503):
                     self._initialized = False
                     logger.warning(f"MCP会话可能已失效(HTTP {response.status_code})，标记需要重连")
-                return json.dumps(AgentError(
-                    code=ErrorCode.MCP_SESSION_ERROR,
-                    message=f"MCP服务器返回HTTP错误: {response.status_code}",
-                    details={"tool_name": tool_name, "status_code": response.status_code}
-                ).to_dict(), ensure_ascii=False)
+                return serialize_envelope(
+                    error_envelope(
+                        tool_name=tool_name,
+                        code=ErrorCode.MCP_SESSION_ERROR.value,
+                        message=f"MCP服务器返回HTTP错误: {response.status_code}",
+                        details={"tool_name": tool_name, "status_code": response.status_code},
+                    )
+                )
 
             result = _parse_sse_response(response.text)
             if not result:
                 logger.error(f"无法解析响应: {response.text[:200]}")
-                return json.dumps(AgentError(
-                    code=ErrorCode.MCP_SESSION_ERROR,
-                    message="MCP响应解析失败",
-                    details={"tool_name": tool_name}
-                ).to_dict(), ensure_ascii=False)
+                return serialize_envelope(
+                    error_envelope(
+                        tool_name=tool_name,
+                        code=ErrorCode.MCP_SESSION_ERROR.value,
+                        message="MCP响应解析失败",
+                        details={"tool_name": tool_name},
+                    )
+                )
 
             logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:500]}")
 
             if "error" in result:
                 error_msg = result["error"].get("message", "未知错误")
                 error_code = result["error"].get("code", "")
-                return json.dumps(AgentError(
-                    code=ErrorCode.TOOL_CALL_FAILED,
-                    message=f"工具调用错误 [{error_code}]: {error_msg}",
-                    details={"tool_name": tool_name, "mcp_error_code": error_code}
-                ).to_dict(), ensure_ascii=False)
+                return serialize_envelope(
+                    error_envelope(
+                        tool_name=tool_name,
+                        code=ErrorCode.TOOL_CALL_FAILED.value,
+                        message=f"工具调用错误 [{error_code}]: {error_msg}",
+                        details={"tool_name": tool_name, "mcp_error_code": error_code},
+                    )
+                )
 
             if "result" in result:
                 res = result["result"]
@@ -431,14 +456,20 @@ class MCPClient:
                             for item in content:
                                 if item.get("type") == "text":
                                     text = item.get("text", "")
+                                    envelope = parse_tool_response(text)
+                                    if envelope is not None:
+                                        return serialize_envelope(envelope)
                                     try:
                                         parsed = json.loads(text)
                                         if isinstance(parsed, dict) and parsed.get("error"):
-                                            return json.dumps(AgentError(
-                                                code=ErrorCode.TOOL_CALL_FAILED,
-                                                message=parsed.get("message", text),
-                                                details={"tool_name": tool_name}
-                                            ).to_dict(), ensure_ascii=False)
+                                            return serialize_envelope(
+                                                error_envelope(
+                                                    tool_name=tool_name,
+                                                    code=str(parsed.get("code") or ErrorCode.TOOL_CALL_FAILED.value),
+                                                    message=parsed.get("message", text),
+                                                    details=parsed.get("details") or {"tool_name": tool_name},
+                                                )
+                                            )
                                     except (json.JSONDecodeError, TypeError):
                                         pass
                                     return text
@@ -455,23 +486,36 @@ class MCPClient:
 
         except httpx.TimeoutException:
             logger.error(f"❌ MCP工具调用超时: {tool_name}")
-            return json.dumps(AgentError(
-                code=ErrorCode.MCP_TIMEOUT_ERROR,
-                message=f"工具 '{tool_name}' 调用超时",
-                details={"tool_name": tool_name}
-            ).to_dict(), ensure_ascii=False)
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.MCP_TIMEOUT_ERROR.value,
+                    message=f"工具 '{tool_name}' 调用超时",
+                    details={"tool_name": tool_name},
+                )
+            )
         except httpx.ConnectError:
             logger.error(f"❌ 无法连接到MCP服务器: {settings.MCP_SERVER_URL}")
             self._initialized = False
-            return json.dumps(AgentError(
-                code=ErrorCode.MCP_CONNECTION_ERROR,
-                message="无法连接到MCP服务器",
-                details={"tool_name": tool_name, "server_url": settings.MCP_SERVER_URL}
-            ).to_dict(), ensure_ascii=False)
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.MCP_CONNECTION_ERROR.value,
+                    message="无法连接到MCP服务器",
+                    details={"tool_name": tool_name, "server_url": settings.MCP_SERVER_URL},
+                )
+            )
         except Exception as e:
             logger.error(f"❌ 调用工具 {tool_name} 失败: {e}")
             error = ErrorHandler.handle(e, {"tool_name": tool_name})
-            return json.dumps(error.to_dict(), ensure_ascii=False)
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=error.code.value,
+                    message=error.message,
+                    details=error.details,
+                )
+            )
 
 
 def _parse_sse_response(response_text: str) -> Optional[dict]:

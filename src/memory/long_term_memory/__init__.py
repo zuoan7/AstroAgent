@@ -1,11 +1,13 @@
 from src.memory.long_term_memory.manager import LongTermMemoryManager
 from src.memory.long_term_memory.models import (
+    CandidateMemory,
     ConfirmationStatus,
     ConflictInfo,
     ConflictResolution,
     EventLogEntry,
     EventType,
     ExtractionResult,
+    MemoryEvent,
     MemoryCandidate,
     MemoryConfirmation,
     MemoryItem,
@@ -18,6 +20,7 @@ from src.memory.long_term_memory.models import (
 )
 
 __all__ = [
+    "CandidateMemory",
     "ConfirmationStatus",
     "ConflictInfo",
     "ConflictResolution",
@@ -25,6 +28,7 @@ __all__ = [
     "EventType",
     "ExtractionResult",
     "LongTermMemoryManager",
+    "MemoryEvent",
     "MemoryCandidate",
     "MemoryConfirmation",
     "MemoryItem",

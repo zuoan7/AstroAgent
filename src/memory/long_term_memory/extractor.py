@@ -307,6 +307,10 @@ class MemoryExtractor:
         constraints: List[str] = []
         background: Dict[str, Any] = {}
         facts: List[Dict[str, Any]] = []
+        legacy_constraint_labels = {
+            "no_jargon": "避免使用专业术语",
+            "output_length_limit": "控制回答长度",
+        }
 
         for r in results:
             if r.is_temporary:
@@ -324,7 +328,7 @@ class MemoryExtractor:
                 if isinstance(r.value, str):
                     constraints.append(r.value)
                 elif isinstance(r.value, bool) and r.value:
-                    constraints.append(r.key)
+                    constraints.append(legacy_constraint_labels.get(r.key, r.key))
             elif r.memory_type == MemoryType.BACKGROUND:
                 background[r.key] = r.value
             elif r.memory_type == MemoryType.FACT:

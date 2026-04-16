@@ -7,16 +7,23 @@ from typing import Any, Dict, Optional
 
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode
+from src.core.mcp_protocol import is_tool_error, parse_tool_response
 from src.core.logger import logger
 from src.agent.param_parser import ParamParser
 from src.skills.mcp_client import MCPClient
 
 
 def _summarize_weather(raw: str) -> str:
-    try:
-        data = json.loads(raw)
-    except Exception:
-        return ""
+    envelope = parse_tool_response(raw)
+    if envelope is not None:
+        if is_tool_error(raw):
+            return ""
+        data = envelope.data
+    else:
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return ""
 
     if isinstance(data, dict) and data.get("error"):
         return ""
@@ -408,12 +415,15 @@ class NeoTrackerHandler:
         data = None
         try:
             if isinstance(raw_json, str):
-                data = json.loads(raw_json)
+                envelope = parse_tool_response(raw_json)
+                data = envelope.data if envelope and envelope.ok else json.loads(raw_json)
             else:
                 data = raw_json
         except Exception:
             return raw_json
 
+        if is_tool_error(raw_json):
+            return raw_json
         if isinstance(data, dict) and data.get("error"):
             if isinstance(data.get("error"), bool) and data.get("code"):
                 return json.dumps(data, ensure_ascii=False)

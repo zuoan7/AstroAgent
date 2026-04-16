@@ -21,6 +21,7 @@ from src.astronomy import (
 from src.agent.param_parser import ParamParser
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler, safe_tool_call
+from src.core.mcp_protocol import validate_tool_input
 
 print("🚀 正在初始化天文工具...")
 ephemeris = None
@@ -136,78 +137,148 @@ def _require_events_predictor():
 @safe_tool_call
 def get_planet_position(planet_name: str, observation_time: str = None,
                        latitude: float = None, longitude: float = None) -> str:
+    params = validate_tool_input(
+        "get_planet_position",
+        {
+            "planet_name": planet_name,
+            "observation_time": observation_time,
+            "latitude": latitude,
+            "longitude": longitude,
+        },
+    )
     _require_planetary()
-    result = planetary.get_planet_position(planet_name, observation_time, latitude, longitude)
-    return json.dumps(result, ensure_ascii=False)
+    return planetary.get_planet_position(
+        params.planet_name,
+        params.observation_time,
+        params.latitude,
+        params.longitude,
+    )
 
 
 @mcp.tool()
 @safe_tool_call
 def get_altaz(planet_name: str, observation_time: str = None,
               latitude: float = None, longitude: float = None) -> str:
+    params = validate_tool_input(
+        "get_altaz",
+        {
+            "planet_name": planet_name,
+            "observation_time": observation_time,
+            "latitude": latitude,
+            "longitude": longitude,
+        },
+    )
     _require_planetary()
-    result = planetary.get_altaz(planet_name, observation_time, latitude, longitude)
-    return json.dumps(result, ensure_ascii=False)
+    return planetary.get_altaz(
+        params.planet_name,
+        params.observation_time,
+        params.latitude,
+        params.longitude,
+    )
 
 
 @mcp.tool()
 @safe_tool_call
 def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5") -> str:
+    params = validate_tool_input(
+        "coordinate_transformation",
+        {
+            "ra": ra,
+            "dec": dec,
+            "epoch": epoch,
+            "target_system": target_system,
+        },
+    )
     _require_planetary()
-    return json.dumps(planetary.coordinate_transformation(ra, dec, epoch, target_system), ensure_ascii=False)
+    return planetary.coordinate_transformation(
+        params.ra,
+        params.dec,
+        params.epoch,
+        params.target_system,
+    )
 
 
 @mcp.tool()
 @safe_tool_call
 def get_rise_set_times(body_name: str, latitude: float, longitude: float, date: str = None) -> str:
+    params = validate_tool_input(
+        "get_rise_set_times",
+        {
+            "body_name": body_name,
+            "latitude": latitude,
+            "longitude": longitude,
+            "date": date,
+        },
+    )
     _require_planetary()
-    return planetary.get_rise_set_times(body_name, latitude, longitude, date)
+    return planetary.get_rise_set_times(
+        params.body_name,
+        params.latitude,
+        params.longitude,
+        params.date,
+    )
 
 
 @mcp.tool()
 @safe_tool_call
 def get_current_sky_objects(latitude: float, longitude: float, date: str = None) -> str:
+    params = validate_tool_input(
+        "get_current_sky_objects",
+        {"latitude": latitude, "longitude": longitude, "date": date},
+    )
     _require_planetary()
-    return planetary.get_current_sky_objects(latitude, longitude, date)
+    return planetary.get_current_sky_objects(
+        params.latitude,
+        params.longitude,
+        params.date,
+    )
 
 
 @mcp.tool()
 @safe_tool_call
 def get_astrophysical_object_info(object_name: str) -> str:
+    params = validate_tool_input(
+        "get_astrophysical_object_info",
+        {"object_name": object_name},
+    )
     _require_celestial_db()
-    result = celestial_db.get_object_info(object_name)
-    return json.dumps(result, ensure_ascii=False)
+    return celestial_db.get_object_info(params.object_name)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_galaxy_data(galaxy_name: str) -> str:
+    params = validate_tool_input("get_galaxy_data", {"galaxy_name": galaxy_name})
     _require_celestial_db()
-    result = celestial_db.get_galaxy_data(galaxy_name)
-    return json.dumps(result, ensure_ascii=False)
+    return celestial_db.get_galaxy_data(params.galaxy_name)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_nasa_apod(date: str = None, hd: bool = False) -> str:
+    params = validate_tool_input("get_nasa_apod", {"date": date, "hd": hd})
     _require_nasa_api()
-    return nasa_api.get_apod(date, hd)
+    return nasa_api.get_apod(params.date, params.hd)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) -> str:
+    params = validate_tool_input(
+        "get_neo_data",
+        {"start_date": start_date, "end_date": end_date, "limit": limit},
+    )
     _require_nasa_api()
     from datetime import datetime, timedelta
 
-    if start_date:
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    if params.start_date:
+        start_dt = datetime.strptime(params.start_date, "%Y-%m-%d")
     else:
         start_dt = datetime.now()
         start_date = start_dt.strftime("%Y-%m-%d")
 
-    if end_date:
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    if params.end_date:
+        end_dt = datetime.strptime(params.end_date, "%Y-%m-%d")
     else:
         end_dt = start_dt + timedelta(days=7)
         end_date = end_dt.strftime("%Y-%m-%d")
@@ -217,29 +288,35 @@ def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) 
         end_dt = start_dt + timedelta(days=7)
         end_date = end_dt.strftime("%Y-%m-%d")
 
-    result = nasa_api.get_neo_data(start_date, end_date, limit)
-    return json.dumps(result, ensure_ascii=False)
+    return nasa_api.get_neo_data(start_date, end_date, params.limit)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_weather(city: str = None, extensions: str = "base") -> str:
+    params = validate_tool_input(
+        "get_weather",
+        {"city": city, "extensions": extensions},
+    )
     _require_weather()
-    result = weather.get_weather(city=city, extensions=extensions)
-    return json.dumps(result, ensure_ascii=False)
+    return weather.get_weather(city=params.city, extensions=params.extensions)
 
 
 @mcp.tool()
 @safe_tool_call
 def web_search(query: str, max_results: int = 5) -> str:
+    params = validate_tool_input(
+        "web_search",
+        {"query": query, "max_results": max_results},
+    )
     _require_search()
-    result = search.search(query=query, max_results=max_results)
-    return json.dumps(result, ensure_ascii=False)
+    return search.search(query=params.query, max_results=params.max_results)
 
 
 @mcp.tool()
 @safe_tool_call
 def get_tonight_best() -> str:
+    validate_tool_input("get_tonight_best", {})
     _require_events_predictor()
     return events_predictor.get_tonight_best()
 
@@ -256,8 +333,13 @@ def get_weekly_events(start_date: Optional[str] = None) -> str:
     if processed_start_date:
         processed_start_date = processed_start_date.strftime("%Y-%m-%d")
 
+    params = validate_tool_input(
+        "get_weekly_events",
+        {"start_date": processed_start_date},
+    )
+
     _require_events_predictor()
-    return events_predictor.get_weekly_events(processed_start_date)
+    return events_predictor.get_weekly_events(params.start_date)
 
 
 @mcp.tool()
@@ -269,11 +351,16 @@ def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
         expected_params={"year": None, "month": None}
     )
 
-    processed_year = ParamParser.safe_int(params.get("year"), default=None)
-    processed_month = ParamParser.safe_int(params.get("month"), default=None)
+    validated = validate_tool_input(
+        "get_monthly_events",
+        {
+            "year": ParamParser.safe_int(params.get("year"), default=None),
+            "month": ParamParser.safe_int(params.get("month"), default=None),
+        },
+    )
 
     _require_events_predictor()
-    return events_predictor.get_monthly_events(processed_year, processed_month)
+    return events_predictor.get_monthly_events(validated.year, validated.month)
 
 
 @mcp.resource("status://server")

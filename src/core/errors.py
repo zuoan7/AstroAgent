@@ -103,6 +103,21 @@ class AgentError(Exception):
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
+    def to_envelope_dict(self, tool_name: str = "unknown") -> Dict[str, Any]:
+        from src.core.mcp_protocol import error_envelope
+
+        return error_envelope(
+            tool_name=tool_name,
+            code=self.code.value,
+            message=self.message,
+            details=self.details,
+        ).model_dump(mode="json")
+
+    def to_envelope_json(self, tool_name: str = "unknown") -> str:
+        from src.core.mcp_protocol import serialize_envelope
+
+        return serialize_envelope(self.to_envelope_dict(tool_name))
+
     def __str__(self) -> str:
         return f"[{self.code.value}] {self.message}"
 
@@ -162,6 +177,8 @@ class ErrorHandler:
 
     @staticmethod
     def is_error_response(data: Any) -> bool:
+        if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), dict):
+            return True
         if isinstance(data, dict):
             return data.get("error") is True or "error" in data
         if isinstance(data, AgentError):
@@ -172,6 +189,8 @@ class ErrorHandler:
     def extract_error_code(data: Any) -> Optional[str]:
         if isinstance(data, AgentError):
             return data.code.value
+        if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), dict):
+            return data["error"].get("code")
         if isinstance(data, dict) and "code" in data:
             return data["code"]
         return None
@@ -193,13 +212,13 @@ def safe_tool_call(func=None, *, error_code: ErrorCode = ErrorCode.TOOL_CALL_FAI
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            from src.core.mcp_protocol import wrap_tool_result
+
             try:
                 result = fn(*args, **kwargs)
-                if isinstance(result, AgentError):
-                    return result.to_dict()
-                return result
+                return wrap_tool_result(result, fn.__name__)
             except AgentError as e:
-                return e.to_dict()
+                return wrap_tool_result(e, fn.__name__)
             except Exception as e:
                 error = ErrorHandler.handle(e, {"function": fn.__name__})
                 if error.code == ErrorCode.UNKNOWN_ERROR:
@@ -209,7 +228,7 @@ def safe_tool_call(func=None, *, error_code: ErrorCode = ErrorCode.TOOL_CALL_FAI
                         details={"function": fn.__name__},
                         original_error=e
                     )
-                return error.to_dict()
+                return wrap_tool_result(error, fn.__name__)
         return wrapper
 
     if func is not None:

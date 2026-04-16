@@ -11,6 +11,7 @@ from skyfield import almanac
 from skyfield.api import wgs84
 from .base import EphemerisManager
 from src.core.config import settings
+from src.core.errors import AgentError, ErrorCode
 from src.agent.param_parser import ParamParser
 
 from src.core.logger import logger
@@ -450,7 +451,12 @@ class EventsPredictor:
             
         except Exception as e:
             logger.error(f"生成周预报失败: {e}", exc_info=True)
-            return f"错误：{str(e)}"
+            raise AgentError(
+                code=ErrorCode.TOOL_CALL_FAILED,
+                message=f"生成周预报失败: {str(e)}",
+                details={"tool": "get_weekly_events"},
+                original_error=e,
+            )
     
     def get_monthly_events(self, year=None, month=None) -> str:
         """
@@ -528,7 +534,12 @@ class EventsPredictor:
             
         except Exception as e:
             logger.error(f"生成月预报失败: {e}", exc_info=True)
-            return f"错误：{str(e)}"
+            raise AgentError(
+                code=ErrorCode.TOOL_CALL_FAILED,
+                message=f"生成月预报失败: {str(e)}",
+                details={"tool": "get_monthly_events"},
+                original_error=e,
+            )
     
     def get_tonight_best(self) -> str:
         """
