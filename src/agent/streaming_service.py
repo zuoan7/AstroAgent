@@ -7,6 +7,15 @@ from typing import Any, AsyncGenerator, Dict, Generator, Optional
 from src.core.logger import logger
 from src.core.errors import ErrorHandler
 from src.core.mcp_protocol import extract_tool_data, is_tool_error
+from src.agent.streaming_events import (
+    FrontendJsonEventAdapter,
+    PlainTextStreamAdapter,
+    SSEEventAdapter,
+    StreamEvent,
+    StreamEventAdapter,
+    StreamEventProcessor,
+    apply_event_processors,
+)
 
 MAX_ACTION_HISTORY_ENTRIES = 100
 TOOL_INPUT_LOG_PREVIEW_CHARS = 300
@@ -22,6 +31,7 @@ class BaseStreamingGenerator:
         long_term_memory: Any = None,
         user_id: str = "anonymous",
         fallback_service: Optional[Any] = None,
+        event_processors: Optional[list[StreamEventProcessor]] = None,
     ):
         self._agent_executor = agent_executor
         self._memory = memory
@@ -32,6 +42,7 @@ class BaseStreamingGenerator:
         self._current_request_id: Optional[str] = None
         self._action_history: OrderedDict[str, list] = OrderedDict()
         self._max_same_action_count = 2
+        self._event_processors = list(event_processors or [])
 
     def _cleanup_action_history(self, request_id: Optional[str] = None):
         if request_id and request_id in self._action_history:
@@ -383,6 +394,259 @@ class BaseStreamingGenerator:
 
         return result
 
+    def register_event_processor(self, processor: StreamEventProcessor):
+        self._event_processors.append(processor)
+
+    def clear_event_processors(self):
+        self._event_processors.clear()
+
+    def _build_stream_event(
+        self,
+        event_type: str,
+        sequence: int,
+        request_id: str,
+        *,
+        content: Any = None,
+        meta: Optional[Dict[str, Any]] = None,
+        modality: str = "text",
+    ) -> StreamEvent:
+        payload = {"request_id": request_id}
+        if meta:
+            payload.update(meta)
+        return StreamEvent(
+            type=event_type,
+            content=content,
+            meta=payload,
+            sequence=sequence,
+            modality=modality,
+        ).validate()
+
+    async def _stream_with_adapter(
+        self,
+        query: str,
+        adapter: StreamEventAdapter,
+        *,
+        stop_on_repeated_action: bool,
+        response_mode: str,
+    ) -> AsyncGenerator[Any, None]:
+        async for event in self._generate_internal_events(
+            query,
+            stop_on_repeated_action=stop_on_repeated_action,
+            response_mode=response_mode,
+        ):
+            adapted = adapter.adapt(event)
+            if adapted is not None:
+                yield adapted
+
+    async def _generate_internal_events(
+        self,
+        query: str,
+        *,
+        stop_on_repeated_action: bool,
+        response_mode: str,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        request_id = uuid.uuid4().hex[:8]
+        self._current_request_id = request_id
+        logger.info(f"[{request_id}] 开始处理统一流式查询：{query[:200]}")
+
+        sequence = 0
+        response_chunks: list[str] = []
+        thinking_buffer: list[str] = []
+        final_answer_started = False
+        final_answer_extracted = False
+        thinking_logged = False
+        response_saved = False
+
+        def next_event(
+            event_type: str,
+            *,
+            content: Any = None,
+            meta: Optional[Dict[str, Any]] = None,
+            modality: str = "text",
+        ) -> StreamEvent:
+            nonlocal sequence
+            sequence += 1
+            return self._build_stream_event(
+                event_type,
+                sequence,
+                request_id,
+                content=content,
+                meta=meta,
+                modality=modality,
+            )
+
+        async def emit(event: StreamEvent) -> AsyncGenerator[StreamEvent, None]:
+            processed_events = apply_event_processors(event, self._event_processors)
+            for processed in processed_events:
+                yield processed
+
+        try:
+            agent_input = self._prepare_input(query)
+            async for raw_event in self._agent_executor.astream_events(
+                agent_input,
+                version="v1",
+            ):
+                event_type = raw_event.get("event")
+                data = raw_event.get("data", {}) or {}
+                run_id = raw_event.get("run_id")
+
+                if event_type == "on_tool_start":
+                    tool_name = data.get("name") or data.get("tool") or "unknown_tool"
+                    tool_input = "" if data.get("input") is None else str(data.get("input"))
+                    result = self._handle_tool_start(
+                        request_id,
+                        run_id,
+                        data,
+                        check_repeated=stop_on_repeated_action,
+                    )
+                    async for processed in emit(
+                        next_event(
+                            "tool_start",
+                            content={"input": tool_input},
+                            meta={"run_id": run_id, "tool": tool_name},
+                        )
+                    ):
+                        yield processed
+                    if result == "repeated":
+                        warning = "\n\n⚠️ 检测到重复操作，已自动终止循环。"
+                        response_chunks.append(warning)
+                        async for processed in emit(
+                            next_event(
+                                "warning",
+                                content=warning,
+                                meta={
+                                    "reason": "repeated_action",
+                                    "run_id": run_id,
+                                    "tool": tool_name,
+                                },
+                            )
+                        ):
+                            yield processed
+                        break
+                    continue
+
+                if event_type == "on_tool_end":
+                    tool_result = self._handle_tool_end(request_id, run_id, data)
+                    tool_meta = tool_result.get("meta", {}) or {}
+                    async for processed in emit(
+                        next_event(
+                            "tool_end",
+                            content=tool_result.get("tool_output_str", ""),
+                            meta={
+                                "run_id": run_id,
+                                "tool": tool_meta.get("name"),
+                                "duration_sec": tool_result.get("duration"),
+                                "extracted_url": tool_result.get("extracted_url"),
+                            },
+                        )
+                    ):
+                        yield processed
+                    if tool_result.get("extracted_url"):
+                        async for processed in emit(
+                            next_event(
+                                "image",
+                                content=tool_result["extracted_url"],
+                                meta={
+                                    "run_id": run_id,
+                                    "tool": tool_meta.get("name"),
+                                },
+                                modality="image",
+                            )
+                        ):
+                            yield processed
+                    continue
+
+                if event_type not in ("on_chat_model_stream", "on_llm_stream"):
+                    continue
+
+                text = self._extract_stream_text(data)
+                if not text:
+                    continue
+
+                if response_mode == "raw_text":
+                    response_chunks.append(text)
+
+                async for processed in emit(
+                    next_event("raw_text_delta", content=text, meta={"run_id": run_id})
+                ):
+                    yield processed
+
+                parse_result = self._parse_thinking_and_final_answer(
+                    text,
+                    thinking_buffer,
+                    final_answer_started,
+                    final_answer_extracted,
+                    thinking_logged,
+                    request_id,
+                )
+                thinking_buffer = parse_result["thinking_buffer"]
+                final_answer_started = parse_result["final_answer_started"]
+                final_answer_extracted = parse_result["final_answer_extracted"]
+                thinking_logged = parse_result["thinking_logged"]
+
+                if not parse_result["should_continue"]:
+                    if parse_result["final_answer_text"]:
+                        final_answer_text = parse_result["final_answer_text"]
+                        if response_mode == "final_answer":
+                            response_chunks.append(final_answer_text)
+                        async for processed in emit(
+                            next_event(
+                                "final_answer_delta",
+                                content=final_answer_text,
+                                meta={"run_id": run_id},
+                            )
+                        ):
+                            yield processed
+                    continue
+
+                if parse_result["is_final_answer_chunk"]:
+                    if response_mode == "final_answer":
+                        response_chunks.append(text)
+                    async for processed in emit(
+                        next_event(
+                            "final_answer_delta",
+                            content=text,
+                            meta={"run_id": run_id},
+                        )
+                    ):
+                        yield processed
+                elif parse_result["is_thinking"]:
+                    async for processed in emit(
+                        next_event(
+                            "thinking_delta",
+                            content=text,
+                            meta={"run_id": run_id},
+                        )
+                    ):
+                        yield processed
+
+        except Exception as e:
+            logger.error(f"[{request_id}] ❌ 统一事件流生成失败：{e}")
+            fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
+            response_chunks = [fallback]
+            async for processed in emit(
+                next_event(
+                    "error",
+                    content=fallback,
+                    meta={"error_type": type(e).__name__},
+                )
+            ):
+                yield processed
+            self._save_to_memory(query, fallback)
+            response_saved = True
+        else:
+            final_response = "".join(response_chunks)
+            self._save_to_memory(query, final_response)
+            response_saved = True
+
+            if not thinking_logged and thinking_buffer:
+                logger.info(f"[{request_id}] 🔍 Thinking: {''.join(thinking_buffer)}")
+            logger.info(f"[{request_id}] ✅ 统一事件流完成，响应长度：{len(final_response)} 字符")
+        finally:
+            if not response_saved and response_chunks:
+                self._save_to_memory(query, "".join(response_chunks))
+            self._finalize_request(request_id)
+
 
 class StreamingService(BaseStreamingGenerator):
     def generate_response(self, query: str) -> Generator[str, None, None]:
@@ -450,141 +714,38 @@ class StreamingService(BaseStreamingGenerator):
             self._save_to_memory(query, default_response)
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
-        request_id = uuid.uuid4().hex[:8]
-        self._current_request_id = request_id
-        logger.info(f"[{request_id}] 开始处理流式查询：{query}")
-
-        final_chunks: list[str] = []
-        should_stop = False
-
-        try:
-            agent_input = self._prepare_input(query)
-            async for event in self._agent_executor.astream_events(
-                agent_input,
-                version="v1",
-            ):
-                if should_stop:
-                    break
-
-                event_type = event.get("event")
-                data = event.get("data", {}) or {}
-                run_id = event.get("run_id")
-
-                if event_type == "on_tool_start":
-                    result = self._handle_tool_start(request_id, run_id, data, check_repeated=True)
-                    if result == "repeated":
-                        should_stop = True
-                        fallback_msg = "\n\n⚠️ 检测到重复操作，已自动终止循环。"
-                        final_chunks.append(fallback_msg)
-                        yield fallback_msg
-                        break
-                    continue
-
-                if event_type == "on_tool_end":
-                    self._handle_tool_end(request_id, run_id, data)
-                    continue
-
-                if event_type in ("on_chat_model_stream", "on_llm_stream"):
-                    text = self._extract_stream_text(data)
-                    if not text:
-                        continue
-
-                    final_chunks.append(text)
-                    yield text
-
-        except Exception as e:
-            logger.error(f"[{request_id}] ❌ 流式生成失败：{e}")
-            fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
-            yield fallback
-            self._save_to_memory(query, fallback)
-        else:
-            final_response = "".join(final_chunks)
-            self._save_to_memory(query, final_response)
-            logger.info(f"[{request_id}] ✅ 流式对话完成，响应长度：{len(final_response)} 字符")
-        finally:
-            self._finalize_request(request_id)
+        """返回与历史行为兼容的原始纯文本流。"""
+        adapter = PlainTextStreamAdapter()
+        async for chunk in self._stream_with_adapter(
+            query,
+            adapter,
+            stop_on_repeated_action=True,
+            response_mode="raw_text",
+        ):
+            yield chunk
 
     async def generate_events(
         self, query: str, image_path: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        request_id = uuid.uuid4().hex[:8]
-        self._current_request_id = request_id
-        logger.info(f"[{request_id}] 开始处理事件流查询：{query[:200]}")
+        """返回前端友好的 JSON 事件流。"""
+        adapter = FrontendJsonEventAdapter()
+        async for event in self._stream_with_adapter(
+            query,
+            adapter,
+            stop_on_repeated_action=False,
+            response_mode="final_answer",
+        ):
+            yield event
 
-        final_chunks: list[str] = []
-        thinking_buffer: list[str] = []
-        in_thinking = True
-        final_answer_started = False
-        final_answer_extracted = False
-        thinking_logged = False
-        should_stop = False
-
-        try:
-            agent_input = self._prepare_input(query)
-            async for event in self._agent_executor.astream_events(
-                agent_input,
-                version="v1",
-            ):
-                event_type = event.get("event")
-                data = event.get("data", {}) or {}
-                run_id = event.get("run_id")
-
-                if event_type == "on_tool_start":
-                    self._handle_tool_start(request_id, run_id, data, check_repeated=False)
-                    continue
-
-                if event_type == "on_tool_end":
-                    tool_result = self._handle_tool_end(request_id, run_id, data)
-                    extracted_url = tool_result.get("extracted_url")
-                    if extracted_url:
-                        yield {
-                            "type": "image",
-                            "url": extracted_url,
-                            "meta": {
-                                "request_id": request_id,
-                                "tool": tool_result["meta"].get("name"),
-                            },
-                        }
-                    continue
-
-                if event_type in ("on_chat_model_stream", "on_llm_stream"):
-                    text = self._extract_stream_text(data)
-                    if not text:
-                        continue
-
-                    parse_result = self._parse_thinking_and_final_answer(
-                        text, thinking_buffer, final_answer_started,
-                        final_answer_extracted, thinking_logged, request_id,
-                    )
-                    thinking_buffer = parse_result["thinking_buffer"]
-                    final_answer_started = parse_result["final_answer_started"]
-                    final_answer_extracted = parse_result["final_answer_extracted"]
-                    thinking_logged = parse_result["thinking_logged"]
-
-                    if not parse_result["should_continue"]:
-                        if parse_result["final_answer_text"]:
-                            final_chunks.append(parse_result["final_answer_text"])
-                            yield {"type": "text", "content": parse_result["final_answer_text"]}
-                        continue
-
-                    if parse_result["is_final_answer_chunk"]:
-                        final_chunks.append(text)
-                        yield {"type": "text", "content": text}
-                    elif parse_result["is_thinking"]:
-                        yield {"type": "thinking", "content": text}
-                    continue
-
-        except Exception as e:
-            logger.error(f"[{request_id}] ❌ 事件流生成失败：{e}")
-            fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
-            yield {"type": "text", "content": fallback}
-            self._save_to_memory(query, fallback)
-        else:
-            final_response = "".join(final_chunks)
-            self._save_to_memory(query, final_response)
-
-            if not thinking_logged and thinking_buffer:
-                logger.info(f"[{request_id}] 🔍 Thinking: {''.join(thinking_buffer)}")
-            logger.info(f"[{request_id}] ✅ 事件流完成，响应长度：{len(final_response)} 字符")
-        finally:
-            self._finalize_request(request_id)
+    async def generate_sse(
+        self, query: str, image_path: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """返回可直接写入 StreamingResponse 的 SSE 文本流。"""
+        adapter = SSEEventAdapter()
+        async for chunk in self._stream_with_adapter(
+            query,
+            adapter,
+            stop_on_repeated_action=False,
+            response_mode="final_answer",
+        ):
+            yield chunk

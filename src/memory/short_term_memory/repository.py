@@ -42,6 +42,8 @@ class ShortTermMemoryRepository(SQLiteRepository):
                     tool_name TEXT NOT NULL,
                     input_summary TEXT NOT NULL DEFAULT '',
                     output_summary TEXT NOT NULL DEFAULT '',
+                    output_is_summary INTEGER NOT NULL DEFAULT 0,
+                    output_is_truncated INTEGER NOT NULL DEFAULT 0,
                     tool_input TEXT NOT NULL DEFAULT '',
                     result_summary TEXT NOT NULL DEFAULT '',
                     timestamp REAL NOT NULL,
@@ -75,6 +77,8 @@ class ShortTermMemoryRepository(SQLiteRepository):
             self._ensure_column(conn, "stm_messages", "seq", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "stm_tool_calls", "input_summary", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "stm_tool_calls", "output_summary", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "stm_tool_calls", "output_is_summary", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "stm_tool_calls", "output_is_truncated", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "stm_tool_calls", "tool_input", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "stm_tool_calls", "result_summary", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "stm_tool_calls", "status", "TEXT NOT NULL DEFAULT 'success'")
@@ -142,6 +146,8 @@ class ShortTermMemoryRepository(SQLiteRepository):
                     timestamp=row["timestamp"],
                     input_summary=row["input_summary"],
                     output_summary=row["output_summary"],
+                    output_is_summary=bool(row["output_is_summary"]),
+                    output_is_truncated=bool(row["output_is_truncated"]),
                     status=row["status"],
                     importance=row["importance"],
                 )
@@ -151,6 +157,8 @@ class ShortTermMemoryRepository(SQLiteRepository):
                         tool_name,
                         CASE WHEN input_summary != '' THEN input_summary ELSE tool_input END AS input_summary,
                         CASE WHEN output_summary != '' THEN output_summary ELSE result_summary END AS output_summary,
+                        output_is_summary,
+                        output_is_truncated,
                         timestamp,
                         CASE
                             WHEN status != '' THEN status
@@ -224,15 +232,17 @@ class ShortTermMemoryRepository(SQLiteRepository):
             conn.execute(
                 """
                 INSERT INTO stm_tool_calls (
-                    session_id, tool_name, input_summary, output_summary, timestamp, status, importance,
-                    tool_input, result_summary, success
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    session_id, tool_name, input_summary, output_summary, output_is_summary, output_is_truncated,
+                    timestamp, status, importance, tool_input, result_summary, success
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
                     tool_call.tool_name,
                     tool_call.input_summary,
                     tool_call.output_summary,
+                    int(tool_call.output_is_summary),
+                    int(tool_call.output_is_truncated),
                     tool_call.timestamp,
                     tool_call.status,
                     tool_call.importance,

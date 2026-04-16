@@ -15,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from src.agent import AstroAgent
+from src.agent.streaming_events import SSEEventAdapter
 from src.agent.streaming_service import StreamingService
 from src.memory.memory import ShortTermMemory
 from src.memory.long_term_memory import (
@@ -178,6 +179,7 @@ class SessionManager:
 
 
 session_manager = SessionManager()
+sse_adapter = SSEEventAdapter()
 
 
 class QueryRequest(BaseModel):
@@ -223,8 +225,8 @@ async def query_endpoint(request: Request, body: QueryRequest):
     session = session_manager.get_session(user_id)
 
     async def generate():
-        async for event in session.streaming_service.generate_events(body.query):
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        async for chunk in session.streaming_service.generate_sse(body.query):
+            yield chunk
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -271,9 +273,11 @@ async def query_with_image_endpoint(
     session = session_manager.get_session(effective_user_id)
 
     async def generate():
-        yield f"data: {json.dumps({'type': 'image', 'url': image_url, 'meta': {'source': 'user_upload'}}, ensure_ascii=False)}\n\n"
-        async for event in session.streaming_service.generate_events(query, image_path=save_path):
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        yield sse_adapter.serialize_payload(
+            {"type": "image", "url": image_url, "meta": {"source": "user_upload"}}
+        )
+        async for chunk in session.streaming_service.generate_sse(query, image_path=save_path):
+            yield chunk
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -323,9 +327,11 @@ async def query_with_audio_endpoint(
     )
 
     async def generate():
-        yield f"data: {json.dumps({'type': 'transcription', 'text': augmented_query}, ensure_ascii=False)}\n\n"
-        async for event in session.streaming_service.generate_events(augmented_query):
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        yield sse_adapter.serialize_payload(
+            {"type": "transcription", "text": augmented_query}
+        )
+        async for chunk in session.streaming_service.generate_sse(augmented_query):
+            yield chunk
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

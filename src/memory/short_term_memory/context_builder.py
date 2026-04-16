@@ -93,7 +93,13 @@ class ContextBuilder:
         lines: List[str] = []
         for call in tool_calls[-self.config.max_tool_records :]:
             status = "✓" if call.status == "success" else "✗"
-            line = f"[{status}] {call.tool_name}: {call.output_summary[:120]}"
+            tags: List[str] = []
+            if call.output_is_summary:
+                tags.append("摘要")
+            if call.output_is_truncated:
+                tags.append("已截断")
+            tag_text = f" [{'|'.join(tags)}]" if tags else ""
+            line = f"[{status}] {call.tool_name}{tag_text}: {call.output_summary}"
             tentative = "\n".join(lines + [line])
             if self._estimate_tokens(tentative) > token_budget:
                 break
@@ -129,4 +135,8 @@ class ContextBuilder:
             if self._estimate_tokens(tentative) > token_budget:
                 break
             kept.append(line)
+        marker = "[摘要已截断，非完整原文]"
+        tentative = "\n".join(kept + [marker]) if kept else marker
+        if self._estimate_tokens(tentative) <= token_budget:
+            return tentative
         return "\n".join(kept)

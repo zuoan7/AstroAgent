@@ -54,6 +54,8 @@ class ToolCallRecord:
     timestamp: float
     input_summary: str = ""
     output_summary: str = ""
+    output_is_summary: bool = False
+    output_is_truncated: bool = False
     status: str = "success"
     importance: int = 1
 
@@ -75,6 +77,8 @@ class ToolCallRecord:
             "timestamp": self.timestamp,
             "input_summary": self.input_summary,
             "output_summary": self.output_summary,
+            "output_is_summary": self.output_is_summary,
+            "output_is_truncated": self.output_is_truncated,
             "status": self.status,
             "importance": self.importance,
             "tool_input": self.input_summary,
@@ -92,6 +96,8 @@ class ToolCallRecord:
             timestamp=data["timestamp"],
             input_summary=data.get("input_summary", data.get("tool_input", "")),
             output_summary=data.get("output_summary", data.get("result_summary", "")),
+            output_is_summary=data.get("output_is_summary", False),
+            output_is_truncated=data.get("output_is_truncated", False),
             status=status,
             importance=data.get("importance", 1),
         )

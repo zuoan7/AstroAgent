@@ -2,6 +2,7 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Sequence
 
+from src.core.mcp_protocol import parse_tool_response
 from src.memory.core.models import Message, SalientFact, SessionMemoryState, ToolCallRecord
 from src.memory.short_term_memory.config import ShortTermMemoryConfig
 from src.memory.short_term_memory.context_builder import ContextBuilder
@@ -136,7 +137,7 @@ class ShortTermMemory:
             tool_name=tool_name,
             timestamp=timestamp,
             input_summary=(tool_input or "")[:200],
-            output_summary=self._summarize_tool_result(result),
+            **self._summarize_tool_result(result),
             status="success" if success else "error",
             importance=1 if success else 3,
         )
@@ -223,27 +224,95 @@ class ShortTermMemory:
             self._repository.replace_messages(self.session_id, self.messages)
             self._repository.update_summary(self.session_id, self.summary, self.trimmed_count)
 
-    def _summarize_tool_result(self, result: str) -> str:
+    def _summarize_tool_result(self, result: str) -> Dict[str, Any]:
         if not result:
-            return ""
+            return {
+                "output_summary": "",
+                "output_is_summary": False,
+                "output_is_truncated": False,
+            }
+
         max_len = self.config.tool_result_max_length
+        envelope = parse_tool_response(result)
+        if envelope is not None:
+            summary_text = self._summarize_structured_payload(
+                envelope.model_dump(mode="json"),
+                max_len=max_len,
+            )
+            return {
+                "output_summary": summary_text,
+                "output_is_summary": True,
+                "output_is_truncated": "[已截断]" in summary_text,
+            }
+
         try:
             payload = json.loads(result)
             if isinstance(payload, dict):
-                if "error" in payload:
-                    return f"错误: {payload['error']}"
-                if "answer" in payload:
-                    return str(payload["answer"])[:max_len]
-                items = []
-                for key in list(payload.keys())[:5]:
-                    value = str(payload[key])
-                    if len(value) > 100:
-                        value = value[:100] + "..."
-                    items.append(f"{key}: {value}")
-                return "; ".join(items)[:max_len]
+                summary_text = self._summarize_structured_payload(payload, max_len=max_len)
+                return {
+                    "output_summary": summary_text,
+                    "output_is_summary": True,
+                    "output_is_truncated": "[已截断]" in summary_text,
+                }
         except (TypeError, json.JSONDecodeError):
             pass
-        return result if len(result) <= max_len else result[:max_len] + "..."
+
+        if len(result) <= max_len:
+            return {
+                "output_summary": result,
+                "output_is_summary": False,
+                "output_is_truncated": False,
+            }
+        return {
+            "output_summary": self._truncate_with_marker(result, max_len=max_len, prefix="[摘要][已截断] "),
+            "output_is_summary": True,
+            "output_is_truncated": True,
+        }
+
+    def _summarize_structured_payload(self, payload: Dict[str, Any], max_len: int) -> str:
+        summary = self._build_structured_summary(payload)
+        if len(summary) <= max_len:
+            return f"[摘要] {summary}"
+        return self._truncate_with_marker(summary, max_len=max_len, prefix="[摘要][已截断] ")
+
+    def _build_structured_summary(self, payload: Dict[str, Any]) -> str:
+        if payload.get("ok") is False:
+            error = payload.get("error") or {}
+            code = error.get("code", "UNKNOWN_ERROR")
+            message = error.get("message", "未知错误")
+            details = error.get("details") or {}
+            detail_keys = list(details.keys())[:5]
+            details_part = f"; details={','.join(detail_keys)}" if detail_keys else ""
+            return f"错误结果 code={code}; message={message}{details_part}"
+
+        data = payload.get("data", payload)
+        if isinstance(data, dict):
+            keys = list(data.keys())
+            parts = [f"结构化结果字段={','.join(keys[:8]) or '无'}"]
+            for key in keys[:5]:
+                parts.append(f"{key}={self._preview_value(data.get(key), 80)}")
+            return "; ".join(parts)
+        if isinstance(data, list):
+            preview_items = ", ".join(self._preview_value(item, 40) for item in data[:3])
+            return f"结构化结果列表 count={len(data)}; items={preview_items}"
+        return f"结果={self._preview_value(data, 160)}"
+
+    def _preview_value(self, value: Any, max_len: int) -> str:
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        else:
+            text = str(value)
+        if len(text) <= max_len:
+            return text
+        return text[: max_len - 3] + "..."
+
+    def _truncate_with_marker(self, text: str, max_len: int, prefix: str) -> str:
+        if max_len <= len(prefix):
+            return prefix[:max_len]
+        available = max_len - len(prefix)
+        if len(text) > available:
+            text = text[: max(available - 3, 0)] + ("..." if available >= 3 else "")
+        return prefix + text
 
     def get_context(self, max_tokens: Optional[int] = None) -> str:
         return self.build_context(max_tokens=max_tokens)["context_text"]
