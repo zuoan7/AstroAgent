@@ -8,10 +8,11 @@
       </p>
     </div>
     <div class="hero-meta">
-      <label>
-        <span>User ID</span>
-        <input :value="userId" @input="$emit('update:userId', $event.target.value)" />
-      </label>
+      <div class="hero-summary">
+        <span class="status-pill subtle">账号 {{ accountName }}</span>
+        <span class="status-pill subtle">User {{ userId }}</span>
+        <span class="status-pill subtle">Session {{ sessionId }}</span>
+      </div>
       <label class="toggle">
         <input type="checkbox" :checked="disableLongTermMemory" @change="$emit('toggle-memory', $event.target.checked)" />
         <span>本轮禁用长期记忆</span>
@@ -27,10 +28,12 @@
 
 <script setup>
 defineProps({
+  accountName: { type: String, default: 'Demo Account' },
   userId: { type: String, required: true },
+  sessionId: { type: String, required: true },
   disableLongTermMemory: { type: Boolean, required: true },
   isStreaming: { type: Boolean, required: true },
 })
 
-defineEmits(['update:userId', 'toggle-memory'])
+defineEmits(['toggle-memory'])
 </script>

@@ -81,6 +81,16 @@ def normalize_user_id(user_id: Optional[str]) -> str:
     return settings.DEFAULT_USER_ID
 
 
+def normalize_session_id(session_id: Optional[str]) -> str:
+    if session_id and session_id.strip():
+        return session_id.strip()
+    return "default"
+
+
+def build_session_key(user_id: str, session_id: str) -> str:
+    return f"{user_id}::{session_id}"
+
+
 class _AgentHolder:
     """懒加载Agent持有器，支持初始化失败降级"""
 
@@ -129,9 +139,14 @@ def get_agent():
 
 
 class SessionData:
-    def __init__(self, user_id: str, agent: AstroAgent):
+    def __init__(self, user_id: str, session_id: str, agent: AstroAgent):
         self.user_id = user_id
-        self.memory = ShortTermMemory(session_id=f"stm_{user_id}", user_id=user_id)
+        self.session_id = session_id
+        self.session_key = build_session_key(user_id, session_id)
+        self.memory = ShortTermMemory(
+            session_id=f"stm_{self.session_key}",
+            user_id=user_id,
+        )
         self.streaming_service = StreamingService(
             agent_executor=agent._agent_executor,
             memory=self.memory,
@@ -150,29 +165,52 @@ class SessionManager:
         self._cleanup_interval = cleanup_interval or settings.SESSION_CLEANUP_INTERVAL_SECONDS
         self._last_cleanup = time.time()
 
-    def get_session(self, user_id: str) -> SessionData:
+    def get_session(self, user_id: str, session_id: Optional[str] = None) -> SessionData:
         with self._lock:
             now = time.time()
             if now - self._last_cleanup > self._cleanup_interval:
                 self._cleanup_stale_sessions()
 
-            if user_id not in self._sessions:
-                agent = get_agent()
-                logger.info(f"创建新会话: user_id={user_id}")
-                self._sessions[user_id] = SessionData(user_id, agent)
+            effective_session_id = normalize_session_id(session_id)
+            session_key = build_session_key(user_id, effective_session_id)
 
-            session = self._sessions[user_id]
+            if session_key not in self._sessions:
+                agent = get_agent()
+                logger.info(
+                    f"创建新会话: user_id={user_id}, session_id={effective_session_id}"
+                )
+                self._sessions[session_key] = SessionData(
+                    user_id, effective_session_id, agent
+                )
+
+            session = self._sessions[session_key]
             session.last_access_time = now
             return session
 
-    def clear_session(self, user_id: str) -> bool:
+    def clear_session(self, user_id: str, session_id: Optional[str] = None) -> bool:
         with self._lock:
-            if user_id in self._sessions:
-                self._sessions[user_id].memory.clear()
-                del self._sessions[user_id]
-                logger.info(f"会话已清除: user_id={user_id}")
+            effective_session_id = normalize_session_id(session_id)
+            session_key = build_session_key(user_id, effective_session_id)
+            if session_key in self._sessions:
+                self._sessions[session_key].memory.clear()
+                del self._sessions[session_key]
+                logger.info(
+                    f"会话已清除: user_id={user_id}, session_id={effective_session_id}"
+                )
                 return True
             return False
+
+    def clear_sessions_for_user(self, user_id: str) -> int:
+        with self._lock:
+            matched_keys = [
+                key for key, session in self._sessions.items() if session.user_id == user_id
+            ]
+            for key in matched_keys:
+                self._sessions[key].memory.clear()
+                del self._sessions[key]
+            if matched_keys:
+                logger.info(f"已清除用户全部会话: user_id={user_id}, count={len(matched_keys)}")
+            return len(matched_keys)
 
     def _cleanup_stale_sessions(self):
         now = time.time()
@@ -199,6 +237,7 @@ sse_adapter = SSEEventAdapter()
 class QueryRequest(BaseModel):
     query: str
     user_id: Optional[str] = None
+    session_id: Optional[str] = None
     disable_long_term_memory: bool = False
 
 
@@ -237,7 +276,7 @@ async def generic_error_handler(request: Request, exc: Exception):
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def query_endpoint(request: Request, body: QueryRequest):
     user_id = normalize_user_id(body.user_id)
-    session = session_manager.get_session(user_id)
+    session = session_manager.get_session(user_id, body.session_id)
 
     async def generate():
         async for chunk in session.streaming_service.generate_sse(
@@ -256,6 +295,7 @@ async def query_with_image_endpoint(
     query: str = Form(...),
     image: UploadFile = File(...),
     user_id: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
 ):
     sanitized_name = sanitize_filename(image.filename or "")
     ext = os.path.splitext(sanitized_name)[1].lower()
@@ -288,7 +328,7 @@ async def query_with_image_endpoint(
 
     image_url = f"/uploads/{file_id}{ext}"
     effective_user_id = normalize_user_id(user_id)
-    session = session_manager.get_session(effective_user_id)
+    session = session_manager.get_session(effective_user_id, session_id)
 
     async def generate():
         yield sse_adapter.serialize_payload(
@@ -307,6 +347,7 @@ async def query_with_audio_endpoint(
     query: str = Form(""),
     audio: UploadFile = File(...),
     user_id: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
 ):
     sanitized_name = sanitize_filename(audio.filename or "")
     ext = os.path.splitext(sanitized_name)[1].lower()
@@ -338,7 +379,7 @@ async def query_with_audio_endpoint(
         f.write(content)
 
     effective_user_id = normalize_user_id(user_id)
-    session = session_manager.get_session(effective_user_id)
+    session = session_manager.get_session(effective_user_id, session_id)
 
     augmented_query = await asyncio.to_thread(
         get_agent().speech_service.build_speech_query, query, save_path
@@ -408,18 +449,27 @@ async def delete_profile_endpoint(request: Request, user_id: Optional[str] = Non
 async def clear_memory_endpoint(
     request: Request,
     user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
     scope: str = Query("all"),
 ):
     effective_user_id = normalize_user_id(user_id)
-    session_manager.clear_session(effective_user_id)
-    cleared = {"session": True, "long_term": False}
-    if scope == "all":
+    effective_session_id = normalize_session_id(session_id)
+    cleared = {"session": False, "all_sessions": False, "long_term": False}
+    if scope == "session":
+        cleared["session"] = session_manager.clear_session(
+            effective_user_id, effective_session_id
+        )
+    else:
+        cleared_count = session_manager.clear_sessions_for_user(effective_user_id)
+        cleared["session"] = cleared_count > 0
+        cleared["all_sessions"] = True
         _get_ltm().delete_profile(effective_user_id)
         cleared["long_term"] = True
     return {
         "status": "success",
         "message": "记忆已清空",
         "user_id": effective_user_id,
+        "session_id": effective_session_id,
         "scope": scope,
         "cleared": cleared,
     }
@@ -749,12 +799,18 @@ async def restore_backup_endpoint(request: Request, backup_path: str):
 
 @app.get("/session/context")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def session_context_endpoint(request: Request, user_id: Optional[str] = None):
+async def session_context_endpoint(
+    request: Request,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+):
     effective_user_id = normalize_user_id(user_id)
-    session = session_manager.get_session(effective_user_id)
+    effective_session_id = normalize_session_id(session_id)
+    session = session_manager.get_session(effective_user_id, effective_session_id)
     return {
         "status": "success",
         "user_id": effective_user_id,
+        "session_id": effective_session_id,
         "session": session.memory.get_debug_info(),
         "context": session.memory.get_context_debug_info(),
         "messages": session.memory.get_all_messages(),
@@ -768,11 +824,13 @@ async def session_context_endpoint(request: Request, user_id: Optional[str] = No
 async def memory_overview_endpoint(
     request: Request,
     user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
     limit: int = 50,
 ):
     effective_user_id = normalize_user_id(user_id)
+    effective_session_id = normalize_session_id(session_id)
     ltm = _get_ltm()
-    session = session_manager.get_session(effective_user_id)
+    session = session_manager.get_session(effective_user_id, effective_session_id)
     profile = ltm.load_profile(effective_user_id) or {
         "user_id": effective_user_id,
         "preferences": {},
@@ -794,6 +852,7 @@ async def memory_overview_endpoint(
     return {
         "status": "success",
         "user_id": effective_user_id,
+        "session_id": effective_session_id,
         "profile": profile,
         "stats": stats,
         "memories": [item.to_dict() for item in memories],

@@ -27,12 +27,12 @@ export const useMemoryStore = defineStore('memory', () => {
     memories.value.filter((item) => item.status === 'active')
   )
 
-  async function refresh(userId) {
+  async function refresh(userId, sessionId) {
     loading.value = true
     try {
       const [overview, session] = await Promise.all([
-        fetchMemoryOverview(userId),
-        fetchSessionContext(userId),
+        fetchMemoryOverview(userId, sessionId),
+        fetchSessionContext(userId, sessionId),
       ])
       profile.value = overview.profile
       stats.value = overview.stats
@@ -51,44 +51,44 @@ export const useMemoryStore = defineStore('memory', () => {
     memoryHits.value = items || []
   }
 
-  async function archiveMemory(userId, memoryId) {
+  async function archiveMemory(userId, sessionId, memoryId) {
     await updateMemory(memoryId, { user_id: userId, status: 'archived' })
-    await refresh(userId)
+    await refresh(userId, sessionId)
   }
 
-  async function confirmMemory(userId, memoryId) {
+  async function confirmMemory(userId, sessionId, memoryId) {
     await updateMemory(memoryId, {
       user_id: userId,
       confirmed_by_user: true,
       metadata: { confirmed_from_workbench: true },
       confidence: 1,
     })
-    await refresh(userId)
+    await refresh(userId, sessionId)
   }
 
-  async function removeMemory(userId, memoryId) {
+  async function removeMemory(userId, sessionId, memoryId) {
     await deleteMemory(memoryId, userId)
-    await refresh(userId)
+    await refresh(userId, sessionId)
   }
 
-  async function acceptCandidate(userId, candidateId) {
+  async function acceptCandidate(userId, sessionId, candidateId) {
     await promoteCandidate(candidateId)
-    await refresh(userId)
+    await refresh(userId, sessionId)
   }
 
-  async function discardCandidate(userId, candidateId) {
+  async function discardCandidate(userId, sessionId, candidateId) {
     await rejectCandidate(candidateId, 'Rejected from workbench')
-    await refresh(userId)
+    await refresh(userId, sessionId)
   }
 
-  async function resolvePending(userId, confirmationId, status) {
+  async function resolvePending(userId, sessionId, confirmationId, status) {
     await resolveConfirmation(confirmationId, status)
-    await refresh(userId)
+    await refresh(userId, sessionId)
   }
 
-  async function clearAll(userId, scope) {
-    await clearMemory(userId, scope)
-    await refresh(userId)
+  async function clearAll(userId, sessionId, scope) {
+    await clearMemory(userId, scope, sessionId)
+    await refresh(userId, sessionId)
   }
 
   return {

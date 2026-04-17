@@ -1,57 +1,113 @@
 <template>
   <main class="app-shell">
-    <WorkbenchHeader
-      :user-id="session.userId"
-      :disable-long-term-memory="session.disableLongTermMemory"
-      :is-streaming="session.isStreaming"
-      @update:user-id="handleUserIdChange"
-      @toggle-memory="(value) => (session.disableLongTermMemory = value)"
-    />
+    <SurfaceSwitcher :mode="session.uiMode" @change="handleModeChange" />
 
-    <QueryConsole
+    <CustomerConsole
+      v-if="session.uiMode === 'customer'"
       v-model="session.queryInput"
+      :accounts="session.accounts"
+      :active-account-id="session.activeAccountId"
+      :active-account-name="session.activeAccount?.name || 'Demo Account'"
+      :conversations="session.conversations"
+      :active-conversation-id="session.sessionId"
+      :active-conversation-title="session.activeConversation?.title || '会话'"
+      :user-id="session.userId"
+      :session-id="session.sessionId"
+      :messages="chat.messages"
+      :streaming-answer="chat.streamingAnswer"
       :disabled="session.isStreaming"
+      :is-streaming="session.isStreaming"
       :error="session.lastError"
+      :image-file-name="pendingImageFileName"
+      :audio-file-name="pendingAudioFileName"
+      :image-preview-url="pendingImagePreviewUrl"
+      :upload-state="uploadState"
+      :is-recording="isRecording"
+      :can-record="canRecord"
+      :recording-duration-sec="recordingDurationSec"
       @submit="handleSubmit"
-      @refresh="refreshMemory"
-      @clear-session="clearAllMemory"
+      @add-account="handleAddAccount"
+      @select-account="handleSelectAccount"
+      @add-conversation="handleAddConversation"
+      @select-conversation="handleSelectConversation"
+      @remove-conversation="handleRemoveConversation"
+      @clear-session="clearCurrentSession"
+      @select-image="handleImageSelected"
+      @select-audio="handleAudioSelected"
+      @clear-image="clearPendingImage"
+      @clear-audio="clearPendingAudio"
+      @toggle-recording="toggleRecording"
     />
 
-    <section class="content-grid">
-      <PlanPanel :steps="plan.steps" :overview="trace.overview" />
-      <TracePanel
-        :items="trace.items"
-        :reasoning-summary="trace.reasoningSummary"
-        :overview="trace.overview"
+    <template v-else>
+      <WorkbenchHeader
+        :account-name="session.activeAccount?.name || 'Demo Account'"
+        :user-id="session.userId"
+        :session-id="session.sessionId"
+        :disable-long-term-memory="session.disableLongTermMemory"
+        :is-streaming="session.isStreaming"
+        @toggle-memory="(value) => (session.disableLongTermMemory = value)"
       />
-      <EvidencePanel :items="evidence.items" />
-      <ChatPanel
-        :messages="chat.messages"
-        :streaming-answer="chat.streamingAnswer"
-        :final-answer="chat.finalAnswer"
+
+      <QueryConsole
+        v-model="session.queryInput"
+        :disabled="session.isStreaming"
+        :error="session.lastError"
+        :image-file-name="pendingImageFileName"
+        :audio-file-name="pendingAudioFileName"
+        :image-preview-url="pendingImagePreviewUrl"
+        :upload-state="uploadState"
+        :is-recording="isRecording"
+        :can-record="canRecord"
+        :recording-duration-sec="recordingDurationSec"
+        @submit="handleSubmit"
+        @refresh="refreshMemory"
+        @clear-session="clearCurrentSession"
+        @select-image="handleImageSelected"
+        @select-audio="handleAudioSelected"
+        @clear-image="clearPendingImage"
+        @clear-audio="clearPendingAudio"
+        @toggle-recording="toggleRecording"
       />
-      <MemoryPanel
-        :profile="memory.profile"
-        :stats="memory.stats"
-        :memories="memory.memories"
-        :candidates="memory.candidates"
-        :confirmations="memory.confirmations"
-        :memory-hits="memory.memoryHits"
-        :short-term="memory.shortTerm"
-        :loading="memory.loading"
-        @confirm-memory="(id) => memory.confirmMemory(session.userId, id)"
-        @archive-memory="(id) => memory.archiveMemory(session.userId, id)"
-        @delete-memory="(id) => memory.removeMemory(session.userId, id)"
-        @accept-candidate="(id) => memory.acceptCandidate(session.userId, id)"
-        @reject-candidate="(id) => memory.discardCandidate(session.userId, id)"
-        @resolve-confirmation="(id, status) => memory.resolvePending(session.userId, id, status)"
-      />
-    </section>
+
+      <section class="content-grid">
+        <PlanPanel :steps="plan.steps" :overview="trace.overview" />
+        <TracePanel
+          :items="trace.items"
+          :reasoning-summary="trace.reasoningSummary"
+          :overview="trace.overview"
+        />
+        <EvidencePanel :items="evidence.items" />
+        <ChatPanel
+          :messages="chat.messages"
+          :streaming-answer="chat.streamingAnswer"
+          :final-answer="chat.finalAnswer"
+        />
+        <MemoryPanel
+          :profile="memory.profile"
+          :stats="memory.stats"
+          :memories="memory.memories"
+          :candidates="memory.candidates"
+          :confirmations="memory.confirmations"
+          :memory-hits="memory.memoryHits"
+          :short-term="memory.shortTerm"
+          :loading="memory.loading"
+          @confirm-memory="(id) => memory.confirmMemory(session.userId, session.sessionId, id)"
+          @archive-memory="(id) => memory.archiveMemory(session.userId, session.sessionId, id)"
+          @delete-memory="(id) => memory.removeMemory(session.userId, session.sessionId, id)"
+          @accept-candidate="(id) => memory.acceptCandidate(session.userId, session.sessionId, id)"
+          @reject-candidate="(id) => memory.discardCandidate(session.userId, session.sessionId, id)"
+          @resolve-confirmation="(id, status) => memory.resolvePending(session.userId, session.sessionId, id, status)"
+        />
+      </section>
+    </template>
   </main>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import SurfaceSwitcher from './components/SurfaceSwitcher.vue'
+import CustomerConsole from './components/CustomerConsole.vue'
 import WorkbenchHeader from './components/WorkbenchHeader.vue'
 import QueryConsole from './components/QueryConsole.vue'
 import PlanPanel from './components/PlanPanel.vue'
@@ -59,7 +115,7 @@ import TracePanel from './components/TracePanel.vue'
 import EvidencePanel from './components/EvidencePanel.vue'
 import MemoryPanel from './components/MemoryPanel.vue'
 import ChatPanel from './components/ChatPanel.vue'
-import { streamQuery } from './lib/api'
+import { resolveAssetUrl, streamAudioQuery, streamImageQuery, streamQuery } from './lib/api'
 import { useSessionStore } from './stores/session'
 import { usePlanStore } from './stores/plan'
 import { useTraceStore } from './stores/trace'
@@ -73,22 +129,47 @@ const trace = useTraceStore()
 const evidence = useEvidenceStore()
 const memory = useMemoryStore()
 const chat = useChatStore()
+const pendingImageFile = ref(null)
+const pendingAudioFile = ref(null)
+const pendingImagePreviewUrl = ref('')
+const uploadState = ref('idle')
+const isRecording = ref(false)
+const recordingDurationSec = ref(0)
+const mediaRecorder = ref(null)
+const mediaStream = ref(null)
+const recordingChunks = ref([])
+const recordingTimer = ref(null)
 
-async function refreshMemory() {
-  try {
-    await memory.refresh(session.userId)
-  } catch (error) {
-    session.setError(String(error))
-  }
-}
+const pendingImageFileName = computed(() => pendingImageFile.value?.name || '')
+const pendingAudioFileName = computed(() => pendingAudioFile.value?.name || '')
+const canRecord = computed(
+  () => typeof navigator !== 'undefined'
+    && typeof navigator.mediaDevices?.getUserMedia === 'function'
+    && typeof window !== 'undefined'
+    && typeof window.MediaRecorder !== 'undefined'
+)
 
-function resetRealtimeStores(query) {
+function resetRealtimeStores(payload = '') {
   plan.reset()
   trace.reset()
   trace.startRun()
   evidence.reset()
   memory.setMemoryHits([])
-  chat.resetForNewQuery(query)
+  if (payload) {
+    chat.resetForNewQuery(payload)
+  }
+}
+
+async function refreshMemory(options = {}) {
+  const { hydrateChat = true } = options
+  try {
+    await memory.refresh(session.userId, session.sessionId)
+    if (hydrateChat) {
+      chat.hydrateMessages(memory.shortTerm?.messages || [])
+    }
+  } catch (error) {
+    session.setError(String(error))
+  }
 }
 
 function handleEvent(event) {
@@ -124,6 +205,14 @@ function handleEvent(event) {
     case 'text':
       chat.appendText(event.content)
       break
+    case 'image':
+      chat.attachImageToLatestUserMessage(resolveAssetUrl(event.url))
+      uploadState.value = 'sent'
+      break
+    case 'transcription':
+      chat.attachTranscriptionToLatestUserMessage(event.text || '')
+      uploadState.value = 'sent'
+      break
     case 'reasoning_summary':
       trace.reasoningSummary = event.summary || event.content || ''
       break
@@ -138,43 +227,278 @@ function handleEvent(event) {
   }
 }
 
+function clearPendingImage() {
+  if (pendingImagePreviewUrl.value) {
+    URL.revokeObjectURL(pendingImagePreviewUrl.value)
+  }
+  pendingImageFile.value = null
+  pendingImagePreviewUrl.value = ''
+  if (!pendingAudioFile.value && !isRecording.value) {
+    uploadState.value = 'idle'
+  }
+}
+
+function clearPendingAudio() {
+  pendingAudioFile.value = null
+  if (!pendingImageFile.value && !isRecording.value) {
+    uploadState.value = 'idle'
+  }
+}
+
+function clearPendingUploads() {
+  clearPendingImage()
+  clearPendingAudio()
+}
+
+function handleImageSelected(file) {
+  if (!file) {
+    clearPendingImage()
+    return
+  }
+  clearPendingImage()
+  pendingImageFile.value = file
+  pendingImagePreviewUrl.value = URL.createObjectURL(file)
+  uploadState.value = 'preview'
+  clearPendingAudio()
+}
+
+function handleAudioSelected(file) {
+  if (!file) {
+    clearPendingAudio()
+    return
+  }
+  pendingAudioFile.value = file
+  uploadState.value = 'ready'
+  clearPendingImage()
+}
+
+function stopRecordingTimer() {
+  if (recordingTimer.value) {
+    window.clearInterval(recordingTimer.value)
+    recordingTimer.value = null
+  }
+}
+
+function releaseMediaStream() {
+  if (mediaStream.value) {
+    mediaStream.value.getTracks().forEach((track) => track.stop())
+    mediaStream.value = null
+  }
+}
+
+async function toggleRecording() {
+  if (isRecording.value) {
+    mediaRecorder.value?.stop()
+    return
+  }
+  if (!canRecord.value) {
+    session.setError('当前浏览器不支持录音。')
+    return
+  }
+
+  try {
+    session.setError('')
+    clearPendingUploads()
+    recordingChunks.value = []
+    mediaStream.value = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new window.MediaRecorder(mediaStream.value)
+    mediaRecorder.value = recorder
+    recorder.ondataavailable = (event) => {
+      if (event.data?.size) {
+        recordingChunks.value.push(event.data)
+      }
+    }
+    recorder.onstop = () => {
+      const blob = new Blob(recordingChunks.value, { type: recorder.mimeType || 'audio/webm' })
+      const extension = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm'
+      const file = new File([blob], `recording-${Date.now()}.${extension}`, { type: blob.type || 'audio/webm' })
+      isRecording.value = false
+      recordingDurationSec.value = 0
+      stopRecordingTimer()
+      releaseMediaStream()
+      mediaRecorder.value = null
+      recordingChunks.value = []
+      handleAudioSelected(file)
+    }
+    recorder.onerror = () => {
+      session.setError('录音失败，请重试。')
+      isRecording.value = false
+      recordingDurationSec.value = 0
+      stopRecordingTimer()
+      releaseMediaStream()
+      mediaRecorder.value = null
+      recordingChunks.value = []
+      uploadState.value = 'idle'
+    }
+    recorder.start()
+    isRecording.value = true
+    recordingDurationSec.value = 0
+    uploadState.value = 'recording'
+    recordingTimer.value = window.setInterval(() => {
+      recordingDurationSec.value += 1
+    }, 1000)
+  } catch {
+    session.setError('无法访问麦克风，请检查浏览器权限。')
+    stopRecordingTimer()
+    releaseMediaStream()
+    mediaRecorder.value = null
+    uploadState.value = 'idle'
+  }
+}
+
 async function handleSubmit() {
   const query = session.queryInput.trim()
-  if (!query || session.isStreaming) {
+  const hasImage = Boolean(pendingImageFile.value)
+  const hasAudio = Boolean(pendingAudioFile.value)
+
+  if (session.isStreaming || (!query && !hasAudio)) {
+    return
+  }
+  if (hasImage && !query) {
+    session.setError('图片提问需要同时输入文本问题。')
     return
   }
 
   session.resetRun()
   session.setStreaming(true)
-  resetRealtimeStores(query)
+  resetRealtimeStores({
+    query: query || (hasAudio ? '已发送语音' : ''),
+    attachment: hasImage
+      ? {
+          kind: 'image',
+          name: pendingImageFile.value?.name || '',
+          imageUrl: pendingImagePreviewUrl.value,
+          localPreviewUrl: pendingImagePreviewUrl.value,
+          status: 'uploading',
+        }
+      : hasAudio
+        ? {
+          kind: 'audio',
+          name: pendingAudioFile.value?.name || '',
+          status: 'uploading',
+        }
+        : null,
+  })
 
   try {
-    await streamQuery({
-      query,
-      userId: session.userId,
-      disableLongTermMemory: session.disableLongTermMemory,
-      onEvent: handleEvent,
-    })
-    await refreshMemory()
+    if (hasImage) {
+      uploadState.value = 'uploading'
+      await streamImageQuery({
+        query,
+        image: pendingImageFile.value,
+        userId: session.userId,
+        sessionId: session.sessionId,
+        onEvent: handleEvent,
+      })
+    } else if (hasAudio) {
+      uploadState.value = 'uploading'
+      await streamAudioQuery({
+        query,
+        audio: pendingAudioFile.value,
+        userId: session.userId,
+        sessionId: session.sessionId,
+        onEvent: handleEvent,
+      })
+    } else {
+      await streamQuery({
+        query,
+        userId: session.userId,
+        sessionId: session.sessionId,
+        disableLongTermMemory: session.disableLongTermMemory,
+        onEvent: handleEvent,
+      })
+    }
+    await refreshMemory({ hydrateChat: !hasImage && !hasAudio })
+    clearPendingUploads()
+    session.queryInput = ''
   } catch (error) {
+    chat.markLatestUserAttachmentFailed()
+    uploadState.value = 'failed'
     session.setError(String(error))
   } finally {
     session.setStreaming(false)
   }
 }
 
-async function clearAllMemory() {
+async function clearCurrentSession() {
   try {
-    await memory.clearAll(session.userId, 'all')
+    await memory.clearAll(session.userId, session.sessionId, 'session')
+    resetRealtimeStores()
+    chat.clearConversation()
+    clearPendingUploads()
   } catch (error) {
     session.setError(String(error))
   }
 }
 
-async function handleUserIdChange(value) {
-  session.setUserId(value)
+async function handleAddAccount(name) {
+  session.addAccount(name)
+  resetRealtimeStores()
+  chat.clearConversation()
+  clearPendingUploads()
   await refreshMemory()
 }
 
+async function handleSelectAccount(accountId) {
+  session.setActiveAccount(accountId)
+  resetRealtimeStores()
+  chat.clearConversation()
+  clearPendingUploads()
+  await refreshMemory()
+}
+
+async function handleAddConversation(title) {
+  session.addConversation(title)
+  resetRealtimeStores()
+  chat.clearConversation()
+  clearPendingUploads()
+  await refreshMemory()
+}
+
+async function handleSelectConversation(conversationId) {
+  session.setActiveConversation(conversationId)
+  resetRealtimeStores()
+  chat.clearConversation()
+  clearPendingUploads()
+  await refreshMemory()
+}
+
+async function handleRemoveConversation(conversationId) {
+  const target = session.conversations.find((item) => item.id === conversationId)
+  if (!target) {
+    return
+  }
+  const confirmed = window.confirm(`确认删除会话“${target.title}”吗？`)
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    await memory.clearAll(session.userId, conversationId, 'session')
+  } catch (error) {
+    session.setError(String(error))
+    return
+  }
+
+  session.removeConversation(conversationId)
+  resetRealtimeStores()
+  chat.clearConversation()
+  clearPendingUploads()
+  await refreshMemory()
+}
+
+function handleModeChange(mode) {
+  session.setMode(mode)
+}
+
 onMounted(refreshMemory)
+
+onBeforeUnmount(() => {
+  stopRecordingTimer()
+  if (isRecording.value) {
+    mediaRecorder.value?.stop()
+  }
+  releaseMediaStream()
+  clearPendingImage()
+})
 </script>
