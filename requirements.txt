@@ -40,9 +40,6 @@ uvicorn
 websockets
 slowapi
 
-# Streamlit UI
-streamlit
-
 # Tools
 rich
 

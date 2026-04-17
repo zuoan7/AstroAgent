@@ -55,7 +55,7 @@ def mock_heavy_dependencies():
         "dashscope.multi_modal", "dashscope.protocol",
         "chromadb", "rank_bm25", "fastmcp", "langchain_mcp_adapters",
         "astroquery", "astroquery.simbad", "astroquery.ned",
-        "streamlit", "rich", "langchain_text_splitters",
+        "rich", "langchain_text_splitters",
         "skyfield", "skyfield.api", "skyfield.iokit", "skyfield.timelib",
         "skyfield.toposlib", "skyfield.units", "skyfield.almanac",
         "astropy", "astropy.coordinates", "astropy.time", "astropy.units",

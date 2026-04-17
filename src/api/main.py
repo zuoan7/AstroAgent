@@ -5,9 +5,10 @@ import threading
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Request, UploadFile, File, Form
+from fastapi import FastAPI, Request, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -35,6 +36,13 @@ import asyncio
 
 
 app = FastAPI(title="天文Agent API", description="具有短期记忆、长期记忆和流式输出的天文知识助手")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -65,6 +73,12 @@ def validate_upload_path(save_path: str) -> bool:
 def validate_file_type(filename: str, allowed_extensions: set) -> bool:
     ext = os.path.splitext(filename or "")[1].lower()
     return ext in allowed_extensions
+
+
+def normalize_user_id(user_id: Optional[str]) -> str:
+    if user_id and user_id.strip():
+        return user_id.strip()
+    return settings.DEFAULT_USER_ID
 
 
 class _AgentHolder:
@@ -185,6 +199,7 @@ sse_adapter = SSEEventAdapter()
 class QueryRequest(BaseModel):
     query: str
     user_id: Optional[str] = None
+    disable_long_term_memory: bool = False
 
 
 class KnowledgeRequest(BaseModel):
@@ -221,11 +236,14 @@ async def generic_error_handler(request: Request, exc: Exception):
 @app.post("/query")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def query_endpoint(request: Request, body: QueryRequest):
-    user_id = body.user_id or settings.DEFAULT_USER_ID
+    user_id = normalize_user_id(body.user_id)
     session = session_manager.get_session(user_id)
 
     async def generate():
-        async for chunk in session.streaming_service.generate_sse(body.query):
+        async for chunk in session.streaming_service.generate_sse(
+            body.query,
+            use_long_term_memory=not body.disable_long_term_memory,
+        ):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -269,7 +287,7 @@ async def query_with_image_endpoint(
         f.write(content)
 
     image_url = f"/uploads/{file_id}{ext}"
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     session = session_manager.get_session(effective_user_id)
 
     async def generate():
@@ -319,7 +337,7 @@ async def query_with_audio_endpoint(
     with open(save_path, "wb") as f:
         f.write(content)
 
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     session = session_manager.get_session(effective_user_id)
 
     augmented_query = await asyncio.to_thread(
@@ -346,7 +364,7 @@ async def add_knowledge_endpoint(request: Request, body: KnowledgeRequest):
 @app.get("/profile")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def get_profile_endpoint(request: Request, user_id: Optional[str] = None):
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     ltm = get_agent().long_term_memory
     profile = ltm.load_profile(effective_user_id)
     if profile:
@@ -377,7 +395,7 @@ async def get_profile_endpoint(request: Request, user_id: Optional[str] = None):
 @app.delete("/profile")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def delete_profile_endpoint(request: Request, user_id: Optional[str] = None):
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     deleted = get_agent().long_term_memory.delete_profile(effective_user_id)
     if deleted:
         return {"status": "success", "message": "用户画像已删除", "user_id": effective_user_id}
@@ -387,10 +405,24 @@ async def delete_profile_endpoint(request: Request, user_id: Optional[str] = Non
 
 @app.post("/clear_memory")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def clear_memory_endpoint(request: Request, user_id: Optional[str] = None):
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+async def clear_memory_endpoint(
+    request: Request,
+    user_id: Optional[str] = None,
+    scope: str = Query("all"),
+):
+    effective_user_id = normalize_user_id(user_id)
     session_manager.clear_session(effective_user_id)
-    return {"status": "success", "message": "记忆已清空", "user_id": effective_user_id}
+    cleared = {"session": True, "long_term": False}
+    if scope == "all":
+        _get_ltm().delete_profile(effective_user_id)
+        cleared["long_term"] = True
+    return {
+        "status": "success",
+        "message": "记忆已清空",
+        "user_id": effective_user_id,
+        "scope": scope,
+        "cleared": cleared,
+    }
 
 
 class MemoryCreateRequest(BaseModel):
@@ -411,6 +443,7 @@ class MemoryUpdateRequest(BaseModel):
     confidence: Optional[float] = None
     status: Optional[str] = None
     priority: Optional[int] = None
+    confirmed_by_user: Optional[bool] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -455,7 +488,7 @@ def _get_ltm() -> LongTermMemoryManager:
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def create_memory_endpoint(request: Request, body: MemoryCreateRequest):
     ltm = _get_ltm()
-    effective_user_id = body.user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(body.user_id)
     item = ltm.add_memory(
         user_id=effective_user_id,
         memory_type=body.memory_type,
@@ -482,7 +515,7 @@ async def get_memory_endpoint(request: Request, memory_id: str, user_id: Optiona
     item = ltm.get_memory(memory_id)
     if not item:
         raise AgentError(code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆不存在: {memory_id}")
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     if item.user_id != effective_user_id:
         raise AgentError(code=ErrorCode.MEMORY_ACCESS_DENIED, message="无权访问该记忆")
     return {"status": "success", "memory": item.to_dict()}
@@ -492,7 +525,7 @@ async def get_memory_endpoint(request: Request, memory_id: str, user_id: Optiona
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def update_memory_endpoint(request: Request, memory_id: str, body: MemoryUpdateRequest):
     ltm = _get_ltm()
-    effective_user_id = body.user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(body.user_id)
     item = ltm.update_memory(
         memory_id=memory_id,
         user_id=effective_user_id,
@@ -500,6 +533,7 @@ async def update_memory_endpoint(request: Request, memory_id: str, body: MemoryU
         confidence=body.confidence,
         status=body.status,
         priority=body.priority,
+        confirmed_by_user=body.confirmed_by_user,
         metadata=body.metadata,
     )
     if not item:
@@ -511,7 +545,7 @@ async def update_memory_endpoint(request: Request, memory_id: str, body: MemoryU
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def delete_memory_endpoint(request: Request, memory_id: str, user_id: Optional[str] = None):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     deleted = ltm.delete_memory(memory_id, effective_user_id)
     if not deleted:
         raise AgentError(code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆不存在或无权删除: {memory_id}")
@@ -522,7 +556,7 @@ async def delete_memory_endpoint(request: Request, memory_id: str, user_id: Opti
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def query_memories_endpoint(request: Request, body: MemoryQueryRequest):
     ltm = _get_ltm()
-    effective_user_id = body.user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(body.user_id)
     query = MemoryQuery(
         user_id=effective_user_id,
         memory_type=body.memory_type,
@@ -565,7 +599,7 @@ async def get_memory_versions_endpoint(request: Request, memory_id: str, limit: 
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def restore_memory_version_endpoint(request: Request, memory_id: str, version: int, user_id: Optional[str] = None):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     item = ltm.restore_memory_version(memory_id, version, effective_user_id)
     if not item:
         raise AgentError(code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆或版本不存在: {memory_id} v{version}")
@@ -576,7 +610,7 @@ async def restore_memory_version_endpoint(request: Request, memory_id: str, vers
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def get_memory_trace_endpoint(request: Request, memory_id: str, user_id: Optional[str] = None):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     trace = ltm.get_memory_trace(effective_user_id, memory_id)
     return {
         "status": "success",
@@ -589,7 +623,7 @@ async def get_memory_trace_endpoint(request: Request, memory_id: str, user_id: O
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def list_candidates_endpoint(request: Request, user_id: Optional[str] = None, limit: int = 50, offset: int = 0):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     candidates = ltm.list_candidates(effective_user_id, limit=limit, offset=offset)
     return {
         "status": "success",
@@ -621,7 +655,7 @@ async def reject_candidate_endpoint(request: Request, candidate_id: str, reason:
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def list_confirmations_endpoint(request: Request, user_id: Optional[str] = None, limit: int = 20):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     confirmations = ltm.list_pending_confirmations(effective_user_id, limit=limit)
     return {
         "status": "success",
@@ -643,7 +677,7 @@ async def resolve_confirmation_endpoint(request: Request, confirmation_id: str, 
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def batch_confirm_endpoint(request: Request, body: BatchConfirmRequest):
     ltm = _get_ltm()
-    effective_user_id = body.user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(body.user_id)
     results = ltm.batch_confirm(effective_user_id, body.confirmation_ids, body.status)
     return {
         "status": "success",
@@ -659,7 +693,7 @@ async def list_events_endpoint(
     memory_id: Optional[str] = None, limit: int = 50, offset: int = 0
 ):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     events = ltm.get_event_logs(effective_user_id, memory_id=memory_id, limit=limit, offset=offset)
     return {
         "status": "success",
@@ -671,7 +705,7 @@ async def list_events_endpoint(
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def memory_stats_endpoint(request: Request, user_id: Optional[str] = None):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     stats = ltm.get_stats(effective_user_id)
     return {"status": "success", "stats": stats}
 
@@ -680,7 +714,7 @@ async def memory_stats_endpoint(request: Request, user_id: Optional[str] = None)
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def memory_maintenance_endpoint(request: Request, user_id: Optional[str] = None):
     ltm = _get_ltm()
-    effective_user_id = user_id or settings.DEFAULT_USER_ID
+    effective_user_id = normalize_user_id(user_id)
     result = ltm.run_maintenance(effective_user_id)
     return {"status": "success", "result": result}
 
@@ -711,6 +745,69 @@ async def restore_backup_endpoint(request: Request, backup_path: str):
     if not success:
         raise AgentError(code=ErrorCode.MEMORY_BACKUP_ERROR, message="备份恢复失败")
     return {"status": "success", "message": "数据库恢复成功"}
+
+
+@app.get("/session/context")
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def session_context_endpoint(request: Request, user_id: Optional[str] = None):
+    effective_user_id = normalize_user_id(user_id)
+    session = session_manager.get_session(effective_user_id)
+    return {
+        "status": "success",
+        "user_id": effective_user_id,
+        "session": session.memory.get_debug_info(),
+        "context": session.memory.get_context_debug_info(),
+        "messages": session.memory.get_all_messages(),
+        "tool_calls": session.memory.get_tool_calls(),
+        "salient_facts": session.memory.get_salient_facts(),
+    }
+
+
+@app.get("/memory/overview")
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def memory_overview_endpoint(
+    request: Request,
+    user_id: Optional[str] = None,
+    limit: int = 50,
+):
+    effective_user_id = normalize_user_id(user_id)
+    ltm = _get_ltm()
+    session = session_manager.get_session(effective_user_id)
+    profile = ltm.load_profile(effective_user_id) or {
+        "user_id": effective_user_id,
+        "preferences": {},
+        "habits": {},
+        "constraints": [],
+        "background": {},
+        "facts": [],
+    }
+    memories_query = MemoryQuery(
+        user_id=effective_user_id,
+        limit=limit,
+        offset=0,
+    )
+    memories = ltm.query_memories(memories_query)
+    candidates = ltm.list_candidates(effective_user_id, limit=limit, offset=0)
+    confirmations = ltm.list_pending_confirmations(effective_user_id, limit=min(limit, 20))
+    stats = ltm.get_stats(effective_user_id)
+    recent_events = ltm.get_event_logs(effective_user_id, limit=min(limit, 20), offset=0)
+    return {
+        "status": "success",
+        "user_id": effective_user_id,
+        "profile": profile,
+        "stats": stats,
+        "memories": [item.to_dict() for item in memories],
+        "candidates": [item.to_dict() for item in candidates],
+        "confirmations": [item.to_dict() for item in confirmations],
+        "recent_events": [item.to_dict() for item in recent_events],
+        "short_term": {
+            "summary": session.memory.get_summary(),
+            "messages": session.memory.get_all_messages(),
+            "tool_calls": session.memory.get_tool_calls(),
+            "salient_facts": session.memory.get_salient_facts(),
+            "debug": session.memory.get_debug_info(),
+        },
+    }
 
 
 @app.get("/")

@@ -3,7 +3,7 @@ import re
 import time
 import uuid
 from collections import OrderedDict
-from typing import Any, AsyncGenerator, Dict, Generator, Optional
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
 from src.core.logger import logger
 from src.core.errors import ErrorHandler
 from src.core.mcp_protocol import extract_tool_data, is_tool_error
@@ -40,6 +40,7 @@ class BaseStreamingGenerator:
         self._fallback_service = fallback_service
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
+        self._current_query: str = ""
         self._action_history: OrderedDict[str, list] = OrderedDict()
         self._max_same_action_count = 2
         self._event_processors = list(event_processors or [])
@@ -99,6 +100,8 @@ class BaseStreamingGenerator:
     def _format_user_profile(self) -> str:
         if not self._long_term_memory:
             return "暂无用户偏好信息"
+        if hasattr(self._long_term_memory, 'format_smart_prompt'):
+            return self._long_term_memory.format_smart_prompt(self._user_id, self._current_query or "")
         if hasattr(self._long_term_memory, 'format_profile_for_prompt'):
             return self._long_term_memory.format_profile_for_prompt(self._user_id)
         return "暂无用户偏好信息"
@@ -210,14 +213,119 @@ class BaseStreamingGenerator:
         response_parts.append("\n\n（注：由于处理时间限制，以上是基于已获取数据整理的信息。）")
         return "".join(response_parts)
 
-    def _prepare_input(self, query: str) -> Dict[str, str]:
+    def _prepare_input(self, query: str, use_long_term_memory: bool = True) -> Dict[str, str]:
         chat_history = self._format_chat_history()
-        user_profile = self._format_user_profile()
+        self._current_query = query
+        user_profile = self._format_user_profile() if use_long_term_memory else "本轮对话已禁用长期记忆"
         return {
             "input": query,
             "chat_history": chat_history,
             "user_profile": user_profile
         }
+
+    def _infer_plan_steps(self, query: str, use_long_term_memory: bool) -> List[Dict[str, Any]]:
+        steps = [
+            {
+                "id": "understand",
+                "title": "解析任务",
+                "description": f"理解用户问题并构建执行路径: {self._preview_text(query, 80)}",
+                "status": "running",
+            }
+        ]
+        if use_long_term_memory:
+            steps.append(
+                {
+                    "id": "memory",
+                    "title": "读取记忆",
+                    "description": "检索与当前问题相关的长期记忆与用户偏好",
+                    "status": "pending",
+                }
+            )
+        steps.extend(
+            [
+                {
+                    "id": "tools",
+                    "title": "调用工具",
+                    "description": "按需执行检索、观测或多模态工具",
+                    "status": "pending",
+                },
+                {
+                    "id": "answer",
+                    "title": "生成答案",
+                    "description": "汇总证据、记忆和工具结果形成最终回答",
+                    "status": "pending",
+                },
+            ]
+        )
+        return steps
+
+    def _update_plan_status(
+        self, steps: List[Dict[str, Any]], step_id: str, status: str
+    ) -> List[Dict[str, Any]]:
+        updated: List[Dict[str, Any]] = []
+        for step in steps:
+            clone = dict(step)
+            if clone["id"] == step_id:
+                clone["status"] = status
+            updated.append(clone)
+        return updated
+
+    def _explain_memory_hits(self, query: str, use_long_term_memory: bool) -> List[Dict[str, Any]]:
+        if not use_long_term_memory or not self._long_term_memory:
+            return []
+        if hasattr(self._long_term_memory, "explain_memory_hits"):
+            try:
+                return self._long_term_memory.explain_memory_hits(self._user_id, query)
+            except Exception as e:
+                logger.warning(f"memory explain 失败: {type(e).__name__}: {e}")
+        return []
+
+    def _extract_evidence(self, tool_name: str, tool_output: str, run_id: str) -> List[Dict[str, Any]]:
+        evidence: List[Dict[str, Any]] = []
+        preview = self._preview_text(tool_output, 240)
+        if preview:
+            evidence.append(
+                {
+                    "source_id": run_id,
+                    "kind": "tool_output",
+                    "title": tool_name,
+                    "snippet": preview,
+                    "tool": tool_name,
+                }
+            )
+        if tool_output.strip().startswith("{"):
+            try:
+                payload = json.loads(tool_output)
+                if isinstance(payload, dict):
+                    for key in ("source", "sources", "url", "hdurl", "reference"):
+                        value = payload.get(key)
+                        if value:
+                            evidence.append(
+                                {
+                                    "source_id": f"{run_id}:{key}",
+                                    "kind": "reference",
+                                    "title": f"{tool_name}.{key}",
+                                    "snippet": self._preview_text(value, 240),
+                                    "tool": tool_name,
+                                }
+                            )
+            except Exception:
+                pass
+        return evidence
+
+    def _compute_confidence(
+        self, tool_runs: List[Dict[str, Any]], memory_hits: List[Dict[str, Any]], evidence_items: List[Dict[str, Any]]
+    ) -> float:
+        confidence = 0.35
+        if tool_runs:
+            confidence += min(len(tool_runs) * 0.1, 0.3)
+            if all(item.get("status") == "success" for item in tool_runs):
+                confidence += 0.1
+        if memory_hits:
+            confidence += 0.1
+        if evidence_items:
+            confidence += 0.1
+        return min(round(confidence, 2), 0.95)
 
     @staticmethod
     def _preview_text(value: Any, max_len: int) -> str:
@@ -428,11 +536,13 @@ class BaseStreamingGenerator:
         *,
         stop_on_repeated_action: bool,
         response_mode: str,
+        use_long_term_memory: bool = True,
     ) -> AsyncGenerator[Any, None]:
         async for event in self._generate_internal_events(
             query,
             stop_on_repeated_action=stop_on_repeated_action,
             response_mode=response_mode,
+            use_long_term_memory=use_long_term_memory,
         ):
             adapted = adapter.adapt(event)
             if adapted is not None:
@@ -444,9 +554,12 @@ class BaseStreamingGenerator:
         *,
         stop_on_repeated_action: bool,
         response_mode: str,
+        use_long_term_memory: bool = True,
     ) -> AsyncGenerator[StreamEvent, None]:
         request_id = uuid.uuid4().hex[:8]
+        request_started_at = time.time()
         self._current_request_id = request_id
+        self._current_query = query
         logger.info(f"[{request_id}] 开始处理统一流式查询：{query[:200]}")
 
         sequence = 0
@@ -456,6 +569,11 @@ class BaseStreamingGenerator:
         final_answer_extracted = False
         thinking_logged = False
         response_saved = False
+        plan_steps = self._infer_plan_steps(query, use_long_term_memory)
+        memory_hits = self._explain_memory_hits(query, use_long_term_memory)
+        tool_timeline: List[Dict[str, Any]] = []
+        evidence_items: List[Dict[str, Any]] = []
+        reasoning_fragments: List[str] = []
 
         def next_event(
             event_type: str,
@@ -481,7 +599,70 @@ class BaseStreamingGenerator:
                 yield processed
 
         try:
-            agent_input = self._prepare_input(query)
+            async for processed in emit(
+                next_event("plan_update", content={"steps": plan_steps})
+            ):
+                yield processed
+
+            async for processed in emit(
+                next_event(
+                    "step_start",
+                    content={"step_id": "understand", "title": "解析任务"},
+                )
+            ):
+                yield processed
+
+            plan_steps = self._update_plan_status(plan_steps, "understand", "done")
+            async for processed in emit(
+                next_event(
+                    "step_end",
+                    content={"step_id": "understand", "title": "解析任务", "status": "done"},
+                )
+            ):
+                yield processed
+
+            if use_long_term_memory:
+                plan_steps = self._update_plan_status(plan_steps, "memory", "running")
+                async for processed in emit(
+                    next_event(
+                        "step_start",
+                        content={"step_id": "memory", "title": "读取记忆"},
+                    )
+                ):
+                    yield processed
+                for hit in memory_hits:
+                    evidence_items.append(
+                        {
+                            "source_id": hit["memory_id"],
+                            "kind": "memory",
+                            "title": f'{hit["memory_type"]}.{hit["key"]}',
+                            "snippet": self._preview_text(hit["value"], 240),
+                            "reason": hit["reason"],
+                        }
+                    )
+                    async for processed in emit(next_event("memory_hit", content=hit)):
+                        yield processed
+                plan_steps = self._update_plan_status(plan_steps, "memory", "done")
+                async for processed in emit(
+                    next_event(
+                        "step_end",
+                        content={"step_id": "memory", "title": "读取记忆", "status": "done"},
+                    )
+                ):
+                    yield processed
+
+            plan_steps = self._update_plan_status(plan_steps, "tools", "running")
+            async for processed in emit(next_event("plan_update", content={"steps": plan_steps})):
+                yield processed
+            async for processed in emit(
+                next_event(
+                    "step_start",
+                    content={"step_id": "tools", "title": "调用工具"},
+                )
+            ):
+                yield processed
+
+            agent_input = self._prepare_input(query, use_long_term_memory=use_long_term_memory)
             async for raw_event in self._agent_executor.astream_events(
                 agent_input,
                 version="v1",
@@ -502,7 +683,7 @@ class BaseStreamingGenerator:
                     async for processed in emit(
                         next_event(
                             "tool_start",
-                            content={"input": tool_input},
+                            content={"tool": tool_name, "input": tool_input, "status": "running"},
                             meta={"run_id": run_id, "tool": tool_name},
                         )
                     ):
@@ -531,7 +712,12 @@ class BaseStreamingGenerator:
                     async for processed in emit(
                         next_event(
                             "tool_end",
-                            content=tool_result.get("tool_output_str", ""),
+                            content={
+                                "tool": tool_meta.get("name"),
+                                "output": tool_result.get("tool_output_str", ""),
+                                "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
+                                "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
+                            },
                             meta={
                                 "run_id": run_id,
                                 "tool": tool_meta.get("name"),
@@ -541,6 +727,26 @@ class BaseStreamingGenerator:
                         )
                     ):
                         yield processed
+                    tool_timeline.append(
+                        {
+                            "run_id": run_id,
+                            "tool": tool_meta.get("name"),
+                            "input": tool_meta.get("input", ""),
+                            "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
+                            "duration_sec": tool_result.get("duration"),
+                            "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
+                        }
+                    )
+                    for evidence in self._extract_evidence(
+                        tool_meta.get("name") or "unknown_tool",
+                        tool_result.get("tool_output_str", ""),
+                        run_id,
+                    ):
+                        evidence_items.append(evidence)
+                        async for processed in emit(
+                            next_event("evidence_found", content=evidence)
+                        ):
+                            yield processed
                     if tool_result.get("extracted_url"):
                         async for processed in emit(
                             next_event(
@@ -565,6 +771,8 @@ class BaseStreamingGenerator:
 
                 if response_mode == "raw_text":
                     response_chunks.append(text)
+                else:
+                    reasoning_fragments.append(text)
 
                 async for processed in emit(
                     next_event("raw_text_delta", content=text, meta={"run_id": run_id})
@@ -638,6 +846,63 @@ class BaseStreamingGenerator:
             final_response = "".join(response_chunks)
             self._save_to_memory(query, final_response)
             response_saved = True
+            plan_steps = self._update_plan_status(plan_steps, "tools", "done")
+            plan_steps = self._update_plan_status(plan_steps, "answer", "done")
+            total_duration_sec = round(time.time() - request_started_at, 3)
+            tool_success_count = sum(1 for item in tool_timeline if item.get("status") == "success")
+            tool_error_count = sum(1 for item in tool_timeline if item.get("status") == "error")
+
+            reasoning_summary = self._preview_text("".join(thinking_buffer or reasoning_fragments), 300)
+            if reasoning_summary:
+                async for processed in emit(
+                    next_event("reasoning_summary", content={"summary": reasoning_summary})
+                ):
+                    yield processed
+            async for processed in emit(
+                next_event(
+                    "step_end",
+                    content={"step_id": "tools", "title": "调用工具", "status": "done"},
+                )
+            ):
+                yield processed
+            async for processed in emit(
+                next_event(
+                    "step_start",
+                    content={"step_id": "answer", "title": "生成答案"},
+                )
+            ):
+                yield processed
+            async for processed in emit(
+                next_event(
+                    "final_answer",
+                    content={
+                        "final_answer": final_response,
+                        "sources": evidence_items,
+                        "tools_used": tool_timeline,
+                        "confidence": self._compute_confidence(tool_timeline, memory_hits, evidence_items),
+                        "reasoning_summary": reasoning_summary,
+                        "memory_hits": memory_hits,
+                        "total_duration_sec": total_duration_sec,
+                        "tool_count": len(tool_timeline),
+                        "tool_success_count": tool_success_count,
+                        "tool_error_count": tool_error_count,
+                        "evidence_count": len(evidence_items),
+                        "memory_hit_count": len(memory_hits),
+                        "request_id": request_id,
+                    },
+                    meta={"request_id": request_id, "total_duration_sec": total_duration_sec},
+                )
+            ):
+                yield processed
+            async for processed in emit(
+                next_event(
+                    "step_end",
+                    content={"step_id": "answer", "title": "生成答案", "status": "done"},
+                )
+            ):
+                yield processed
+            async for processed in emit(next_event("plan_update", content={"steps": plan_steps})):
+                yield processed
 
             if not thinking_logged and thinking_buffer:
                 logger.info(f"[{request_id}] 🔍 Thinking: {''.join(thinking_buffer)}")
@@ -734,11 +999,12 @@ class StreamingService(BaseStreamingGenerator):
             adapter,
             stop_on_repeated_action=False,
             response_mode="final_answer",
+            use_long_term_memory=True,
         ):
             yield event
 
     async def generate_sse(
-        self, query: str, image_path: Optional[str] = None
+        self, query: str, image_path: Optional[str] = None, use_long_term_memory: bool = True
     ) -> AsyncGenerator[str, None]:
         """返回可直接写入 StreamingResponse 的 SSE 文本流。"""
         adapter = SSEEventAdapter()
@@ -747,5 +1013,6 @@ class StreamingService(BaseStreamingGenerator):
             adapter,
             stop_on_repeated_action=False,
             response_mode="final_answer",
+            use_long_term_memory=use_long_term_memory,
         ):
             yield chunk

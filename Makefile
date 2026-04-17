@@ -49,8 +49,8 @@ run-api: ## Run API server
 run-mcp: ## Run MCP server
 	python -m src.services.mcp_server
 
-run-ui: ## Run Streamlit UI
-	streamlit run src/services/streamlit_app.py
+run-ui: ## Run Vue 3 frontend
+	cd frontend && npm run dev
 
 start-all: ## Start all services (API, MCP, UI)
 	./scripts/start.sh
@@ -59,7 +59,7 @@ docker-build: ## Build Docker image
 	docker build -t astroagent:latest .
 
 docker-run: ## Run in Docker container
-	docker run -p 8000:8000 -p 8001:8001 -p 8501:8501 astroagent:latest
+	docker run -p 8000:8000 -p 8001:8001 -p 5173:5173 astroagent:latest
 
 pre-commit-install: ## Install pre-commit hooks
 	pre-commit install

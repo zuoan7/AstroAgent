@@ -9,6 +9,7 @@ TEXTUAL_EVENT_TYPES = {
     "raw_text_delta",
     "thinking_delta",
     "final_answer_delta",
+    "reasoning_summary",
     "warning",
     "error",
     "transcription",
@@ -122,6 +123,28 @@ class FrontendJsonEventAdapter:
                 "text": str(event.content),
                 "meta": event.meta,
             }
+        if event.type in {
+            "tool_start",
+            "tool_end",
+            "plan_update",
+            "step_start",
+            "step_end",
+            "evidence_found",
+            "memory_hit",
+            "final_answer",
+            "reasoning_summary",
+        }:
+            payload = {
+                "type": event.type,
+                "meta": event.meta,
+                "timestamp": event.timestamp,
+                "sequence": event.sequence,
+            }
+            if isinstance(event.content, dict):
+                payload.update(event.content)
+            else:
+                payload["content"] = event.content
+            return payload
         return None
 
 

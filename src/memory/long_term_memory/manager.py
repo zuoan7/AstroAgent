@@ -379,6 +379,7 @@ class LongTermMemoryManager:
         confidence: Optional[float] = None,
         status: Optional[str] = None,
         priority: Optional[int] = None,
+        confirmed_by_user: Optional[bool] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[MemoryItem]:
         item = self._repo.get_memory(memory_id)
@@ -397,6 +398,10 @@ class LongTermMemoryManager:
             item.status = status
         if priority is not None:
             item.priority = priority
+        if confirmed_by_user is not None:
+            item.confirmed_by_user = confirmed_by_user
+            if confirmed_by_user:
+                item.confirmation_count += 1
         if metadata is not None:
             item.metadata.update(metadata)
 
@@ -498,6 +503,47 @@ class LongTermMemoryManager:
 
     def format_smart_prompt(self, user_id: str, query: str) -> str:
         return self._prompt_injector.format_for_prompt(user_id, query)
+
+    def explain_memory_hits(
+        self, user_id: str, query: str, task_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        if not task_type:
+            task_type = self._prompt_injector.classify_task_type(query)
+
+        hits: List[Dict[str, Any]] = []
+        for item in self._prompt_injector.select_memories(user_id, query, task_type):
+            relevance = self._prompt_injector.compute_relevance(item, query, task_type)
+            reasons = [f"任务类型={task_type}"]
+            if item.source_type == SourceType.EXPLICIT:
+                reasons.append("来自用户显式表达")
+            if item.confirmed_by_user:
+                reasons.append("已获用户确认")
+            if item.memory_type == MemoryType.CONSTRAINT:
+                reasons.append("属于约束条件，优先级更高")
+            query_text = query.lower()
+            key_text = str(item.key).lower()
+            value_text = str(item.value).lower() if item.value is not None else ""
+            if any(token in value_text for token in query_text.split() if len(token) > 1):
+                reasons.append("与当前问题内容直接相关")
+            elif any(token in key_text for token in query_text.split() if len(token) > 1):
+                reasons.append("与当前问题关键词匹配")
+
+            hits.append(
+                {
+                    "memory_id": item.id,
+                    "memory_type": item.memory_type,
+                    "category": item.category,
+                    "key": item.key,
+                    "value": item.value,
+                    "confidence": item.confidence,
+                    "relevance": round(relevance, 3),
+                    "reason": "；".join(reasons),
+                    "source_type": item.source_type,
+                    "confirmed_by_user": item.confirmed_by_user,
+                    "timestamp": item.updated_at or item.created_at,
+                }
+            )
+        return hits
 
     def load_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         return self._repo.load_profile(user_id)

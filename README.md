@@ -4,7 +4,7 @@ AstroAgent 是一个面向天文场景的 AI Agent 项目，围绕“天文知�
 
 - `FastAPI` 主 API 服务，用于文本、图片、语音问答及记忆管理
 - `FastMCP` 天文工具服务，用于向 Agent 暴露标准 MCP 工具能力
-- `Streamlit` 测试界面，用于本地交互验证
+- `Vue 3 + Vite` 前端工作台，用于交互式调试与验证
 
 项目当前实现采用 `LangChain + LangGraph` 驱动 Agent 编排，结合本地 RAG、MCP 工具调用、短期记忆和长期用户画像，实现面向天文问答与观测规划的智能助手。
 
@@ -87,7 +87,7 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 | 大模型 | Tongyi/Qwen（`ChatTongyi`、DashScope） |
 | Web 服务 | FastAPI, Uvicorn, SlowAPI |
 | MCP 服务 | FastMCP, langchain-mcp-adapters |
-| 前端/调试 UI | Streamlit |
+| 前端/调试 UI | Vue 3, Vite, Pinia |
 | RAG | ChromaDB, DashScope Embeddings, rank-bm25 |
 | 天文计算 | Skyfield, Astropy, PyEphem, Astroquery |
 | 外部数据源 | NASA API, 高德天气 API, Tavily Search |
@@ -101,7 +101,7 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 
 ```text
 Client / UI
-├── Streamlit 调试界面
+├── Vue3 Workbench
 ├── FastAPI 调用方
 └── MCP Client / 外部集成
 
@@ -127,7 +127,7 @@ Domain / Data Layer
 Infrastructure Layer
 ├── FastAPI 服务（8000）
 ├── FastMCP 服务（8001）
-└── Streamlit 服务（8501）
+└── Vue3 Frontend（5173）
 ```
 
 ### 目录结构
@@ -143,6 +143,7 @@ AstroAgent/
 │   └── documents/              # RAG 文档语料
 ├── scripts/
 │   └── start.sh                # 一键启动脚本（Unix-like 环境）
+├── frontend/                   # Vue 3 + Vite 前端工作台
 ├── src/
 │   ├── agent/                  # Agent 核心编排与多模态服务
 │   ├── api/                    # FastAPI 服务入口
@@ -150,7 +151,7 @@ AstroAgent/
 │   ├── core/                   # 配置、日志、错误处理
 │   ├── memory/                 # 分层记忆模块（core / infrastructure / short_term_memory / long_term_memory）
 │   ├── rag/                    # 检索、融合、重排序、缓存
-│   ├── services/               # MCP Server 与 Streamlit App
+│   ├── services/               # MCP Server
 │   ├── skills/                 # 技能路由、MCP 客户端、处理器
 │   └── utils/                  # 通用工具
 ├── tests/
@@ -186,7 +187,7 @@ AstroAgent/
 
 ### 请求处理链路
 
-1. 客户端调用 `FastAPI` 接口或通过 `Streamlit` 触发请求
+1. 客户端调用 `FastAPI` 接口或通过 `Vue3` 前端触发请求
 2. API 层根据 `user_id` 获取或创建会话，绑定短期记忆与流式服务
 3. `StreamingService` 组织上下文、用户画像和工具执行过程
 4. `AstroAgent` 调用 ReAct Agent，选择 RAG 或高层技能工具
@@ -253,8 +254,9 @@ AstroAgent/
 ### 运行环境
 
 - Python `>= 3.10`
+- Node.js `>= 18`
 - 推荐使用虚拟环境
-- 需要可访问的端口：`8000`、`8001`、`8501`
+- 需要可访问的端口：`8000`、`8001`、`5173`
 
 ### 主要依赖来源
 
@@ -265,7 +267,7 @@ AstroAgent/
 
 - `pyproject.toml` 是项目元数据与推荐安装入口
 - `requirements.txt` 提供直接安装清单
-- `Makefile` 和 `scripts/start.sh` 默认按 Unix-like 环境编写；在 Windows PowerShell 中通常需要手动执行 Python/Streamlit 命令
+- `Makefile` 和 `scripts/start.sh` 默认按 Unix-like 环境编写；在 Windows PowerShell 中通常需要手动执行 Python/npm 命令
 
 ### 必要环境变量
 
@@ -318,6 +320,14 @@ source .venv/bin/activate      # Linux / macOS
 pip install -e .
 ```
 
+安装前端依赖：
+
+```bash
+cd frontend
+npm install
+cd ..
+```
+
 如需开发依赖：
 
 ```bash
@@ -336,6 +346,14 @@ source .venv/bin/activate      # Linux / macOS
 
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
+```
+
+安装前端依赖：
+
+```bash
+cd frontend
+npm install
+cd ..
 ```
 
 ### 启动前检查
@@ -363,10 +381,12 @@ python -m src.services.mcp_server
 python -m src.api.main
 ```
 
-最后启动 Streamlit：
+最后启动 Vue3 前端：
 
 ```bash
-streamlit run src/services/streamlit_app.py
+cd frontend
+npm install
+npm run dev
 ```
 
 #### 2. 使用 Makefile
@@ -400,7 +420,7 @@ make start-all
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 - MCP Endpoint: `http://localhost:8001/mcp/`
-- Streamlit: `http://localhost:8501`
+- Vue3 Frontend: `http://localhost:5173`
 
 ## 使用指南
 
@@ -446,15 +466,16 @@ curl -X POST "http://localhost:8000/add_knowledge" \
 curl -X POST "http://localhost:8000/clear_memory?user_id=demo-user"
 ```
 
-### Streamlit 界面
+### Vue3 前端
 
-`src/services/streamlit_app.py` 提供三类交互标签页：
+前端代码位于 `frontend/`，由 `Vue 3 + Vite + Pinia` 构建，默认开发地址为 `http://localhost:5173`。
 
-- 文本问答
-- 图片问答
-- 语音问答
+- 执行总览：展示每轮总耗时、工具调用数、证据条目数和记忆命中数
+- 执行时间线：逐条展示工具名称、输入参数、返回摘要与单次调用耗时
+- 最终回答区：展示最终答案、置信度以及本轮聚合统计
+- 记忆与证据面板：同步展示长期记忆命中与证据引用来源
 
-该界面更偏向开发测试和功能验证，而不是生产级前端。
+当前后端未直接托管前端静态资源，开发阶段以前后端分离方式运行。
 
 ## API 接口文档
 
@@ -496,11 +517,15 @@ data: {"type":"text","content":"今晚上海可以观测到木星..."}
 - `text`：最终文本内容
 - `image`：图片 URL
 - `transcription`：语音识别文本
+- `plan_update` / `step_start` / `step_end`：阶段规划与进度状态
+- `tool_start` / `tool_end`：工具名称、参数、摘要和单次耗时
+- `final_answer`：最终答案、整轮总耗时、工具统计、证据统计和记忆命中
 
 说明：
 
 - 这些对外事件由统一内部事件总线生成，再经 `FrontendJsonEventAdapter` / `SSEEventAdapter` 转换输出。
 - 纯文本流、JSON 事件流和 SSE 流已收敛到同一底层事件序列，减少不同输出路径之间的逻辑漂移。
+- `final_answer` 事件当前会额外携带 `total_duration_sec`、`tool_count`、`tool_success_count`、`tool_error_count`、`evidence_count`、`memory_hit_count` 等前端可观测字段。
 
 ### 3. 知识库接口
 
