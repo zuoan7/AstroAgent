@@ -29,6 +29,7 @@ from src.memory.long_term_memory.models import (
 from src.memory.long_term_memory.prompt_injector import PromptInjector
 from src.memory.long_term_memory.quality import QualityAssurance
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
+from src.memory.long_term_memory.service import LongTermMemoryService
 
 
 class LongTermMemoryManager:
@@ -49,26 +50,14 @@ class LongTermMemoryManager:
             "auto_backup_interval_hours": 24,
         }
 
-        self._repo = LongTermMemoryRepository(self.config["db_path"])
-        self._repo.initialize()
-
-        self._quality = QualityAssurance(
-            dedup_similarity_threshold=self.config["dedup_similarity_threshold"],
-            min_confidence_to_store=self.config["min_confidence_to_store"],
-        )
-        self._extractor = MemoryExtractor()
-        self._event_logger = EventLogger(self._repo)
-        self._confirmation_mgr = ConfirmationManager(self._repo, self._event_logger)
-        self._candidate_mgr = CandidateManager(
-            self._repo,
-            occurrence_threshold=self.config["candidate_occurrence_threshold"],
-            confidence_threshold=self.config["candidate_confidence_threshold"],
-        )
-        self._prompt_injector = PromptInjector(
-            self._repo,
-            max_prompt_tokens=self.config["max_prompt_tokens"],
-            max_memories=self.config["max_memories_in_prompt"],
-        )
+        self._service = LongTermMemoryService(self.config["db_path"], config=self.config)
+        self._repo = self._service.repository
+        self._quality = self._service.quality
+        self._extractor = self._service.extractor
+        self._event_logger = self._service.event_logger
+        self._confirmation_mgr = self._service.confirmations
+        self._candidate_mgr = self._service.candidates
+        self._prompt_injector = self._service.prompt_injector
         self._backup_mgr = BackupManager(
             self._repo,
             auto_backup_interval_hours=self.config["auto_backup_interval_hours"],
@@ -222,6 +211,20 @@ class LongTermMemoryManager:
         priority: int = 0,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[MemoryItem]:
+        return self._service.add_memory(
+            user_id=user_id,
+            memory_type=memory_type,
+            category=category,
+            key=key,
+            value=value,
+            confidence=confidence,
+            source_type=source_type,
+            is_explicit=is_explicit,
+            source_conversation_id=source_conversation_id,
+            source_content_snippet=source_content_snippet,
+            priority=priority,
+            metadata=metadata,
+        )
         if confidence is None:
             confidence = self._quality.confidence_scorer.initial_confidence(source_type, is_explicit)
 
@@ -365,11 +368,7 @@ class LongTermMemoryManager:
         self._repo.add_version(item.id, next_version, item.value, item.confidence, reason)
 
     def get_memory(self, memory_id: str) -> Optional[MemoryItem]:
-        item = self._repo.get_memory(memory_id)
-        if item:
-            self._repo.increment_access_count(memory_id)
-            self._event_logger.log_accessed(item.user_id, memory_id, item.key)
-        return item
+        return self._service.get_memory(memory_id)
 
     def update_memory(
         self,
@@ -382,6 +381,16 @@ class LongTermMemoryManager:
         confirmed_by_user: Optional[bool] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[MemoryItem]:
+        return self._service.update_memory(
+            memory_id=memory_id,
+            user_id=user_id,
+            value=value,
+            confidence=confidence,
+            status=status,
+            priority=priority,
+            confirmed_by_user=confirmed_by_user,
+            metadata=metadata,
+        )
         item = self._repo.get_memory(memory_id)
         if not item or item.user_id != user_id:
             return None
@@ -410,11 +419,7 @@ class LongTermMemoryManager:
         return item
 
     def delete_memory(self, memory_id: str, user_id: str) -> bool:
-        item = self._repo.get_memory(memory_id)
-        if not item or item.user_id != user_id:
-            return False
-        self._event_logger.log_deleted(user_id, memory_id, item.key, item.value)
-        return self._repo.delete_memory(memory_id, user_id)
+        return self._service.delete_memory(memory_id, user_id)
 
     def query_memories(self, query: MemoryQuery) -> List[MemoryItem]:
         return self._repo.query_memories(query)
@@ -455,6 +460,12 @@ class LongTermMemoryManager:
         user_id: str,
         conversation_id: Optional[str] = None,
     ) -> List[MemoryItem]:
+        return self._service.extract_and_store(
+            user_message=user_message,
+            assistant_message=assistant_message,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
         if not self._should_attempt_extraction(user_message):
             return []
         extractions = self._extractor.extract_from_conversation(
@@ -499,14 +510,15 @@ class LongTermMemoryManager:
         return stored
 
     def format_profile_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> str:
-        return self._prompt_injector.format_profile_for_prompt(user_id, task_type=task_type)
+        return self._service.format_profile_for_prompt(user_id, task_type=task_type)
 
     def format_smart_prompt(self, user_id: str, query: str) -> str:
-        return self._prompt_injector.format_for_prompt(user_id, query)
+        return self._service.format_smart_prompt(user_id, query)
 
     def explain_memory_hits(
         self, user_id: str, query: str, task_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        return self._service.explain_memory_hits(user_id, query, task_type=task_type)
         if not task_type:
             task_type = self._prompt_injector.classify_task_type(query)
 
@@ -546,12 +558,14 @@ class LongTermMemoryManager:
         return hits
 
     def load_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
-        return self._repo.load_profile(user_id)
+        return self._service.load_profile(user_id)
 
     def delete_profile(self, user_id: str) -> bool:
-        return self._repo.delete_profile(user_id)
+        return self._service.delete_profile(user_id)
 
     def _sync_profile_from_memories(self, user_id: str):
+        self._service.rebuild_profile(user_id)
+        return
         memories = self._repo.query_memories(MemoryQuery(
             user_id=user_id, status=MemoryStatus.ACTIVE, limit=500
         ))
@@ -596,13 +610,13 @@ class LongTermMemoryManager:
         return self._candidate_mgr.list_candidates(user_id, limit=limit, offset=offset)
 
     def promote_candidate(self, candidate_id: str) -> Optional[MemoryItem]:
-        return self._candidate_mgr.promote_candidate(candidate_id)
+        return self._service.promote_candidate(candidate_id)
 
     def reject_candidate(self, candidate_id: str, reason: str = "") -> bool:
         return self._candidate_mgr.reject_candidate(candidate_id, reason)
 
     def promote_all_eligible(self, user_id: str) -> List[MemoryItem]:
-        return self._candidate_mgr.promote_all_eligible(user_id)
+        return self._service.promote_all_eligible(user_id)
 
     def list_pending_confirmations(self, user_id: str, limit: int = 20) -> List[MemoryConfirmation]:
         return self._confirmation_mgr.list_pending_confirmations(user_id, limit=limit)

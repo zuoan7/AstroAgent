@@ -53,6 +53,12 @@ class SkillManager:
         """直接调用底层 MCP 工具"""
         return self._skill_router.call_mcp_tool(tool_name, **kwargs)
 
+    def prewarm(self) -> bool:
+        return self._skill_router.prewarm()
+
+    def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
+        return self._skill_router.get_runtime_metrics_snapshot()
+
     # ===== 工具注册（原 AgentTools 的核心功能，已优化） =====
 
     def _init_tools(self) -> List[Tool]:

@@ -13,6 +13,9 @@
       :active-conversation-title="session.activeConversation?.title || '会话'"
       :user-id="session.userId"
       :session-id="session.sessionId"
+      :model-options="modelOptions"
+      :selected-model-key="selectedModelKey"
+      :current-model-label="session.modelLabel"
       :messages="chat.messages"
       :streaming-answer="chat.streamingAnswer"
       :disabled="session.isStreaming"
@@ -32,6 +35,7 @@
       @select-conversation="handleSelectConversation"
       @remove-conversation="handleRemoveConversation"
       @clear-session="clearCurrentSession"
+      @change-model="handleModelChange"
       @select-image="handleImageSelected"
       @select-audio="handleAudioSelected"
       @clear-image="clearPendingImage"
@@ -44,6 +48,7 @@
         :account-name="session.activeAccount?.name || 'Demo Account'"
         :user-id="session.userId"
         :session-id="session.sessionId"
+        :current-model-label="session.modelLabel"
         :disable-long-term-memory="session.disableLongTermMemory"
         :is-streaming="session.isStreaming"
         @toggle-memory="(value) => (session.disableLongTermMemory = value)"
@@ -53,6 +58,9 @@
         v-model="session.queryInput"
         :disabled="session.isStreaming"
         :error="session.lastError"
+        :model-options="modelOptions"
+        :selected-model-key="selectedModelKey"
+        :current-model-label="session.modelLabel"
         :image-file-name="pendingImageFileName"
         :audio-file-name="pendingAudioFileName"
         :image-preview-url="pendingImagePreviewUrl"
@@ -63,6 +71,7 @@
         @submit="handleSubmit"
         @refresh="refreshMemory"
         @clear-session="clearCurrentSession"
+        @change-model="handleModelChange"
         @select-image="handleImageSelected"
         @select-audio="handleAudioSelected"
         @clear-image="clearPendingImage"
@@ -76,6 +85,7 @@
           :items="trace.items"
           :reasoning-summary="trace.reasoningSummary"
           :overview="trace.overview"
+          :latency-metrics="trace.latencyMetrics"
         />
         <EvidencePanel :items="evidence.items" />
         <ChatPanel
@@ -115,7 +125,15 @@ import TracePanel from './components/TracePanel.vue'
 import EvidencePanel from './components/EvidencePanel.vue'
 import MemoryPanel from './components/MemoryPanel.vue'
 import ChatPanel from './components/ChatPanel.vue'
-import { resolveAssetUrl, streamAudioQuery, streamImageQuery, streamQuery } from './lib/api'
+import {
+  fetchAvailableModels,
+  fetchSessionModel,
+  resolveAssetUrl,
+  streamAudioQuery,
+  streamImageQuery,
+  streamQuery,
+  switchSessionModel,
+} from './lib/api'
 import { useSessionStore } from './stores/session'
 import { usePlanStore } from './stores/plan'
 import { useTraceStore } from './stores/trace'
@@ -148,6 +166,16 @@ const canRecord = computed(
     && typeof window !== 'undefined'
     && typeof window.MediaRecorder !== 'undefined'
 )
+const modelOptions = computed(() =>
+  (session.availableModels || []).map((provider) => ({
+    value: `${provider.provider}::${provider.default_model}`,
+    label: `${provider.display_name} / ${provider.default_model}`,
+    provider: provider.provider,
+    modelName: provider.default_model,
+    configured: Boolean(provider.configured),
+  }))
+)
+const selectedModelKey = computed(() => `${session.modelProvider}::${session.modelName}`)
 
 function resetRealtimeStores(payload = '') {
   plan.reset()
@@ -172,6 +200,69 @@ async function refreshMemory(options = {}) {
   }
 }
 
+async function initializeModels() {
+  try {
+    const data = await fetchAvailableModels()
+    session.setAvailableModels(data.providers || [])
+    const current = await fetchSessionModel(session.userId, session.sessionId)
+    session.setConversationModel({
+      provider: current.model_provider,
+      modelName: current.model_name,
+      modelLabel: current.model_label,
+    })
+  } catch (error) {
+    session.setError(String(error))
+  }
+}
+
+async function syncCurrentConversationModel() {
+  try {
+    const response = await switchSessionModel({
+      userId: session.userId,
+      sessionId: session.sessionId,
+      modelProvider: session.modelProvider,
+      modelName: session.modelName,
+    })
+    session.setConversationModel({
+      provider: response.model_provider,
+      modelName: response.model_name,
+      modelLabel: response.model_label,
+    })
+  } catch (error) {
+    session.setError(String(error))
+  }
+}
+
+async function handleModelChange(value) {
+  const [provider, modelName] = String(value || '').split('::')
+  const previous = {
+    provider: session.modelProvider,
+    modelName: session.modelName,
+    modelLabel: session.modelLabel,
+  }
+  session.setConversationModel({
+    provider,
+    modelName,
+    modelLabel: `${provider} / ${modelName}`,
+  })
+  try {
+    const response = await switchSessionModel({
+      userId: session.userId,
+      sessionId: session.sessionId,
+      modelProvider: provider,
+      modelName,
+    })
+    session.setConversationModel({
+      provider: response.model_provider,
+      modelName: response.model_name,
+      modelLabel: response.model_label,
+    })
+  } catch (error) {
+    session.setConversationModel(previous)
+    session.setError(String(error))
+  }
+}
+
 function handleEvent(event) {
   switch (event.type) {
     case 'plan_update':
@@ -188,6 +279,9 @@ function handleEvent(event) {
       break
     case 'tool_end':
       trace.endTool(event)
+      break
+    case 'route_decision':
+      trace.setRoute(event)
       break
     case 'evidence_found':
       evidence.addEvidence(event)
@@ -215,6 +309,9 @@ function handleEvent(event) {
       break
     case 'reasoning_summary':
       trace.reasoningSummary = event.summary || event.content || ''
+      break
+    case 'latency_metrics':
+      trace.setLatency(event)
       break
     case 'final_answer':
       trace.finishRun(event)
@@ -388,6 +485,8 @@ async function handleSubmit() {
         image: pendingImageFile.value,
         userId: session.userId,
         sessionId: session.sessionId,
+        modelProvider: session.modelProvider,
+        modelName: session.modelName,
         onEvent: handleEvent,
       })
     } else if (hasAudio) {
@@ -397,6 +496,8 @@ async function handleSubmit() {
         audio: pendingAudioFile.value,
         userId: session.userId,
         sessionId: session.sessionId,
+        modelProvider: session.modelProvider,
+        modelName: session.modelName,
         onEvent: handleEvent,
       })
     } else {
@@ -405,6 +506,8 @@ async function handleSubmit() {
         userId: session.userId,
         sessionId: session.sessionId,
         disableLongTermMemory: session.disableLongTermMemory,
+        modelProvider: session.modelProvider,
+        modelName: session.modelName,
         onEvent: handleEvent,
       })
     }
@@ -436,6 +539,7 @@ async function handleAddAccount(name) {
   resetRealtimeStores()
   chat.clearConversation()
   clearPendingUploads()
+  await syncCurrentConversationModel()
   await refreshMemory()
 }
 
@@ -444,6 +548,7 @@ async function handleSelectAccount(accountId) {
   resetRealtimeStores()
   chat.clearConversation()
   clearPendingUploads()
+  await syncCurrentConversationModel()
   await refreshMemory()
 }
 
@@ -452,6 +557,7 @@ async function handleAddConversation(title) {
   resetRealtimeStores()
   chat.clearConversation()
   clearPendingUploads()
+  await syncCurrentConversationModel()
   await refreshMemory()
 }
 
@@ -460,6 +566,7 @@ async function handleSelectConversation(conversationId) {
   resetRealtimeStores()
   chat.clearConversation()
   clearPendingUploads()
+  await syncCurrentConversationModel()
   await refreshMemory()
 }
 
@@ -484,6 +591,7 @@ async function handleRemoveConversation(conversationId) {
   resetRealtimeStores()
   chat.clearConversation()
   clearPendingUploads()
+  await syncCurrentConversationModel()
   await refreshMemory()
 }
 
@@ -491,7 +599,11 @@ function handleModeChange(mode) {
   session.setMode(mode)
 }
 
-onMounted(refreshMemory)
+onMounted(async () => {
+  await initializeModels()
+  await syncCurrentConversationModel()
+  await refreshMemory()
+})
 
 onBeforeUnmount(() => {
   stopRecordingTimer()

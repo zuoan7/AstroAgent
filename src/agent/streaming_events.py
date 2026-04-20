@@ -133,6 +133,8 @@ class FrontendJsonEventAdapter:
             "memory_hit",
             "final_answer",
             "reasoning_summary",
+            "route_decision",
+            "latency_metrics",
         }:
             payload = {
                 "type": event.type,

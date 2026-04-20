@@ -5,7 +5,7 @@ import concurrent.futures
 import json
 import threading
 import time
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 from src.core.logger import logger
@@ -90,6 +90,12 @@ class MCPClient:
         self._async_bridge = _AsyncBridge()
         self._init_lock: Optional[asyncio.Lock] = None
         self._initializing = False
+        self._metrics_lock = threading.Lock()
+        self._runtime_metrics: Dict[str, float] = {
+            "mcp_session_init_ms": 0.0,
+            "tool_exec_ms": 0.0,
+            "tool_call_count": 0.0,
+        }
 
     def _get_init_lock(self) -> asyncio.Lock:
         if self._init_lock is None:
@@ -129,18 +135,15 @@ class MCPClient:
                     )
                     for c in calls
                 ]
-            results = []
-            for call in calls:
-                try:
-                    result = await self._async_call_tool(
-                        call["tool_name"],
-                        _skip_session_check=True,
-                        **call.get("kwargs", {}),
-                    )
-                except Exception as e:
-                    result = e
-                results.append(result)
-            return results
+            tasks = [
+                self._async_call_tool(
+                    call["tool_name"],
+                    _skip_session_check=True,
+                    **call.get("kwargs", {}),
+                )
+                for call in calls
+            ]
+            return await asyncio.gather(*tasks, return_exceptions=True)
 
         try:
             results = self._async_bridge.run(_gather())
@@ -184,6 +187,21 @@ class MCPClient:
                 pass
         logger.info("✅ MCPClient已关闭")
 
+    def prewarm(self) -> bool:
+        try:
+            return bool(self._async_bridge.run(self._ensure_session(), timeout=20.0))
+        except Exception as e:
+            logger.warning(f"MCP预热失败: {e}")
+            return False
+
+    def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
+        with self._metrics_lock:
+            return dict(self._runtime_metrics)
+
+    def _add_metric(self, key: str, value: float) -> None:
+        with self._metrics_lock:
+            self._runtime_metrics[key] = self._runtime_metrics.get(key, 0.0) + value
+
     async def _init_session(self) -> bool:
         if self._initialized and self._is_session_valid():
             return True
@@ -210,6 +228,7 @@ class MCPClient:
                 self._initializing = False
 
     async def _do_init_session(self) -> bool:
+        init_started = time.perf_counter()
         try:
             if self._http_client and not self._http_client.is_closed:
                 await self._http_client.aclose()
@@ -311,6 +330,10 @@ class MCPClient:
             self._initialized = True
             self._http_client = client
             self._reconnect_attempts = 0
+            self._add_metric(
+                "mcp_session_init_ms",
+                (time.perf_counter() - init_started) * 1000.0,
+            )
 
             logger.info(f"✅ MCP会话初始化成功，会话ID: {session_id}")
             return True
@@ -355,6 +378,7 @@ class MCPClient:
         return False
 
     async def _async_call_tool(self, tool_name: str, _skip_session_check: bool = False, **kwargs) -> str:
+        tool_started = time.perf_counter()
         if _skip_session_check:
             session_ok = self._is_session_valid()
         else:
@@ -516,6 +540,12 @@ class MCPClient:
                     details=error.details,
                 )
             )
+        finally:
+            self._add_metric(
+                "tool_exec_ms",
+                (time.perf_counter() - tool_started) * 1000.0,
+            )
+            self._add_metric("tool_call_count", 1.0)
 
 
 def _parse_sse_response(response_text: str) -> Optional[dict]:

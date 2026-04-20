@@ -38,6 +38,8 @@ from src.memory.long_term_memory.event_log import ConfirmationManager, EventLogg
 from src.memory.long_term_memory.prompt_injector import PromptInjector
 from src.memory.long_term_memory.backup import BackupManager
 from src.memory.long_term_memory.manager import LongTermMemoryManager
+from src.memory.long_term_memory.models import LongTermMemoryDeletionRequest
+from src.memory.long_term_memory.service import LongTermMemoryService
 
 
 @pytest.fixture
@@ -722,3 +724,106 @@ class TestLongTermMemoryManager:
         snapshot = manager.export_profile_snapshot("u1")
         assert snapshot is not None
         assert "user_id" in snapshot
+
+
+class TestLongTermMemoryServiceRefactor:
+    def test_service_candidate_promotes_and_rebuilds_profile_projection(self, tmp_db):
+        service = LongTermMemoryService(db_path=tmp_db)
+
+        first = service.extract_and_store("我经常看火星", "好的", "u1")
+        assert first == []
+        assert len(service.list_candidates("u1")) == 1
+
+        second = service.extract_and_store("我经常看火星", "已记录", "u1")
+        assert len(second) >= 1
+        assert service.list_candidates("u1") == []
+
+        profile = service.load_profile("u1")
+        assert profile is not None
+        assert "frequent_topics" in profile["habits"]
+        assert "火星" in profile["habits"]["frequent_topics"]
+
+        service.repository.delete_profile("u1")
+        rebuilt = service.load_profile("u1")
+        assert rebuilt is not None
+        assert "火星" in rebuilt["habits"]["frequent_topics"]
+
+    def test_service_delete_memory_tombstones_and_hides_from_queries(self, tmp_db):
+        service = LongTermMemoryService(db_path=tmp_db)
+        item = service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.PREFERENCE,
+            category="response_style",
+            key="response_style",
+            value="简短",
+            confidence=0.9,
+            source_type=SourceType.EXPLICIT,
+            is_explicit=True,
+        )
+        assert item is not None
+
+        result = service.delete(LongTermMemoryDeletionRequest(
+            user_id="u1",
+            scope="memory",
+            target_id=item.id,
+            reason="user request",
+        ))
+
+        assert result.deleted_memories == 1
+        assert service.get_memory(item.id) is None
+        assert service.query_memories(MemoryQuery(user_id="u1")) == []
+        audit = service.repository.list_deletion_audit("u1")
+        assert audit[0]["scope"] == "memory"
+
+    def test_service_user_all_delete_hides_candidates_profile_and_memories(self, tmp_db):
+        service = LongTermMemoryService(db_path=tmp_db)
+        item = service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="skill_level",
+            key="skill_level",
+            value="入门",
+        )
+        candidate = service.candidates.add_or_update_candidate(
+            user_id="u1",
+            memory_type=MemoryType.PREFERENCE,
+            category="response_style",
+            key="response_style",
+            value="详细",
+        )
+        assert item is not None
+        assert candidate is not None
+
+        result = service.delete(LongTermMemoryDeletionRequest(user_id="u1", scope="user_all"))
+
+        assert result.deleted_memories == 1
+        assert result.deleted_candidates == 1
+        assert service.query_memories(MemoryQuery(user_id="u1")) == []
+        assert service.list_candidates("u1") == []
+        assert service.load_profile("u1") is None
+
+    def test_query_aware_prompt_uses_relevant_active_memories(self, tmp_db):
+        service = LongTermMemoryService(db_path=tmp_db)
+        service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="device_info",
+            key="device_info",
+            value="80mm 折射望远镜",
+            confidence=0.9,
+        )
+        service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.CONSTRAINT,
+            category="custom",
+            key="no_jargon",
+            value="避免术语",
+            confidence=0.9,
+        )
+
+        prompt = service.format_smart_prompt("u1", "今晚用望远镜观测什么")
+        hits = service.explain_memory_hits("u1", "今晚用望远镜观测什么")
+
+        assert "80mm" in prompt
+        assert "避免术语" in prompt
+        assert any(hit["memory_type"] == MemoryType.BACKGROUND for hit in hits)

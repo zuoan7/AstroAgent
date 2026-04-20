@@ -17,8 +17,10 @@ class MemoryType(str, Enum):
 class MemoryStatus(str, Enum):
     ACTIVE = "active"
     CANDIDATE = "candidate"
+    CONFIRMED = "confirmed"
     EXPIRED = "expired"
     ARCHIVED = "archived"
+    DELETED = "deleted"
 
 
 class SourceType(str, Enum):
@@ -61,6 +63,9 @@ class EventType(str, Enum):
     DEDUPLICATED = "deduplicated"
     BACKUP_CREATED = "backup_created"
     BACKUP_RESTORED = "backup_restored"
+    PROFILE_SYNCED = "profile_synced"
+    DELETION_REQUESTED = "deletion_requested"
+    DELETION_APPLIED = "deletion_applied"
 
 
 PREFERENCE_CATEGORIES = {
@@ -160,6 +165,7 @@ class MemoryItem:
     access_count: int = 0
     confirmation_count: int = 0
     confirmed_by_user: bool = False
+    deleted_at: Optional[str] = None
 
     def __post_init__(self):
         if not self.id:
@@ -191,6 +197,7 @@ class MemoryItem:
             "access_count": self.access_count,
             "confirmation_count": self.confirmation_count,
             "confirmed_by_user": self.confirmed_by_user,
+            "deleted_at": self.deleted_at,
         }
 
     def to_db_row(self) -> Dict[str, Any]:
@@ -215,6 +222,7 @@ class MemoryItem:
             "access_count": self.access_count,
             "confirmation_count": self.confirmation_count,
             "confirmed_by_user": int(self.confirmed_by_user),
+            "deleted_at": self.deleted_at,
         }
 
     @classmethod
@@ -240,6 +248,7 @@ class MemoryItem:
             access_count=row["access_count"],
             confirmation_count=row["confirmation_count"],
             confirmed_by_user=bool(row["confirmed_by_user"]),
+            deleted_at=row["deleted_at"] if "deleted_at" in row.keys() else None,
         )
 
     @classmethod
@@ -319,6 +328,9 @@ class MemoryCandidate:
     last_seen_at: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
+    status: str = MemoryStatus.CANDIDATE
+    promoted_memory_id: Optional[str] = None
+    updated_at: str = ""
 
     def __post_init__(self):
         if not self.id:
@@ -329,6 +341,8 @@ class MemoryCandidate:
             self.last_seen_at = self.first_seen_at
         if not self.created_at:
             self.created_at = _utcnow_iso()
+        if not self.updated_at:
+            self.updated_at = self.last_seen_at
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -347,6 +361,9 @@ class MemoryCandidate:
             "last_seen_at": self.last_seen_at,
             "metadata": self.metadata,
             "created_at": self.created_at,
+            "status": self.status,
+            "promoted_memory_id": self.promoted_memory_id,
+            "updated_at": self.updated_at,
         }
 
     def to_db_row(self) -> Dict[str, Any]:
@@ -366,6 +383,9 @@ class MemoryCandidate:
             "last_seen_at": self.last_seen_at,
             "metadata": _json_dumps(self.metadata),
             "created_at": self.created_at,
+            "status": self.status,
+            "promoted_memory_id": self.promoted_memory_id,
+            "updated_at": self.updated_at,
         }
 
     @classmethod
@@ -386,6 +406,9 @@ class MemoryCandidate:
             last_seen_at=row["last_seen_at"],
             metadata=_json_loads(row["metadata"], {}),
             created_at=row["created_at"],
+            status=row["status"] if "status" in row.keys() else MemoryStatus.CANDIDATE,
+            promoted_memory_id=row["promoted_memory_id"] if "promoted_memory_id" in row.keys() else None,
+            updated_at=row["updated_at"] if "updated_at" in row.keys() else row["last_seen_at"],
         )
 
     def to_memory_item(self) -> MemoryItem:
@@ -527,6 +550,50 @@ class UserProfile:
             "facts": self.facts,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+        }
+
+
+@dataclass
+class LongTermMemoryDeletionRequest:
+    """Deletion command for the long-term memory compliance path."""
+
+    user_id: str
+    scope: str
+    target_id: Optional[str] = None
+    reason: str = ""
+    requested_by: str = "system"
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LongTermMemoryDeletionResult:
+    """Result of a tombstone/delete projection operation."""
+
+    request: LongTermMemoryDeletionRequest
+    deleted_memories: int = 0
+    deleted_candidates: int = 0
+    deleted_profiles: int = 0
+    audit_id: Optional[int] = None
+    created_at: str = ""
+
+    def __post_init__(self):
+        if not self.created_at:
+            self.created_at = _utcnow_iso()
+
+    @property
+    def deleted_count(self) -> int:
+        return self.deleted_memories + self.deleted_candidates + self.deleted_profiles
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "user_id": self.request.user_id,
+            "scope": self.request.scope,
+            "target_id": self.request.target_id,
+            "deleted_memories": self.deleted_memories,
+            "deleted_candidates": self.deleted_candidates,
+            "deleted_profiles": self.deleted_profiles,
+            "audit_id": self.audit_id,
+            "created_at": self.created_at,
         }
 
 

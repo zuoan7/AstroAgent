@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -62,6 +63,12 @@ class OnlineRetriever:
         self.cache: Optional[MultiLevelCache] = None
         self.metrics: Optional[MetricsCollector] = None
         self.knowledge_updater: Optional[KnowledgeUpdateManager] = None
+        self._metrics_lock = threading.Lock()
+        self._runtime_metrics: Dict[str, float] = {
+            "rag_total_ms": 0.0,
+            "rerank_ms": 0.0,
+            "rag_call_count": 0.0,
+        }
 
         if not self.enabled or not settings.DASHSCOPE_API_KEY:
             if not settings.DASHSCOPE_API_KEY:
@@ -380,6 +387,15 @@ class OnlineRetriever:
     # ===== 公共接口 =====
 
     def get_relevant_context(self, query: str, top_k: Optional[int] = None) -> str:
+        return self.retrieve(query, top_k=top_k).get("context", "")
+
+    def retrieve(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        *,
+        fast_mode: bool = False,
+    ) -> Dict[str, Any]:
         """
         增强型三级检索主入口
 
@@ -390,13 +406,14 @@ class OnlineRetriever:
             top_k: 最终返回的文档数
 
         Returns:
-            格式化后的上下文字符串
+            检索结果与阶段指标
         """
         if not self.enabled or not self.db:
-            return ""
+            return {"context": "", "stages_ms": {}, "cache_hit": False, "rerank_used": False}
 
         k = top_k or self.top_k
         cache_hit = False
+        overall_started = time.perf_counter()
 
         if self.cache:
             cached = self.cache.get(query, k)
@@ -404,31 +421,43 @@ class OnlineRetriever:
                 cache_hit = True
                 logger.debug(f"📄 检索缓存命中")
                 self._record_metrics(query, 0.0, 0, 0.0, 0.0, cache_hit=True)
-                return cached
+                self._add_runtime_metrics({"rag_total_ms": 0.0, "rag_call_count": 1.0})
+                return {
+                    "context": cached,
+                    "stages_ms": {"rag_total_ms": 0.0},
+                    "cache_hit": True,
+                    "rerank_used": False,
+                }
 
         try:
             start_time = time.time()
             stage_times = {}
 
             t0 = time.time()
-            ranked_lists = self._hybrid_search(query, self.retrieval_candidates)
+            candidate_k = self.retrieval_candidates if not fast_mode else min(self.retrieval_candidates, max(k * 2, 6))
+            ranked_lists = self._hybrid_search(query, candidate_k)
             stage_times["hybrid_search"] = time.time() - t0
 
             if not ranked_lists:
                 logger.warning("⚠️  混合检索未返回任何结果")
-                return ""
+                return {"context": "", "stages_ms": {}, "cache_hit": False, "rerank_used": False}
 
             t0 = time.time()
-            rrf_results = self._rrf_merge(ranked_lists, self.retrieval_candidates)
+            rrf_results = self._rrf_merge(ranked_lists, candidate_k)
             stage_times["rrf_fusion"] = time.time() - t0
 
             if not rrf_results:
                 logger.warning("⚠️  RRF 融合未返回任何结果")
-                return ""
+                return {"context": "", "stages_ms": {}, "cache_hit": False, "rerank_used": False}
 
-            t0 = time.time()
-            rerank_results = self._rerank(query, rrf_results, top_n=k * 2)
-            stage_times["rerank"] = time.time() - t0
+            rerank_used = self._should_use_rerank(query, rrf_results, fast_mode=fast_mode)
+            if rerank_used:
+                t0 = time.time()
+                rerank_results = self._rerank(query, rrf_results, top_n=k * 2)
+                stage_times["rerank"] = time.time() - t0
+            else:
+                rerank_results = self._rrf_to_rerank_results(rrf_results, top_n=k * 2)
+                stage_times["rerank"] = 0.0
 
             t0 = time.time()
             filtered_results = self._filter_results(rerank_results, query, top_k=k)
@@ -457,15 +486,51 @@ class OnlineRetriever:
                 query, latency_ms, len(final_docs), top_score, avg_score,
                 cache_hit=False, stages=stage_times,
             )
+            runtime_stage_ms = {
+                "rag_total_ms": round((time.perf_counter() - overall_started) * 1000.0, 2),
+                "rerank_ms": round(stage_times.get("rerank", 0.0) * 1000.0, 2),
+            }
+            self._add_runtime_metrics({
+                **runtime_stage_ms,
+                "rag_call_count": 1.0,
+            })
 
             if self.cache:
                 self.cache.set(query, k, context)
 
-            return context
+            return {
+                "context": context,
+                "stages_ms": {
+                    key: round(value * 1000.0, 2)
+                    for key, value in stage_times.items()
+                } | runtime_stage_ms,
+                "cache_hit": False,
+                "rerank_used": rerank_used,
+                "result_count": len(final_docs),
+            }
 
         except Exception as e:
             logger.error(f"❌ 增强检索失败: {e}")
-            return ""
+            self._add_runtime_metrics({"rag_call_count": 1.0})
+            return {"context": "", "stages_ms": {}, "cache_hit": False, "rerank_used": False}
+
+    def _should_use_rerank(
+        self,
+        query: str,
+        rrf_results: List[RankedDocument],
+        *,
+        fast_mode: bool,
+    ) -> bool:
+        if not self.reranker or not self.reranker.enabled:
+            return False
+        if not rrf_results:
+            return False
+        if not fast_mode:
+            return True
+        if len(query.strip()) > 24:
+            return True
+        top_score = rrf_results[0].rrf_score if rrf_results else 0.0
+        return top_score < 0.2
 
     def _record_metrics(
         self,
@@ -600,3 +665,12 @@ class OnlineRetriever:
         if new_docs and self.knowledge_updater:
             return self.knowledge_updater.check_updates(new_docs, source=source)
         return {}
+
+    def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
+        with self._metrics_lock:
+            return dict(self._runtime_metrics)
+
+    def _add_runtime_metrics(self, payload: Dict[str, float]) -> None:
+        with self._metrics_lock:
+            for key, value in payload.items():
+                self._runtime_metrics[key] = self._runtime_metrics.get(key, 0.0) + value

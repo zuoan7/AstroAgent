@@ -1,7 +1,8 @@
-from langchain_community.chat_models import ChatTongyi
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 from src.core.config import settings
+from src.core.llm_factory import build_chat_model
+from src.core.model_catalog import model_selection_payload, resolve_model_config
 from src.rag.online_retriever import OnlineRetriever
 from src.memory.memory import ShortTermMemory, LongTermMemory
 from src.memory.long_term_memory import LongTermMemoryManager
@@ -10,63 +11,72 @@ from src.agent.fallback_service import FallbackService
 from src.agent.vision_service import VisionService
 from src.agent.speech_service import SpeechService
 from src.agent.streaming_service import StreamingService
+from src.agent.request_router import RequestRouter
+from src.agent.task_orchestrator import TaskOrchestrator
 from typing import List, Optional
 import traceback
 from src.core.logger import logger
 
 
 class AstroAgent:
-    def __init__(self, user_id: Optional[str] = None):
+    def __init__(
+        self,
+        user_id: Optional[str] = None,
+        *,
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ):
         self.user_id = user_id or settings.DEFAULT_USER_ID
+        self.model_provider = model_provider or getattr(settings, "DEFAULT_LLM_PROVIDER", "dashscope")
+        self.model_name = model_name or settings.MODEL_NAME
 
-        if not settings.DASHSCOPE_API_KEY:
-            raise ValueError("❌ DashScope API Key未配置！请在settings中设置DASHSCOPE_API_KEY")
+        resolve_model_config(self.model_provider, self.model_name)
 
         self.rag = OnlineRetriever()
         self.memory = ShortTermMemory(session_id=f"stm_{self.user_id}", user_id=self.user_id)
         self.long_term_memory = LongTermMemoryManager(settings.LONG_TERM_MEMORY_PATH)
-        self.llm = self._init_llm()
 
         self.skill_manager = SkillManager(rag_retriever=self.rag)
-
+        self.request_router = RequestRouter()
         self.fallback_service = FallbackService(skill_manager=self.skill_manager)
         self.vision_service = VisionService()
         self.speech_service = SpeechService()
-
-        self.streaming_service = StreamingService(
-            agent_executor=None,
-            memory=self.memory,
-            long_term_memory=self.long_term_memory,
+        runtime = self.create_session_runtime(
             user_id=self.user_id,
-            fallback_service=self.fallback_service,
+            memory=self.memory,
+            model_provider=self.model_provider,
+            model_name=self.model_name,
         )
-
-        self._agent_executor = self._build_agent()
-        self.streaming_service._agent_executor = self._agent_executor
+        self.llm = runtime["llm"]
+        self.task_orchestrator = runtime["task_orchestrator"]
+        self.streaming_service = runtime["streaming_service"]
+        self._agent_executor = runtime["agent_executor"]
+        self.model_provider = runtime["model_provider"]
+        self.model_name = runtime["model_name"]
+        self.model_label = runtime["model_label"]
 
         logger.info("✅ AstroAgent初始化完成，使用统一的SkillManager")
 
-    def _init_llm(self):
+    def _init_llm(self, model_provider: Optional[str] = None, model_name: Optional[str] = None):
         try:
-            llm = ChatTongyi(
-                model=settings.MODEL_NAME,
-                dashscope_api_key=settings.DASHSCOPE_API_KEY,
-                temperature=0.1
+            resolved = resolve_model_config(model_provider, model_name)
+            llm = build_chat_model(
+                provider=resolved.provider,
+                model=resolved.model_name,
+                temperature=0.1,
             )
-            logger.info(f"✅ 语言模型 {settings.MODEL_NAME} 初始化成功")
+            logger.info(
+                f"✅ 语言模型 {resolved.model_name} 初始化成功"
+                f"（provider={resolved.provider}, base_url={resolved.base_url}）"
+            )
             return llm
         except Exception as e:
             logger.error(f"❌ 语言模型初始化失败：{str(e)}")
             raise
 
-    def _build_agent(self):
+    def _build_agent(self, llm=None):
         try:
-            from src.core.config import resolve_path
-            from pathlib import Path
-            template_path = resolve_path(settings.PROMPT_TEMPLATE_PATH)
-            with open(template_path, 'r', encoding='utf-8') as f:
-                template = f.read()
-            logger.info(f"✅ 成功从外部文件读取prompt模板: {template_path}")
+            template = self._load_prompt_template()
         except Exception as e:
             logger.error(f"❌ 读取prompt模板文件失败：{str(e)}")
             template = '''
@@ -125,7 +135,7 @@ class AstroAgent:
         tools = self.skill_manager.get_langchain_tools()
 
         agent = create_react_agent(
-            llm=self.llm,
+            llm=llm or self.llm,
             tools=tools,
             prompt=prompt
         )
@@ -143,6 +153,51 @@ class AstroAgent:
 
         logger.info("✅ React Agent构建完成（最大迭代5次，超时60秒）")
         return agent_executor
+
+    def _load_prompt_template(self) -> str:
+        from src.core.config import resolve_path
+
+        template_path = resolve_path(settings.PROMPT_TEMPLATE_PATH)
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template = f.read()
+        logger.info(f"✅ 成功从外部文件读取prompt模板: {template_path}")
+        return template
+
+    def create_session_runtime(
+        self,
+        *,
+        user_id: str,
+        memory: ShortTermMemory,
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ):
+        selection = model_selection_payload(model_provider, model_name)
+        llm = self._init_llm(selection["model_provider"], selection["model_name"])
+        task_orchestrator = TaskOrchestrator(
+            skill_manager=self.skill_manager,
+            rag_retriever=self.rag,
+            llm=llm,
+        )
+        streaming_service = StreamingService(
+            agent_executor=None,
+            memory=memory,
+            long_term_memory=self.long_term_memory,
+            user_id=user_id,
+            fallback_service=self.fallback_service,
+            request_router=self.request_router,
+            task_orchestrator=task_orchestrator,
+            skill_manager=self.skill_manager,
+            rag_retriever=self.rag,
+        )
+        agent_executor = self._build_agent(llm=llm)
+        streaming_service._agent_executor = agent_executor
+        return {
+            "llm": llm,
+            "task_orchestrator": task_orchestrator,
+            "streaming_service": streaming_service,
+            "agent_executor": agent_executor,
+            **selection,
+        }
 
     def generate_response(self, query: str):
         return self.streaming_service.generate_response(query)

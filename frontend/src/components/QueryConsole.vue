@@ -13,6 +13,21 @@
       placeholder="例如：基于我过去的观测偏好，给我一个今晚的行星观测计划，并说明你调用了哪些工具。"
       @input="$emit('update:modelValue', $event.target.value)"
     />
+    <div class="inline-form">
+      <label>
+        <span class="eyebrow">模型</span>
+        <select
+          :value="selectedModelKey"
+          :disabled="disabled"
+          @change="$emit('change-model', $event.target.value)"
+        >
+          <option v-for="option in modelOptions" :key="option.value" :value="option.value" :disabled="!option.configured">
+            {{ option.label }}{{ option.configured ? '' : '（未配置）' }}
+          </option>
+        </select>
+      </label>
+      <span class="status-pill subtle">{{ currentModelLabel }}</span>
+    </div>
     <div class="upload-row">
       <input
         ref="imageInputRef"
@@ -114,6 +129,9 @@ const props = defineProps({
   audioFileName: { type: String, default: '' },
   imagePreviewUrl: { type: String, default: '' },
   uploadState: { type: String, default: 'idle' },
+  modelOptions: { type: Array, default: () => [] },
+  selectedModelKey: { type: String, default: '' },
+  currentModelLabel: { type: String, default: '' },
   isRecording: { type: Boolean, required: true },
   canRecord: { type: Boolean, required: true },
   recordingDurationSec: { type: Number, default: 0 },
@@ -124,6 +142,7 @@ const emit = defineEmits([
   'submit',
   'refresh',
   'clear-session',
+  'change-model',
   'select-image',
   'select-audio',
   'clear-image',

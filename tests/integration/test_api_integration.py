@@ -115,6 +115,34 @@ class TestAPIEndpointsIntegration:
         )
         assert response.status_code == 200
 
+    def test_list_models_endpoint(self, test_client):
+        client, _ = test_client
+
+        response = client.get("/models")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert isinstance(data["providers"], list)
+        assert any(item["provider"] == "dashscope" for item in data["providers"])
+
+    def test_switch_session_model_endpoint(self, test_client):
+        client, _ = test_client
+
+        response = client.post(
+            "/session/model",
+            json={
+                "user_id": "test_user",
+                "session_id": "session-a",
+                "model_provider": "dashscope",
+                "model_name": "qwen3.6-plus",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["model_provider"] == "dashscope"
+        assert data["model_name"] == "qwen3.6-plus"
+
 
 class TestSkillManagerIntegration:
     """测试SkillManager与Router的集成"""

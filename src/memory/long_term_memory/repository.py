@@ -24,7 +24,7 @@ def _ensure_parent_dir(path: str):
 
 
 class LongTermMemoryRepository:
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -62,7 +62,8 @@ class LongTermMemoryRepository:
                     expires_at TEXT,
                     access_count INTEGER NOT NULL DEFAULT 0,
                     confirmation_count INTEGER NOT NULL DEFAULT 0,
-                    confirmed_by_user INTEGER NOT NULL DEFAULT 0
+                    confirmed_by_user INTEGER NOT NULL DEFAULT 0,
+                    deleted_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_memories_user_type
                     ON memories(user_id, memory_type);
@@ -103,7 +104,10 @@ class LongTermMemoryRepository:
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
                     metadata TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'candidate',
+                    promoted_memory_id TEXT,
+                    updated_at TEXT NOT NULL DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_candidates_user_type
                     ON memory_candidates(user_id, memory_type);
@@ -149,6 +153,22 @@ class LongTermMemoryRepository:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS ltm_deletion_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    target_id TEXT,
+                    reason TEXT NOT NULL DEFAULT '',
+                    requested_by TEXT NOT NULL DEFAULT 'system',
+                    deleted_memories INTEGER NOT NULL DEFAULT 0,
+                    deleted_candidates INTEGER NOT NULL DEFAULT 0,
+                    deleted_profiles INTEGER NOT NULL DEFAULT 0,
+                    metadata TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ltm_deletion_audit_user_time
+                    ON ltm_deletion_audit(user_id, created_at DESC);
 
                 CREATE TABLE IF NOT EXISTS memory_events (
                     event_id TEXT PRIMARY KEY,
@@ -205,6 +225,27 @@ class LongTermMemoryRepository:
             for name, ddl in required.items():
                 if name not in cols:
                     conn.execute(f"ALTER TABLE memory_events ADD COLUMN {name} {ddl}")
+        if self._table_exists(conn, "memories"):
+            self._ensure_columns(conn, "memories", {"deleted_at": "TEXT"})
+        if self._table_exists(conn, "memory_candidates"):
+            self._ensure_columns(
+                conn,
+                "memory_candidates",
+                {
+                    "status": "TEXT NOT NULL DEFAULT 'candidate'",
+                    "promoted_memory_id": "TEXT",
+                    "updated_at": "TEXT NOT NULL DEFAULT ''",
+                },
+            )
+            conn.execute(
+                "UPDATE memory_candidates SET updated_at=last_seen_at WHERE updated_at=''"
+            )
+
+    def _ensure_columns(self, conn: sqlite3.Connection, table_name: str, columns: Dict[str, str]):
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+        for name, ddl in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {name} {ddl}")
 
     def _table_exists(self, conn: sqlite3.Connection, table_name: str) -> bool:
         row = conn.execute(
@@ -222,8 +263,8 @@ class LongTermMemoryRepository:
                     confidence, source_type, source_conversation_id,
                     source_content_snippet, status, priority, metadata,
                     created_at, updated_at, accessed_at, expires_at,
-                    access_count, confirmation_count, confirmed_by_user
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    access_count, confirmation_count, confirmed_by_user, deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.id, item.user_id, item.memory_type, item.category,
@@ -233,7 +274,7 @@ class LongTermMemoryRepository:
                     item.to_db_row()["metadata"],
                     item.created_at, item.updated_at, item.accessed_at,
                     item.expires_at, item.access_count, item.confirmation_count,
-                    int(item.confirmed_by_user),
+                    int(item.confirmed_by_user), item.deleted_at,
                 ),
             )
         return item
@@ -241,7 +282,7 @@ class LongTermMemoryRepository:
     def get_memory(self, memory_id: str) -> Optional[MemoryItem]:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM memories WHERE id = ?", (memory_id,)
+                "SELECT * FROM memories WHERE id = ? AND status != 'deleted'", (memory_id,)
             ).fetchone()
         if not row:
             return None
@@ -257,7 +298,8 @@ class LongTermMemoryRepository:
                     confidence=?, source_type=?, source_conversation_id=?,
                     source_content_snippet=?, status=?, priority=?, metadata=?,
                     updated_at=?, accessed_at=?, expires_at=?,
-                    access_count=?, confirmation_count=?, confirmed_by_user=?
+                    access_count=?, confirmation_count=?, confirmed_by_user=?,
+                    deleted_at=?
                 WHERE id=? AND user_id=?
                 """,
                 (
@@ -268,7 +310,7 @@ class LongTermMemoryRepository:
                     item.to_db_row()["metadata"],
                     now, item.accessed_at, item.expires_at,
                     item.access_count, item.confirmation_count,
-                    int(item.confirmed_by_user),
+                    int(item.confirmed_by_user), item.deleted_at,
                     item.id, item.user_id,
                 ),
             )
@@ -277,13 +319,15 @@ class LongTermMemoryRepository:
     def delete_memory(self, memory_id: str, user_id: str) -> bool:
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM memories WHERE id=? AND user_id=?",
-                (memory_id, user_id),
+                "UPDATE memories SET status='deleted', deleted_at=?, updated_at=? WHERE id=? AND user_id=? AND status!='deleted'",
+                (_utcnow_iso(), _utcnow_iso(), memory_id, user_id),
             )
             return cursor.rowcount > 0
 
     def query_memories(self, query: MemoryQuery) -> List[MemoryItem]:
         where_sql, params, order_clause = query.to_where_clause()
+        if not query.status:
+            where_sql = f"{where_sql} AND status != 'deleted'"
         sql = f"SELECT * FROM memories WHERE {where_sql} ORDER BY {order_clause} LIMIT ? OFFSET ?"
         params.extend([query.limit, query.offset])
         with self._connect() as conn:
@@ -293,6 +337,8 @@ class LongTermMemoryRepository:
     def count_memories(self, query: MemoryQuery) -> int:
         where_sql, params, _ = query.to_where_clause()
         sql = f"SELECT COUNT(*) as cnt FROM memories WHERE {where_sql}"
+        if not query.status:
+            sql = f"SELECT COUNT(*) as cnt FROM memories WHERE {where_sql} AND status != 'deleted'"
         with self._connect() as conn:
             row = conn.execute(sql, params).fetchone()
         return row["cnt"] if row else 0
@@ -302,7 +348,7 @@ class LongTermMemoryRepository:
     ) -> Optional[MemoryItem]:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM memories WHERE user_id=? AND memory_type=? AND key=? AND status=? LIMIT 1",
+                "SELECT * FROM memories WHERE user_id=? AND memory_type=? AND key=? AND status=? AND status!='deleted' LIMIT 1",
                 (user_id, memory_type, key, status),
             ).fetchone()
         if not row:
@@ -314,7 +360,7 @@ class LongTermMemoryRepository:
     ) -> List[MemoryItem]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM memories WHERE user_id=? AND memory_type=? AND category=? AND status=? AND value LIKE ?",
+                "SELECT * FROM memories WHERE user_id=? AND memory_type=? AND category=? AND status=? AND status!='deleted' AND value LIKE ?",
                 (user_id, memory_type, category, status, f"%{value}%"),
             ).fetchall()
         return [MemoryItem.from_db_row(row) for row in rows]
@@ -361,8 +407,9 @@ class LongTermMemoryRepository:
                     id, user_id, memory_type, category, key, value,
                     confidence, source_type, source_conversation_id,
                     source_content_snippet, occurrence_count,
-                    first_seen_at, last_seen_at, metadata, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    first_seen_at, last_seen_at, metadata, created_at,
+                    status, promoted_memory_id, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate.id, candidate.user_id, candidate.memory_type,
@@ -371,7 +418,8 @@ class LongTermMemoryRepository:
                     candidate.source_conversation_id, candidate.source_content_snippet,
                     candidate.occurrence_count, candidate.first_seen_at,
                     candidate.last_seen_at, candidate.to_db_row()["metadata"],
-                    candidate.created_at,
+                    candidate.created_at, candidate.status,
+                    candidate.promoted_memory_id, candidate.updated_at,
                 ),
             )
         return candidate
@@ -379,7 +427,7 @@ class LongTermMemoryRepository:
     def get_candidate(self, candidate_id: str) -> Optional[MemoryCandidate]:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM memory_candidates WHERE id=?", (candidate_id,)
+                "SELECT * FROM memory_candidates WHERE id=? AND status != 'deleted'", (candidate_id,)
             ).fetchone()
         if not row:
             return None
@@ -390,7 +438,7 @@ class LongTermMemoryRepository:
     ) -> Optional[MemoryCandidate]:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM memory_candidates WHERE user_id=? AND memory_type=? AND key=? LIMIT 1",
+                "SELECT * FROM memory_candidates WHERE user_id=? AND memory_type=? AND key=? AND status='candidate' LIMIT 1",
                 (user_id, memory_type, key),
             ).fetchone()
         if not row:
@@ -403,7 +451,8 @@ class LongTermMemoryRepository:
                 """
                 UPDATE memory_candidates SET
                     value=?, confidence=?, occurrence_count=?,
-                    last_seen_at=?, metadata=?
+                    last_seen_at=?, metadata=?, status=?,
+                    promoted_memory_id=?, updated_at=?
                 WHERE id=?
                 """,
                 (
@@ -412,6 +461,9 @@ class LongTermMemoryRepository:
                     candidate.occurrence_count,
                     candidate.last_seen_at,
                     candidate.to_db_row()["metadata"],
+                    candidate.status,
+                    candidate.promoted_memory_id,
+                    candidate.updated_at or _utcnow_iso(),
                     candidate.id,
                 ),
             )
@@ -420,7 +472,20 @@ class LongTermMemoryRepository:
     def delete_candidate(self, candidate_id: str) -> bool:
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM memory_candidates WHERE id=?", (candidate_id,)
+                "UPDATE memory_candidates SET status='deleted', updated_at=? WHERE id=? AND status!='deleted'",
+                (_utcnow_iso(), candidate_id),
+            )
+            return cursor.rowcount > 0
+
+    def mark_candidate_promoted(self, candidate_id: str, memory_id: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE memory_candidates
+                SET status='promoted', promoted_memory_id=?, updated_at=?
+                WHERE id=? AND status!='deleted'
+                """,
+                (memory_id, _utcnow_iso(), candidate_id),
             )
             return cursor.rowcount > 0
 
@@ -429,7 +494,7 @@ class LongTermMemoryRepository:
     ) -> List[MemoryCandidate]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM memory_candidates WHERE user_id=? ORDER BY last_seen_at DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM memory_candidates WHERE user_id=? AND status='candidate' ORDER BY last_seen_at DESC LIMIT ? OFFSET ?",
                 (user_id, limit, offset),
             ).fetchall()
         return [MemoryCandidate.from_db_row(row) for row in rows]
@@ -705,12 +770,140 @@ class LongTermMemoryRepository:
 
     def delete_profile(self, user_id: str) -> bool:
         with self._connect() as conn:
-            conn.execute("DELETE FROM memories WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM memory_candidates WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM memory_event_log WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM memory_confirmations WHERE user_id=?", (user_id,))
             cursor = conn.execute("DELETE FROM user_profiles WHERE user_id=?", (user_id,))
             return cursor.rowcount > 0
+
+    def tombstone_user_memories(self, user_id: str, reason: str = "") -> int:
+        now = _utcnow_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE memories
+                SET status='deleted', deleted_at=?, updated_at=?,
+                    metadata=?
+                WHERE user_id=? AND status!='deleted'
+                """,
+                (now, now, json.dumps({"delete_reason": reason}, ensure_ascii=False), user_id),
+            )
+            return cursor.rowcount
+
+    def tombstone_memory(self, user_id: str, memory_id: str, reason: str = "") -> int:
+        now = _utcnow_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE memories
+                SET status='deleted', deleted_at=?, updated_at=?,
+                    metadata=?
+                WHERE user_id=? AND id=? AND status!='deleted'
+                """,
+                (now, now, json.dumps({"delete_reason": reason}, ensure_ascii=False), user_id, memory_id),
+            )
+            return cursor.rowcount
+
+    def tombstone_candidate(self, user_id: str, candidate_id: str, reason: str = "") -> int:
+        now = _utcnow_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE memory_candidates
+                SET status='deleted', updated_at=?,
+                    metadata=?
+                WHERE user_id=? AND id=? AND status!='deleted'
+                """,
+                (now, json.dumps({"delete_reason": reason}, ensure_ascii=False), user_id, candidate_id),
+            )
+            return cursor.rowcount
+
+    def tombstone_user_candidates(self, user_id: str, reason: str = "") -> int:
+        now = _utcnow_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE memory_candidates
+                SET status='deleted', updated_at=?,
+                    metadata=?
+                WHERE user_id=? AND status!='deleted'
+                """,
+                (now, json.dumps({"delete_reason": reason}, ensure_ascii=False), user_id),
+            )
+            return cursor.rowcount
+
+    def mark_legacy_events_deleted(self, user_id: str, reason: str = "") -> int:
+        now = _utcnow_iso()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE memory_events
+                SET status='deleted', updated_at=?,
+                    metadata=?
+                WHERE user_id=? AND status!='deleted'
+                """,
+                (now, json.dumps({"delete_reason": reason}, ensure_ascii=False), user_id),
+            )
+            return cursor.rowcount
+
+    def add_deletion_audit(
+        self,
+        user_id: str,
+        scope: str,
+        target_id: Optional[str],
+        reason: str,
+        requested_by: str,
+        deleted_memories: int,
+        deleted_candidates: int,
+        deleted_profiles: int,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO ltm_deletion_audit (
+                    user_id, scope, target_id, reason, requested_by,
+                    deleted_memories, deleted_candidates, deleted_profiles,
+                    metadata, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    scope,
+                    target_id,
+                    reason,
+                    requested_by,
+                    deleted_memories,
+                    deleted_candidates,
+                    deleted_profiles,
+                    json.dumps(metadata or {}, ensure_ascii=False),
+                    _utcnow_iso(),
+                ),
+            )
+            return cursor.lastrowid
+
+    def list_deletion_audit(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM ltm_deletion_audit
+                WHERE user_id=? ORDER BY created_at DESC LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "scope": row["scope"],
+                "target_id": row["target_id"],
+                "reason": row["reason"],
+                "requested_by": row["requested_by"],
+                "deleted_memories": row["deleted_memories"],
+                "deleted_candidates": row["deleted_candidates"],
+                "deleted_profiles": row["deleted_profiles"],
+                "metadata": _json_loads(row["metadata"], {}),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def expire_old_memories(self, user_id: str, before_iso: str) -> int:
         with self._connect() as conn:
@@ -740,14 +933,14 @@ class LongTermMemoryRepository:
         with self._connect() as conn:
             type_counts = {}
             for row in conn.execute(
-                "SELECT memory_type, status, COUNT(*) as cnt FROM memories WHERE user_id=? GROUP BY memory_type, status",
+                "SELECT memory_type, status, COUNT(*) as cnt FROM memories WHERE user_id=? AND status!='deleted' GROUP BY memory_type, status",
                 (user_id,),
             ).fetchall():
                 key = f"{row['memory_type']}_{row['status']}"
                 type_counts[key] = row["cnt"]
 
             candidate_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM memory_candidates WHERE user_id=?", (user_id,)
+                "SELECT COUNT(*) as cnt FROM memory_candidates WHERE user_id=? AND status='candidate'", (user_id,)
             ).fetchone()["cnt"]
 
             confirmation_pending = conn.execute(

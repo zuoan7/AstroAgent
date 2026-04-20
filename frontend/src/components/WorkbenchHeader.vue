@@ -12,6 +12,7 @@
         <span class="status-pill subtle">账号 {{ accountName }}</span>
         <span class="status-pill subtle">User {{ userId }}</span>
         <span class="status-pill subtle">Session {{ sessionId }}</span>
+        <span class="status-pill subtle">Model {{ currentModelLabel }}</span>
       </div>
       <label class="toggle">
         <input type="checkbox" :checked="disableLongTermMemory" @change="$emit('toggle-memory', $event.target.checked)" />
@@ -31,6 +32,7 @@ defineProps({
   accountName: { type: String, default: 'Demo Account' },
   userId: { type: String, required: true },
   sessionId: { type: String, required: true },
+  currentModelLabel: { type: String, default: '' },
   disableLongTermMemory: { type: Boolean, required: true },
   isStreaming: { type: Boolean, required: true },
 })

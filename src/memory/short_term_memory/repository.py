@@ -39,11 +39,16 @@ class ShortTermMemoryRepository(SQLiteRepository):
                 CREATE TABLE IF NOT EXISTS stm_tool_calls (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL,
+                    tool_call_id TEXT NOT NULL DEFAULT '',
                     tool_name TEXT NOT NULL,
                     input_summary TEXT NOT NULL DEFAULT '',
+                    output_digest TEXT NOT NULL DEFAULT '',
                     output_summary TEXT NOT NULL DEFAULT '',
                     output_is_summary INTEGER NOT NULL DEFAULT 0,
                     output_is_truncated INTEGER NOT NULL DEFAULT 0,
+                    raw_artifact_id TEXT NOT NULL DEFAULT '',
+                    raw_size_bytes INTEGER NOT NULL DEFAULT 0,
+                    content_type TEXT NOT NULL DEFAULT 'text/plain',
                     tool_input TEXT NOT NULL DEFAULT '',
                     result_summary TEXT NOT NULL DEFAULT '',
                     timestamp REAL NOT NULL,
@@ -87,6 +92,11 @@ class ShortTermMemoryRepository(SQLiteRepository):
             self._ensure_column(conn, "stm_salient_facts", "fact_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "stm_salient_facts", "source_type", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "stm_salient_facts", "source_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "stm_tool_calls", "tool_call_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "stm_tool_calls", "output_digest", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "stm_tool_calls", "raw_artifact_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "stm_tool_calls", "raw_size_bytes", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "stm_tool_calls", "content_type", "TEXT NOT NULL DEFAULT 'text/plain'")
 
     def _ensure_column(self, conn, table: str, column: str, ddl: str):
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -142,23 +152,33 @@ class ShortTermMemoryRepository(SQLiteRepository):
 
             tool_calls = [
                 ToolCallRecord(
+                    tool_call_id=row["tool_call_id"] or "",
                     tool_name=row["tool_name"],
                     timestamp=row["timestamp"],
                     input_summary=row["input_summary"],
+                    output_digest=row["output_digest"],
                     output_summary=row["output_summary"],
                     output_is_summary=bool(row["output_is_summary"]),
                     output_is_truncated=bool(row["output_is_truncated"]),
+                    raw_artifact_id=row["raw_artifact_id"],
+                    raw_size_bytes=row["raw_size_bytes"],
+                    content_type=row["content_type"] or "text/plain",
                     status=row["status"],
                     importance=row["importance"],
                 )
                 for row in cursor.execute(
                     """
                     SELECT
+                        tool_call_id,
                         tool_name,
                         CASE WHEN input_summary != '' THEN input_summary ELSE tool_input END AS input_summary,
+                        output_digest,
                         CASE WHEN output_summary != '' THEN output_summary ELSE result_summary END AS output_summary,
                         output_is_summary,
                         output_is_truncated,
+                        raw_artifact_id,
+                        raw_size_bytes,
+                        content_type,
                         timestamp,
                         CASE
                             WHEN status != '' THEN status
@@ -232,17 +252,23 @@ class ShortTermMemoryRepository(SQLiteRepository):
             conn.execute(
                 """
                 INSERT INTO stm_tool_calls (
-                    session_id, tool_name, input_summary, output_summary, output_is_summary, output_is_truncated,
+                    session_id, tool_call_id, tool_name, input_summary, output_digest, output_summary,
+                    output_is_summary, output_is_truncated, raw_artifact_id, raw_size_bytes, content_type,
                     timestamp, status, importance, tool_input, result_summary, success
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
+                    tool_call.tool_call_id,
                     tool_call.tool_name,
                     tool_call.input_summary,
+                    tool_call.output_digest,
                     tool_call.output_summary,
                     int(tool_call.output_is_summary),
                     int(tool_call.output_is_truncated),
+                    tool_call.raw_artifact_id,
+                    tool_call.raw_size_bytes,
+                    tool_call.content_type,
                     tool_call.timestamp,
                     tool_call.status,
                     tool_call.importance,
@@ -313,6 +339,52 @@ class ShortTermMemoryRepository(SQLiteRepository):
     def clear_session(self, session_id: str):
         with self._connect() as conn:
             conn.execute("DELETE FROM stm_sessions WHERE session_id = ?", (session_id,))
+
+    def delete_message(self, session_id: str, message_id: str) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM stm_messages WHERE session_id = ? AND message_id = ?",
+                (session_id, message_id),
+            )
+        return cursor.rowcount
+
+    def delete_tool_call(self, session_id: str, tool_call_id: str) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM stm_tool_calls WHERE session_id = ? AND tool_call_id = ?",
+                (session_id, tool_call_id),
+            )
+        return cursor.rowcount
+
+    def delete_fact(self, session_id: str, fact_id: str) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM stm_salient_facts WHERE session_id = ? AND fact_id = ?",
+                (session_id, fact_id),
+            )
+        return cursor.rowcount
+
+    def delete_by_time_range(
+        self,
+        session_id: str,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+    ) -> int:
+        total = 0
+        conditions = ["session_id = ?"]
+        params: list[object] = [session_id]
+        if start_time is not None:
+            conditions.append("timestamp >= ?")
+            params.append(start_time)
+        if end_time is not None:
+            conditions.append("timestamp <= ?")
+            params.append(end_time)
+        where_clause = " AND ".join(conditions)
+        with self._connect() as conn:
+            for table in ("stm_messages", "stm_tool_calls", "stm_salient_facts"):
+                cursor = conn.execute(f"DELETE FROM {table} WHERE {where_clause}", tuple(params))
+                total += cursor.rowcount
+        return total
 
     def load_session_user(self, session_id: str) -> Optional[str]:
         with self._connect() as conn:

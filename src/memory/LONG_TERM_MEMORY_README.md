@@ -2,237 +2,172 @@
 
 ## 概述
 
-长期记忆模块为天文Agent添加了跨会话的用户画像存储能力，能够从对话中自动提取用户偏好、习惯和约束，并在后续对话中应用这些信息，提供更加个性化的服务。
+AstroAgent 的长期记忆模块用于保存跨会话稳定信息，例如用户偏好、习惯、约束、背景和事实。当前实现已经从“直接维护用户画像”升级为分层架构：
 
-## 核心特性
+```text
+extract -> candidate -> confirm/promote -> memory item -> profile projection -> prompt injection
+```
 
-### 1. 用户画像存储
-- **存储方式**: SQLite数据库 (`./long_term_memory/user_profiles.sqlite`)
-- **用户ID**: 支持多用户，默认使用 `anonymous`
-- **数据维度**:
-  - **偏好**: 回答风格、知识水平等
-  - **习惯**: 常问话题、关注的天体等
-  - **约束**: 内容限制、长度限制等
+核心原则是：`memories`、`memory_candidates`、`memory_versions`、`memory_confirmations` 和事件/审计日志是主存；`user_profiles` 只是可重建的投影，用于快速展示和 prompt 注入。
 
-### 2. 自动信息提取
-从每次对话中自动提取:
-- 显式表述（如"我喜欢简短回答"）
-- 隐式偏好（如关注特定天体）
-- 约束条件（如"不要用专业术语"）
+## 核心模块
 
-### 3. Prompt注入
-用户画像自动注入到Agent的Prompt中，影响回答风格和内容选择。
+- `LongTermMemoryService`：统一门面，承载长期记忆主流程。
+- `LongTermMemoryManager`：兼容层，保留旧接口并逐步委托给 service。
+- `CandidateManager`：唯一候选管理入口，负责候选累计、阈值判断和晋升。
+- `ProfileProjection`：从 active memories 重建 `user_profiles`。
+- `LongTermMemoryRetriever`：按 query/task_type 选择最相关长期记忆。
+- `PromptInjector`：把检索结果格式化为 prompt 片段。
+- `LongTermMemoryDeletionService`：执行 tombstone 删除并写入 audit log。
+- `LongTermMemoryRepository`：SQLite P0 存储实现。
 
-## 数据结构
+## 数据分层
+
+### 主存
+
+- `memories`：正式长期记忆项。
+- `memory_candidates`：候选记忆，只由 `CandidateManager` 维护。
+- `memory_versions`：记忆值变更版本。
+- `memory_confirmations`：待用户确认项。
+- `memory_event_log`：生命周期事件。
+- `ltm_deletion_audit`：删除审计。
+
+### 投影
+
+- `user_profiles`：从 active memories 聚合得到的用户画像。
+- 删除 profile 不代表删除长期记忆主存；可通过 `ProfileProjection.rebuild()` 由 active memories 重建。
+
+## 统一候选晋升规则
+
+候选晋升只走 `CandidateManager`：
+
+- 显式表达且 `explicit_bypass=True`：直接晋升。
+- `occurrence_count >= candidate_occurrence_threshold`：晋升。
+- `confidence >= candidate_confidence_threshold`：晋升。
+- 临时请求不会进入长期记忆。
+
+默认阈值：
 
 ```python
-@dataclass
-class UserProfile:
-    user_id: str              # 用户ID
-    preferences: Dict[str, Any]  # 偏好设置
-    habits: Dict[str, Any]      # 行为习惯
-    constraints: List[str]      # 约束条件
-    created_at: str           # 创建时间
-    updated_at: str           # 更新时间
+candidate_occurrence_threshold = 2
+candidate_confidence_threshold = 0.6
+candidate_explicit_bypass = True
 ```
 
-## 使用方式
+旧的 `memory_events` 候选流保留为兼容 API，但不再作为主晋升链路。
 
-### 方式1: 通过API
+## 编程接口
 
-#### 获取用户画像
-```bash
-curl http://localhost:8000/profile
-```
-
-#### 删除用户画像
-```bash
-curl -X DELETE http://localhost:8000/profile
-```
-
-#### 指定用户ID查询
-```bash
-curl http://localhost:8000/profile?user_id=user_123
-```
-
-### 方式2: 编程接口
+### 推荐：使用 LongTermMemoryService
 
 ```python
-from agent import AstroAgent
+from src.memory.long_term_memory.service import LongTermMemoryService
 
-# 创建Agent（自动初始化长期记忆）
-agent = AstroAgent(user_id="my_user_id")
+ltm = LongTermMemoryService("./memory/long_term_memory/user_profiles.sqlite")
 
-# 查询时自动提取并保存用户画像
-response = agent.generate_events("我喜欢详细的回答，讲讲黑洞")
-
-# 手动访问用户画像
-profile = agent.long_term_memory.load_profile("my_user_id")
-print(profile.preferences)
-```
-
-### 方式3: 直接使用LongTermMemory类
-
-```python
-from memory import LongTermMemory
-
-ltm = LongTermMemory("./long_term_memory/my_db.sqlite")
-
-# 提取信息
-extracted = ltm.extract_from_conversation(
-    user_message="我喜欢简短回答",
-    assistant_message="好的，我会简洁回答"
+items = ltm.extract_and_store(
+    user_message="我喜欢简短回答，我经常看火星",
+    assistant_message="好的，我会记住",
+    user_id="user_123",
 )
 
-# 合并更新
-ltm.merge_and_update("user_123", extracted)
-
-# 加载画像
 profile = ltm.load_profile("user_123")
-
-# 格式化用于Prompt
-formatted = ltm.format_profile_for_prompt("user_123")
+prompt_context = ltm.format_smart_prompt("user_123", "今晚用望远镜观测什么")
+hits = ltm.explain_memory_hits("user_123", "今晚用望远镜观测什么")
 ```
 
-## 工作流程
-
-```
-用户查询
-  ↓
-加载长期记忆（用户画像）
-  ↓
-格式化用户画像
-  ↓
-注入到Prompt（{user_profile}）
-  ↓
-Agent推理 + 工具调用
-  ↓
-生成回答
-  ↓
-提取新偏好信息
-  ↓
-更新长期记忆
-```
-
-## 配置参数
-
-在 `config.py` 中配置:
+### 兼容：继续使用 LongTermMemoryManager
 
 ```python
-# 长期记忆配置
-LONG_TERM_MEMORY_PATH: str = "./long_term_memory/user_profiles.sqlite"
-DEFAULT_USER_ID: str = "anonymous"
+from src.memory.long_term_memory import LongTermMemoryManager
+
+manager = LongTermMemoryManager()
+manager.extract_and_store("我喜欢简短回答", "好的", "user_123")
+prompt_context = manager.format_smart_prompt("user_123", "黑洞是什么")
 ```
 
-## 信息提取规则
+`LongTermMemoryManager` 保留旧方法名，内部主要委托给 `LongTermMemoryService`。
 
-### 偏好提取
-- `简短/简单` → `response_style: 简短`
-- `详细/深入` → `response_style: 详细`
-- `专业` → `knowledge_level: 专业`
-- `通俗/易懂` → `knowledge_level: 通俗`
+## Prompt 注入
 
-### 约束提取
-- `不要...术语` → `constraints: ["避免使用专业术语"]`
-- `不要超过...字` → `constraints: ["控制回答长度"]`
+Prompt 注入不再只依赖 profile merge，而是按 query 和 task_type 检索 active memories：
 
-### 习惯提取
-- 检测天体关键词: 火星、木星、黑洞、星系、星云等
-- 累计到 `frequent_topics` 列表
+- 任务类型包括 `general`、`qa`、`learning`、`observation` 等。
+- 约束类记忆权重更高。
+- 显式表达、用户确认、高置信度会提升排序。
+- `explain_memory_hits()` 可返回命中原因，便于调试和展示。
 
-## 示例对话
+## 删除能力
 
-### 场景1: 表达偏好
-```
-用户: 我喜欢简短一点的回答，不要太啰嗦
-助手: 好的，我会简洁回答
-→ 保存: preferences["response_style"] = "简短"
-```
+支持 tombstone + audit log：
 
-### 场景2: 表达兴趣
-```
-用户: 我对黑洞和星系很感兴趣
-助手: 好的，我来讲讲黑洞...
-→ 保存: habits["frequent_topics"] = ["黑洞", "星系"]
+```python
+from src.memory.long_term_memory.models import LongTermMemoryDeletionRequest
+
+ltm.delete(LongTermMemoryDeletionRequest(
+    user_id="user_123",
+    scope="memory",
+    target_id="memory_id",
+    reason="user request",
+))
 ```
 
-### 场景3: 表达约束
+当前支持 scope：
+
+- `memory`：删除单条正式记忆，查询结果不可见，并重建 profile projection。
+- `candidate`：删除单条候选记忆。
+- `profile`：只删除用户画像投影，不删除主存。
+- `user_all`：删除该用户所有 memories/candidates/profile，并标记旧兼容 events。
+
+删除操作会写入 `ltm_deletion_audit` 和 `memory_event_log`。P0 实现采用 tombstone，不做物理 purge。
+
+## SQLite 配置
+
+默认路径来自配置：
+
+```python
+LONG_TERM_MEMORY_PATH = "./memory/long_term_memory/user_profiles.sqlite"
+DEFAULT_USER_ID = "anonymous"
 ```
-用户: 不要用太多专业术语，我是初学者
-助手: 明白，我会用通俗易懂的语言
-→ 保存: constraints.append("避免使用专业术语")
-```
+
+Repository 初始化会自动创建或补齐表结构。P0 不引入向量数据库或重量级第三方依赖。
 
 ## 数据管理
 
-### 查看数据库内容
+查看主存：
+
 ```bash
-sqlite3 long_term_memory/user_profiles.sqlite
-SELECT * FROM user_profiles;
+sqlite3 memory/long_term_memory/user_profiles.sqlite
+SELECT id, user_id, memory_type, key, value, status FROM memories;
+SELECT id, user_id, memory_type, key, value, status FROM memory_candidates;
+SELECT * FROM ltm_deletion_audit ORDER BY created_at DESC;
 ```
 
-### 清空所有画像
-```bash
-rm long_term_memory/user_profiles.sqlite
-```
+重建 profile projection：
 
-### 备份画像数据
-```bash
-cp long_term_memory/user_profiles.sqlite long_term_memory/backup.sqlite
+```python
+ltm.rebuild_profile("user_123")
 ```
 
 ## 测试
 
-运行测试脚本:
+运行长期记忆单测：
+
 ```bash
-python test_long_term_memory.py
+pytest -q tests/unit/test_long_term_memory.py
 ```
 
-运行演示脚本:
-```bash
-python demo_long_term_memory.py
-```
+当前重点覆盖：
 
-## 扩展建议
+- 旧 manager 接口兼容。
+- CandidateManager 单轨候选晋升。
+- Profile projection 可由 active memories 重建。
+- 删除后 memory/candidate 查询不可见。
+- Query-aware prompt injection 与命中解释。
 
-### 1. 增强提取能力
-- 使用LLM进行语义提取（而非规则）
-- 添加情感分析（用户情绪偏好）
-- 追踪对话模式（提问时间、频率）
+## 后续扩展
 
-### 2. 智能更新
-- 置信度评分（低置信度不存储）
-- 时间衰减（长期未使用的偏好降低权重）
-- 冲突解决（矛盾的偏好处理）
-
-### 3. 向量化检索
-- 复用RAG的向量库
-- 根据当前问题检索相关偏好
-- 支持模糊匹配和语义联想
-
-### 4. 隐私保护
-- 数据加密存储
-- 用户可选择性删除画像
-- 定期清理过期数据
-
-## 注意事项
-
-1. **SQLite是内置库，无需安装额外依赖**
-2. 长期记忆在Agent实例化时自动初始化
-3. 每次对话完成后自动提取并更新
-4. 用户画像跨会话持久化保存
-5. 可通过API手动查看和删除画像
-
-## 故障排查
-
-### 数据库初始化失败
-- 检查 `./long_term_memory/` 目录权限
-- 确保SQLite可写权限
-
-### 画像未自动更新
-- 检查日志是否有提取错误
-- 验证对话内容是否匹配提取规则
-
-### Prompt注入不生效
-- 检查 `prompt_template.txt` 是否包含 `{user_profile}`
-- 确认StreamingService已集成长期记忆
+- 将 retrieval 从规则评分升级为 embedding/rerank。
+- 增加物理 purge job 和导出能力。
+- 增强 confirmation 冲突处理策略。
+- 增加长期记忆 replay 工具，根据 event/audit 重放状态。

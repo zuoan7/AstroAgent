@@ -6,11 +6,21 @@
         <h2>执行时间线</h2>
       </div>
       <div class="badge-row">
+        <span v-if="overview.route" class="status-pill subtle">{{ overview.route }}</span>
         <span class="status-pill subtle">成功 {{ overview.toolSuccessCount || 0 }}</span>
         <span class="status-pill subtle">失败 {{ overview.toolErrorCount || 0 }}</span>
       </div>
     </div>
     <p v-if="reasoningSummary" class="trace-summary">{{ reasoningSummary }}</p>
+    <div v-if="Object.keys(latencyMetrics || {}).length" class="trace-metrics">
+      <span
+        v-for="(value, key) in latencyMetrics"
+        :key="key"
+        class="metric-chip"
+      >
+        {{ key }}: {{ formatMs(value) }}
+      </span>
+    </div>
     <div class="trace-list">
       <article v-for="item in items" :key="item.id" class="trace-item">
         <div class="trace-top">
@@ -32,6 +42,7 @@ defineProps({
   items: { type: Array, default: () => [] },
   reasoningSummary: { type: String, default: '' },
   overview: { type: Object, default: () => ({}) },
+  latencyMetrics: { type: Object, default: () => ({}) },
 })
 
 function formatDuration(value) {
@@ -39,6 +50,13 @@ function formatDuration(value) {
     return '--'
   }
   return `${Number(value).toFixed(2)}s`
+}
+
+function formatMs(value) {
+  if (value == null) {
+    return '--'
+  }
+  return `${Number(value).toFixed(1)}ms`
 }
 
 function statusLabel(status) {

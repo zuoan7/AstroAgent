@@ -131,13 +131,24 @@ class ShortTermMemory:
         result: str,
         timestamp: Optional[float] = None,
         success: bool = True,
+        raw_artifact_id: str = "",
+        tool_call_id: str = "",
+        raw_size_bytes: int = 0,
+        content_type: str = "text/plain",
+        output_digest: str = "",
     ):
         timestamp = timestamp or time.time()
+        summary_payload = self._summarize_tool_result(result)
         record = ToolCallRecord(
+            tool_call_id=tool_call_id or ToolCallRecord(tool_name=tool_name, timestamp=timestamp).tool_call_id,
             tool_name=tool_name,
             timestamp=timestamp,
             input_summary=(tool_input or "")[:200],
-            **self._summarize_tool_result(result),
+            output_digest=output_digest or summary_payload["output_summary"][:300],
+            **summary_payload,
+            raw_artifact_id=raw_artifact_id,
+            raw_size_bytes=raw_size_bytes,
+            content_type=content_type or "text/plain",
             status="success" if success else "error",
             importance=1 if success else 3,
         )

@@ -6,6 +6,7 @@ const ACCOUNTS_KEY = 'astroagent.accounts'
 const ACCOUNT_KEY = 'astroagent.active_account'
 const CONVERSATIONS_KEY = 'astroagent.conversations'
 const CONVERSATION_KEY = 'astroagent.active_conversation'
+const MODEL_CATALOG_KEY = 'astroagent.model_catalog'
 
 function safeRead(key, fallback) {
   try {
@@ -35,6 +36,20 @@ function createConversation(title = '新会话') {
     title,
     createdAt: now,
     updatedAt: now,
+    modelProvider: 'dashscope',
+    modelName: 'qwen3.6-plus',
+    modelLabel: 'DashScope / qwen3.6-plus',
+  }
+}
+
+function normalizeConversation(conversation) {
+  const provider = conversation?.modelProvider || 'dashscope'
+  const modelName = conversation?.modelName || 'qwen3.6-plus'
+  return {
+    ...conversation,
+    modelProvider: provider,
+    modelName,
+    modelLabel: conversation?.modelLabel || `${provider} / ${modelName}`,
   }
 }
 
@@ -63,10 +78,13 @@ export const useSessionStore = defineStore('session', () => {
   const queryInput = ref('')
   const lastError = ref('')
   const currentRunId = ref('')
+  const availableModels = ref(safeRead(MODEL_CATALOG_KEY, []))
 
   function ensureAccountConversations(accountId) {
     if (!conversationsByAccount.value[accountId] || !conversationsByAccount.value[accountId].length) {
       conversationsByAccount.value[accountId] = [createConversation('默认会话')]
+    } else {
+      conversationsByAccount.value[accountId] = conversationsByAccount.value[accountId].map(normalizeConversation)
     }
     if (
       activeAccountId.value === accountId &&
@@ -95,6 +113,11 @@ export const useSessionStore = defineStore('session', () => {
   )
   const userId = computed(() => activeAccount.value?.id || 'demo-account')
   const sessionId = computed(() => activeConversation.value?.id || 'default')
+  const modelProvider = computed(() => activeConversation.value?.modelProvider || 'dashscope')
+  const modelName = computed(() => activeConversation.value?.modelName || 'qwen3.6-plus')
+  const modelLabel = computed(
+    () => activeConversation.value?.modelLabel || `${modelProvider.value} / ${modelName.value}`
+  )
 
   function persist() {
     localStorage.setItem(MODE_KEY, uiMode.value)
@@ -102,6 +125,7 @@ export const useSessionStore = defineStore('session', () => {
     localStorage.setItem(ACCOUNT_KEY, activeAccountId.value)
     localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversationsByAccount.value))
     localStorage.setItem(CONVERSATION_KEY, activeConversationId.value)
+    localStorage.setItem(MODEL_CATALOG_KEY, JSON.stringify(availableModels.value))
   }
 
   function setMode(value) {
@@ -177,6 +201,21 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function setAvailableModels(models) {
+    availableModels.value = Array.isArray(models) ? models : []
+  }
+
+  function setConversationModel({ provider, modelName: nextModelName, modelLabel: nextModelLabel }) {
+    const current = activeConversation.value
+    if (!current) {
+      return
+    }
+    current.modelProvider = provider || current.modelProvider || 'dashscope'
+    current.modelName = nextModelName || current.modelName || 'qwen3.6-plus'
+    current.modelLabel = nextModelLabel || `${current.modelProvider} / ${current.modelName}`
+    current.updatedAt = new Date().toISOString()
+  }
+
   function setStreaming(value) {
     isStreaming.value = value
   }
@@ -195,6 +234,8 @@ export const useSessionStore = defineStore('session', () => {
     userId: userId.value,
     sessionId: sessionId.value,
     disableLongTermMemory: disableLongTermMemory.value,
+    modelProvider: modelProvider.value,
+    modelName: modelName.value,
   }))
 
   watch(
@@ -213,6 +254,10 @@ export const useSessionStore = defineStore('session', () => {
     activeConversationId,
     userId,
     sessionId,
+    modelProvider,
+    modelName,
+    modelLabel,
+    availableModels,
     disableLongTermMemory,
     isStreaming,
     queryInput,
@@ -226,6 +271,8 @@ export const useSessionStore = defineStore('session', () => {
     addConversation,
     removeConversation,
     touchConversation,
+    setAvailableModels,
+    setConversationModel,
     setStreaming,
     setError,
     resetRun,

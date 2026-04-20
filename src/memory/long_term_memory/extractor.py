@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from src.core.config import settings
 from src.core.logger import logger
+from src.core.llm_factory import build_chat_model
 from src.memory.long_term_memory.models import (
     ExtractionResult,
     MemoryType,
@@ -118,12 +119,10 @@ class MemoryExtractor:
         self, user_message: str, assistant_message: str, conversation_id: Optional[str] = None
     ) -> List[ExtractionResult]:
         try:
-            from langchain_community.chat_models import ChatTongyi
             from langchain_core.messages import HumanMessage, SystemMessage
 
-            llm = ChatTongyi(
+            llm = build_chat_model(
                 model=settings.MODEL_NAME,
-                dashscope_api_key=settings.DASHSCOPE_API_KEY,
                 temperature=0.0,
                 request_timeout=15,
             )

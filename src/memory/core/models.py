@@ -52,12 +52,23 @@ class Message:
 class ToolCallRecord:
     tool_name: str
     timestamp: float
+    tool_call_id: str = field(default_factory=lambda: _new_id("tool"))
     input_summary: str = ""
+    output_digest: str = ""
     output_summary: str = ""
     output_is_summary: bool = False
     output_is_truncated: bool = False
+    raw_artifact_id: str = ""
+    raw_size_bytes: int = 0
+    content_type: str = "text/plain"
     status: str = "success"
     importance: int = 1
+
+    def __post_init__(self):
+        if not self.tool_call_id:
+            self.tool_call_id = _new_id("tool")
+        self.raw_size_bytes = int(self.raw_size_bytes or 0)
+        self.content_type = self.content_type or "text/plain"
 
     @property
     def tool_input(self) -> str:
@@ -73,12 +84,17 @@ class ToolCallRecord:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "tool_call_id": self.tool_call_id,
             "tool_name": self.tool_name,
             "timestamp": self.timestamp,
             "input_summary": self.input_summary,
+            "output_digest": self.output_digest,
             "output_summary": self.output_summary,
             "output_is_summary": self.output_is_summary,
             "output_is_truncated": self.output_is_truncated,
+            "raw_artifact_id": self.raw_artifact_id,
+            "raw_size_bytes": self.raw_size_bytes,
+            "content_type": self.content_type,
             "status": self.status,
             "importance": self.importance,
             "tool_input": self.input_summary,
@@ -92,12 +108,17 @@ class ToolCallRecord:
         if not status:
             status = "success" if data.get("success", True) else "error"
         return cls(
+            tool_call_id=data.get("tool_call_id") or _new_id("tool"),
             tool_name=data["tool_name"],
             timestamp=data["timestamp"],
             input_summary=data.get("input_summary", data.get("tool_input", "")),
+            output_digest=data.get("output_digest", ""),
             output_summary=data.get("output_summary", data.get("result_summary", "")),
             output_is_summary=data.get("output_is_summary", False),
             output_is_truncated=data.get("output_is_truncated", False),
+            raw_artifact_id=data.get("raw_artifact_id", ""),
+            raw_size_bytes=int(data.get("raw_size_bytes", 0) or 0),
+            content_type=data.get("content_type", "text/plain") or "text/plain",
             status=status,
             importance=data.get("importance", 1),
         )

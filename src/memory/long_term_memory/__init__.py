@@ -1,4 +1,5 @@
 from src.memory.long_term_memory.manager import LongTermMemoryManager
+from src.memory.long_term_memory.service import LongTermMemoryService
 from src.memory.long_term_memory.models import (
     CandidateMemory,
     ConfirmationStatus,
@@ -7,6 +8,8 @@ from src.memory.long_term_memory.models import (
     EventLogEntry,
     EventType,
     ExtractionResult,
+    LongTermMemoryDeletionRequest,
+    LongTermMemoryDeletionResult,
     MemoryEvent,
     MemoryCandidate,
     MemoryConfirmation,
@@ -28,6 +31,9 @@ __all__ = [
     "EventType",
     "ExtractionResult",
     "LongTermMemoryManager",
+    "LongTermMemoryService",
+    "LongTermMemoryDeletionRequest",
+    "LongTermMemoryDeletionResult",
     "MemoryEvent",
     "MemoryCandidate",
     "MemoryConfirmation",

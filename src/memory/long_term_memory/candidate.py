@@ -49,6 +49,7 @@ class CandidateManager:
         if existing:
             existing.occurrence_count += 1
             existing.last_seen_at = _utcnow_iso()
+            existing.updated_at = existing.last_seen_at
             existing.confidence = min(existing.confidence + 0.05, 0.9)
             if source_type == SourceType.EXPLICIT:
                 existing.source_type = SourceType.EXPLICIT
@@ -58,6 +59,14 @@ class CandidateManager:
             if metadata:
                 existing.metadata.update(metadata)
             self._repo.update_candidate(existing)
+            self._repo.add_event_log(EventLogEntry(
+                user_id=user_id,
+                memory_id=None,
+                event_type=EventType.CANDIDATE_CREATED,
+                event_detail=f"候选记忆更新: {memory_type}.{key}",
+                new_value=str(value),
+                metadata={"candidate_id": existing.id, "occurrence_count": existing.occurrence_count},
+            ))
             logger.debug(f"候选记忆更新: {memory_type}.{key} (出现{existing.occurrence_count}次)")
             return existing
 
@@ -74,6 +83,14 @@ class CandidateManager:
             metadata=metadata or {},
         )
         self._repo.add_candidate(candidate)
+        self._repo.add_event_log(EventLogEntry(
+            user_id=user_id,
+            memory_id=None,
+            event_type=EventType.CANDIDATE_CREATED,
+            event_detail=f"候选记忆创建: {memory_type}.{key}",
+            new_value=str(value),
+            metadata={"candidate_id": candidate.id, "confidence": candidate.confidence},
+        ))
         logger.debug(f"新候选记忆: {memory_type}.{key}")
         return candidate
 
@@ -98,7 +115,7 @@ class CandidateManager:
 
         memory_item = candidate.to_memory_item()
         self._repo.add_memory(memory_item)
-        self._repo.delete_candidate(candidate_id)
+        self._repo.mark_candidate_promoted(candidate_id, memory_item.id)
 
         self._repo.add_event_log(EventLogEntry(
             user_id=candidate.user_id,

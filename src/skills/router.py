@@ -81,6 +81,12 @@ class AstronomySkillRouter:
     async def async_call_mcp_tool(self, tool_name: str, **kwargs) -> str:
         return await self._mcp.async_call_tool(tool_name, **kwargs)
 
+    def prewarm(self) -> bool:
+        return self._mcp.prewarm()
+
+    def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
+        return self._mcp.get_runtime_metrics_snapshot()
+
     def shutdown(self) -> None:
         self._mcp.shutdown()
         logger.info("✅ AstronomySkillRouter已关闭")

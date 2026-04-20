@@ -7,6 +7,9 @@ export const useTraceStore = defineStore('trace', () => {
   const runStartedAt = ref(null)
   const runFinishedAt = ref(null)
   const requestId = ref('')
+  const route = ref('')
+  const routeReason = ref('')
+  const latencyMetrics = ref({})
   const finalMetrics = ref({
     totalDurationSec: null,
     toolCount: 0,
@@ -48,6 +51,9 @@ export const useTraceStore = defineStore('trace', () => {
     runStartedAt.value = null
     runFinishedAt.value = null
     requestId.value = ''
+    route.value = ''
+    routeReason.value = ''
+    latencyMetrics.value = {}
     finalMetrics.value = {
       totalDurationSec: null,
       toolCount: 0,
@@ -113,6 +119,9 @@ export const useTraceStore = defineStore('trace', () => {
   function finishRun(payload) {
     runFinishedAt.value = Date.now()
     requestId.value = payload.request_id || payload.meta?.request_id || requestId.value
+    if (payload.latency_metrics?.stages_ms) {
+      latencyMetrics.value = payload.latency_metrics.stages_ms
+    }
     finalMetrics.value = {
       totalDurationSec: payload.total_duration_sec ?? totalDurationSec.value,
       toolCount: payload.tool_count ?? items.value.length,
@@ -128,6 +137,15 @@ export const useTraceStore = defineStore('trace', () => {
     }
   }
 
+  function setRoute(payload) {
+    route.value = payload.route || ''
+    routeReason.value = payload.route_reason || ''
+  }
+
+  function setLatency(payload) {
+    latencyMetrics.value = payload.stages_ms || {}
+  }
+
   const totalDurationSec = computed(() => {
     if (finalMetrics.value.totalDurationSec != null) {
       return finalMetrics.value.totalDurationSec
@@ -141,6 +159,8 @@ export const useTraceStore = defineStore('trace', () => {
 
   const overview = computed(() => ({
     requestId: requestId.value,
+    route: route.value,
+    routeReason: routeReason.value,
     totalDurationSec: totalDurationSec.value,
     toolCount: finalMetrics.value.toolCount || items.value.length,
     toolSuccessCount:
@@ -157,6 +177,9 @@ export const useTraceStore = defineStore('trace', () => {
   return {
     items,
     reasoningSummary,
+    route,
+    routeReason,
+    latencyMetrics,
     totalDurationSec,
     overview,
     reset,
@@ -164,5 +187,7 @@ export const useTraceStore = defineStore('trace', () => {
     startTool,
     endTool,
     finishRun,
+    setRoute,
+    setLatency,
   }
 })

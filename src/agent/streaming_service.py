@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -16,6 +17,7 @@ from src.agent.streaming_events import (
     StreamEventProcessor,
     apply_event_processors,
 )
+from src.agent.latency import LatencyTracker
 
 MAX_ACTION_HISTORY_ENTRIES = 100
 TOOL_INPUT_LOG_PREVIEW_CHARS = 300
@@ -31,6 +33,10 @@ class BaseStreamingGenerator:
         long_term_memory: Any = None,
         user_id: str = "anonymous",
         fallback_service: Optional[Any] = None,
+        request_router: Optional[Any] = None,
+        task_orchestrator: Optional[Any] = None,
+        skill_manager: Optional[Any] = None,
+        rag_retriever: Optional[Any] = None,
         event_processors: Optional[list[StreamEventProcessor]] = None,
     ):
         self._agent_executor = agent_executor
@@ -38,6 +44,10 @@ class BaseStreamingGenerator:
         self._long_term_memory = long_term_memory
         self._user_id = user_id
         self._fallback_service = fallback_service
+        self._request_router = request_router
+        self._task_orchestrator = task_orchestrator
+        self._skill_manager = skill_manager
+        self._rag_retriever = rag_retriever
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
         self._current_query: str = ""
@@ -131,6 +141,22 @@ class BaseStreamingGenerator:
                     logger.info(f"✅ 已提取并更新长期记忆 (user_id: {self._user_id})")
         except Exception as e:
             logger.error(f"❌ 更新长期记忆失败: {e}")
+
+    def _schedule_long_term_memory_update(self, user_message: str, assistant_message: str) -> None:
+        if not self._long_term_memory:
+            return
+
+        def _runner() -> None:
+            started = time.perf_counter()
+            self._extract_and_update_long_term_memory(user_message, assistant_message)
+            logger.info(
+                "长期记忆后台更新完成: user_id=%s, ltm_extract_ms=%.2f",
+                self._user_id,
+                (time.perf_counter() - started) * 1000.0,
+            )
+
+        thread = threading.Thread(target=_runner, daemon=True)
+        thread.start()
 
     def _check_repeated_action(self, request_id: str, tool_name: str, tool_input: str) -> bool:
         if request_id not in self._action_history:
@@ -275,7 +301,9 @@ class BaseStreamingGenerator:
             return []
         if hasattr(self._long_term_memory, "explain_memory_hits"):
             try:
-                return self._long_term_memory.explain_memory_hits(self._user_id, query)
+                hits = self._long_term_memory.explain_memory_hits(self._user_id, query)
+                if isinstance(hits, list):
+                    return [hit for hit in hits if isinstance(hit, dict)]
             except Exception as e:
                 logger.warning(f"memory explain 失败: {type(e).__name__}: {e}")
         return []
@@ -427,17 +455,25 @@ class BaseStreamingGenerator:
             "extracted_url": extracted_url,
         }
 
-    def _save_to_memory(self, query: str, response: str):
+    def _save_to_memory(
+        self,
+        query: str,
+        response: str,
+        *,
+        use_long_term_memory: bool = True,
+        latency: Optional[LatencyTracker] = None,
+    ):
         try:
-            self._memory.add_message("user", query, time.time())
-            self._memory.add_message("assistant", response, time.time())
+            with (latency.measure("memory_save_ms") if latency else _nullcontext()):
+                self._memory.add_message("user", query, time.time())
+                self._memory.add_message("assistant", response, time.time())
         except Exception as e:
             logger.error(f"❌ 短期记忆写入失败: {type(e).__name__}: {e}")
 
-        try:
-            self._extract_and_update_long_term_memory(query, response)
-        except Exception as e:
-            logger.error(f"❌ 长期记忆更新失败: {type(e).__name__}: {e}")
+        if use_long_term_memory:
+            self._schedule_long_term_memory_update(query, response)
+            if latency:
+                latency.set_meta("ltm_async", True)
 
     def _finalize_request(self, request_id: Optional[str]):
         self._current_request_id = None
@@ -529,6 +565,71 @@ class BaseStreamingGenerator:
             modality=modality,
         ).validate()
 
+    def _snapshot_runtime_metrics(self) -> Dict[str, Dict[str, float]]:
+        mcp = {}
+        rag = {}
+        if self._skill_manager and hasattr(self._skill_manager, "get_runtime_metrics_snapshot"):
+            try:
+                mcp = self._skill_manager.get_runtime_metrics_snapshot()
+            except Exception:
+                mcp = {}
+        if self._rag_retriever and hasattr(self._rag_retriever, "get_runtime_metrics_snapshot"):
+            try:
+                rag = self._rag_retriever.get_runtime_metrics_snapshot()
+            except Exception:
+                rag = {}
+        return {"mcp": mcp, "rag": rag}
+
+    @staticmethod
+    def _metric_delta(after: Dict[str, float], before: Dict[str, float], key: str) -> float:
+        return round(after.get(key, 0.0) - before.get(key, 0.0), 2)
+
+    def _record_runtime_metric_deltas(
+        self,
+        latency: LatencyTracker,
+        before: Dict[str, Dict[str, float]],
+        after: Dict[str, Dict[str, float]],
+    ) -> None:
+        latency.record_ms(
+            "mcp_session_init_ms",
+            self._metric_delta(after.get("mcp", {}), before.get("mcp", {}), "mcp_session_init_ms"),
+        )
+        latency.record_ms(
+            "tool_exec_ms",
+            self._metric_delta(after.get("mcp", {}), before.get("mcp", {}), "tool_exec_ms"),
+        )
+        latency.record_ms(
+            "rag_total_ms",
+            self._metric_delta(after.get("rag", {}), before.get("rag", {}), "rag_total_ms"),
+        )
+        latency.record_ms(
+            "rerank_ms",
+            self._metric_delta(after.get("rag", {}), before.get("rag", {}), "rerank_ms"),
+        )
+
+    async def _run_direct_path(
+        self,
+        query: str,
+        decision: Any,
+        *,
+        use_long_term_memory: bool,
+        latency: LatencyTracker,
+    ) -> Dict[str, Any]:
+        if not self._task_orchestrator:
+            raise ValueError("task orchestrator is not configured")
+        with latency.measure("agent_prepare_ms"):
+            chat_history = self._format_chat_history()
+            self._current_query = query
+            user_profile = self._format_user_profile() if use_long_term_memory else "本轮对话已禁用长期记忆"
+        with latency.measure("agent_total_ms"):
+            result = await self._task_orchestrator.run(
+                decision,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
+        return result
+
     async def _stream_with_adapter(
         self,
         query: str,
@@ -558,6 +659,7 @@ class BaseStreamingGenerator:
     ) -> AsyncGenerator[StreamEvent, None]:
         request_id = uuid.uuid4().hex[:8]
         request_started_at = time.time()
+        latency = LatencyTracker()
         self._current_request_id = request_id
         self._current_query = query
         logger.info(f"[{request_id}] 开始处理统一流式查询：{query[:200]}")
@@ -574,6 +676,7 @@ class BaseStreamingGenerator:
         tool_timeline: List[Dict[str, Any]] = []
         evidence_items: List[Dict[str, Any]] = []
         reasoning_fragments: List[str] = []
+        runtime_metrics_before = self._snapshot_runtime_metrics()
 
         def next_event(
             event_type: str,
@@ -651,6 +754,17 @@ class BaseStreamingGenerator:
                 ):
                     yield processed
 
+            decision = None
+            if self._request_router and hasattr(self._request_router, "route"):
+                with latency.measure("route_decision_ms"):
+                    candidate = self._request_router.route(query)
+                if isinstance(getattr(candidate, "route", None), str) and hasattr(candidate, "to_meta"):
+                    decision = candidate
+                    async for processed in emit(
+                        next_event("route_decision", content=decision.to_meta())
+                    ):
+                        yield processed
+
             plan_steps = self._update_plan_status(plan_steps, "tools", "running")
             async for processed in emit(next_event("plan_update", content={"steps": plan_steps})):
                 yield processed
@@ -662,175 +776,212 @@ class BaseStreamingGenerator:
             ):
                 yield processed
 
-            agent_input = self._prepare_input(query, use_long_term_memory=use_long_term_memory)
-            async for raw_event in self._agent_executor.astream_events(
-                agent_input,
-                version="v1",
-            ):
-                event_type = raw_event.get("event")
-                data = raw_event.get("data", {}) or {}
-                run_id = raw_event.get("run_id")
-
-                if event_type == "on_tool_start":
-                    tool_name = data.get("name") or data.get("tool") or "unknown_tool"
-                    tool_input = "" if data.get("input") is None else str(data.get("input"))
-                    result = self._handle_tool_start(
-                        request_id,
-                        run_id,
-                        data,
-                        check_repeated=stop_on_repeated_action,
-                    )
+            if decision and decision.route != "complex_agent":
+                direct_result = await self._run_direct_path(
+                    query,
+                    decision,
+                    use_long_term_memory=use_long_term_memory,
+                    latency=latency,
+                )
+                direct_answer = direct_result.get("answer", "")
+                response_chunks.append(direct_answer)
+                for tool_run in direct_result.get("tools_used", []):
+                    tool_timeline.append(tool_run)
+                for source in direct_result.get("sources", []):
+                    evidence_items.append(source)
                     async for processed in emit(
-                        next_event(
-                            "tool_start",
-                            content={"tool": tool_name, "input": tool_input, "status": "running"},
-                            meta={"run_id": run_id, "tool": tool_name},
-                        )
+                        next_event("evidence_found", content=source)
                     ):
                         yield processed
-                    if result == "repeated":
-                        warning = "\n\n⚠️ 检测到重复操作，已自动终止循环。"
-                        response_chunks.append(warning)
+                if direct_result.get("retrieval", {}).get("stages_ms"):
+                    for key, value in direct_result["retrieval"]["stages_ms"].items():
+                        latency.record_ms(key, value)
+                async for processed in emit(
+                    next_event("final_answer_delta", content=direct_answer)
+                ):
+                    yield processed
+            else:
+                with latency.measure("agent_prepare_ms"):
+                    agent_input = self._prepare_input(query, use_long_term_memory=use_long_term_memory)
+                agent_started = time.perf_counter()
+                async for raw_event in self._agent_executor.astream_events(
+                    agent_input,
+                    version="v1",
+                ):
+                    event_type = raw_event.get("event")
+                    data = raw_event.get("data", {}) or {}
+                    run_id = raw_event.get("run_id")
+
+                    if event_type == "on_tool_start":
                         async for processed in emit(
                             next_event(
-                                "warning",
-                                content=warning,
-                                meta={
-                                    "reason": "repeated_action",
-                                    "run_id": run_id,
-                                    "tool": tool_name,
-                                },
+                                "tool_start",
+                                content={"tool": (data.get("name") or data.get("tool") or "unknown_tool"), "input": "" if data.get("input") is None else str(data.get("input")), "status": "running"},
+                                meta={"run_id": run_id, "tool": data.get("name") or data.get("tool") or "unknown_tool"},
                             )
                         ):
                             yield processed
-                        break
-                    continue
-
-                if event_type == "on_tool_end":
-                    tool_result = self._handle_tool_end(request_id, run_id, data)
-                    tool_meta = tool_result.get("meta", {}) or {}
-                    async for processed in emit(
-                        next_event(
-                            "tool_end",
-                            content={
-                                "tool": tool_meta.get("name"),
-                                "output": tool_result.get("tool_output_str", ""),
-                                "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
-                                "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
-                            },
-                            meta={
-                                "run_id": run_id,
-                                "tool": tool_meta.get("name"),
-                                "duration_sec": tool_result.get("duration"),
-                                "extracted_url": tool_result.get("extracted_url"),
-                            },
+                        tool_name = data.get("name") or data.get("tool") or "unknown_tool"
+                        tool_input = "" if data.get("input") is None else str(data.get("input"))
+                        result = self._handle_tool_start(
+                            request_id,
+                            run_id,
+                            data,
+                            check_repeated=stop_on_repeated_action,
                         )
-                    ):
-                        yield processed
-                    tool_timeline.append(
-                        {
-                            "run_id": run_id,
-                            "tool": tool_meta.get("name"),
-                            "input": tool_meta.get("input", ""),
-                            "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
-                            "duration_sec": tool_result.get("duration"),
-                            "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
-                        }
-                    )
-                    for evidence in self._extract_evidence(
-                        tool_meta.get("name") or "unknown_tool",
-                        tool_result.get("tool_output_str", ""),
-                        run_id,
-                    ):
-                        evidence_items.append(evidence)
-                        async for processed in emit(
-                            next_event("evidence_found", content=evidence)
-                        ):
-                            yield processed
-                    if tool_result.get("extracted_url"):
+                        if result == "repeated":
+                            warning = "\n\n⚠️ 检测到重复操作，已自动终止循环。"
+                            response_chunks.append(warning)
+                            async for processed in emit(
+                                next_event(
+                                    "warning",
+                                    content=warning,
+                                    meta={
+                                        "reason": "repeated_action",
+                                        "run_id": run_id,
+                                        "tool": tool_name,
+                                    },
+                                )
+                            ):
+                                yield processed
+                            break
+                        continue
+
+                    if event_type == "on_tool_end":
+                        tool_result = self._handle_tool_end(request_id, run_id, data)
+                        tool_meta = tool_result.get("meta", {}) or {}
                         async for processed in emit(
                             next_event(
-                                "image",
-                                content=tool_result["extracted_url"],
+                                "tool_end",
+                                content={
+                                    "tool": tool_meta.get("name"),
+                                    "output": tool_result.get("tool_output_str", ""),
+                                    "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
+                                    "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
+                                },
                                 meta={
                                     "run_id": run_id,
                                     "tool": tool_meta.get("name"),
+                                    "duration_sec": tool_result.get("duration"),
+                                    "extracted_url": tool_result.get("extracted_url"),
                                 },
-                                modality="image",
                             )
                         ):
                             yield processed
-                    continue
+                        tool_timeline.append(
+                            {
+                                "run_id": run_id,
+                                "tool": tool_meta.get("name"),
+                                "input": tool_meta.get("input", ""),
+                                "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
+                                "duration_sec": tool_result.get("duration"),
+                                "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
+                            }
+                        )
+                        for evidence in self._extract_evidence(
+                            tool_meta.get("name") or "unknown_tool",
+                            tool_result.get("tool_output_str", ""),
+                            run_id,
+                        ):
+                            evidence_items.append(evidence)
+                            async for processed in emit(
+                                next_event("evidence_found", content=evidence)
+                            ):
+                                yield processed
+                        if tool_result.get("extracted_url"):
+                            async for processed in emit(
+                                next_event(
+                                    "image",
+                                    content=tool_result["extracted_url"],
+                                    meta={
+                                        "run_id": run_id,
+                                        "tool": tool_meta.get("name"),
+                                    },
+                                    modality="image",
+                                )
+                            ):
+                                yield processed
+                        continue
 
-                if event_type not in ("on_chat_model_stream", "on_llm_stream"):
-                    continue
+                    if event_type not in ("on_chat_model_stream", "on_llm_stream"):
+                        continue
 
-                text = self._extract_stream_text(data)
-                if not text:
-                    continue
+                    text = self._extract_stream_text(data)
+                    if not text:
+                        continue
 
-                if response_mode == "raw_text":
-                    response_chunks.append(text)
-                else:
-                    reasoning_fragments.append(text)
+                    if "llm_first_token_ms" not in latency.stages_ms():
+                        latency.record_ms(
+                            "llm_first_token_ms",
+                            (time.perf_counter() - agent_started) * 1000.0,
+                        )
 
-                async for processed in emit(
-                    next_event("raw_text_delta", content=text, meta={"run_id": run_id})
-                ):
-                    yield processed
+                    if response_mode == "raw_text":
+                        response_chunks.append(text)
+                    else:
+                        reasoning_fragments.append(text)
 
-                parse_result = self._parse_thinking_and_final_answer(
-                    text,
-                    thinking_buffer,
-                    final_answer_started,
-                    final_answer_extracted,
-                    thinking_logged,
-                    request_id,
-                )
-                thinking_buffer = parse_result["thinking_buffer"]
-                final_answer_started = parse_result["final_answer_started"]
-                final_answer_extracted = parse_result["final_answer_extracted"]
-                thinking_logged = parse_result["thinking_logged"]
+                    async for processed in emit(
+                        next_event("raw_text_delta", content=text, meta={"run_id": run_id})
+                    ):
+                        yield processed
 
-                if not parse_result["should_continue"]:
-                    if parse_result["final_answer_text"]:
-                        final_answer_text = parse_result["final_answer_text"]
+                    parse_result = self._parse_thinking_and_final_answer(
+                        text,
+                        thinking_buffer,
+                        final_answer_started,
+                        final_answer_extracted,
+                        thinking_logged,
+                        request_id,
+                    )
+                    thinking_buffer = parse_result["thinking_buffer"]
+                    final_answer_started = parse_result["final_answer_started"]
+                    final_answer_extracted = parse_result["final_answer_extracted"]
+                    thinking_logged = parse_result["thinking_logged"]
+
+                    if not parse_result["should_continue"]:
+                        if parse_result["final_answer_text"]:
+                            final_answer_text = parse_result["final_answer_text"]
+                            if response_mode == "final_answer":
+                                response_chunks.append(final_answer_text)
+                            async for processed in emit(
+                                next_event(
+                                    "final_answer_delta",
+                                    content=final_answer_text,
+                                    meta={"run_id": run_id},
+                                )
+                            ):
+                                yield processed
+                        continue
+
+                    if parse_result["is_final_answer_chunk"]:
                         if response_mode == "final_answer":
-                            response_chunks.append(final_answer_text)
+                            response_chunks.append(text)
                         async for processed in emit(
                             next_event(
                                 "final_answer_delta",
-                                content=final_answer_text,
+                                content=text,
                                 meta={"run_id": run_id},
                             )
                         ):
                             yield processed
-                    continue
-
-                if parse_result["is_final_answer_chunk"]:
-                    if response_mode == "final_answer":
-                        response_chunks.append(text)
-                    async for processed in emit(
-                        next_event(
-                            "final_answer_delta",
-                            content=text,
-                            meta={"run_id": run_id},
-                        )
-                    ):
-                        yield processed
-                elif parse_result["is_thinking"]:
-                    async for processed in emit(
-                        next_event(
-                            "thinking_delta",
-                            content=text,
-                            meta={"run_id": run_id},
-                        )
-                    ):
-                        yield processed
+                    elif parse_result["is_thinking"]:
+                        async for processed in emit(
+                            next_event(
+                                "thinking_delta",
+                                content=text,
+                                meta={"run_id": run_id},
+                            )
+                        ):
+                            yield processed
+                latency.record_ms(
+                    "agent_total_ms",
+                    (time.perf_counter() - agent_started) * 1000.0,
+                )
 
         except Exception as e:
             logger.error(f"[{request_id}] ❌ 统一事件流生成失败：{e}")
-            fallback = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
+            fallback = "抱歉，当前模型服务暂时不可用。请检查所选模型的 API Key、Base URL 配置，或稍后重试。"
             response_chunks = [fallback]
             async for processed in emit(
                 next_event(
@@ -840,11 +991,18 @@ class BaseStreamingGenerator:
                 )
             ):
                 yield processed
-            self._save_to_memory(query, fallback)
+            self._save_to_memory(query, fallback, use_long_term_memory=use_long_term_memory, latency=latency)
             response_saved = True
         else:
+            runtime_metrics_after = self._snapshot_runtime_metrics()
+            self._record_runtime_metric_deltas(latency, runtime_metrics_before, runtime_metrics_after)
             final_response = "".join(response_chunks)
-            self._save_to_memory(query, final_response)
+            self._save_to_memory(
+                query,
+                final_response,
+                use_long_term_memory=use_long_term_memory,
+                latency=latency,
+            )
             response_saved = True
             plan_steps = self._update_plan_status(plan_steps, "tools", "done")
             plan_steps = self._update_plan_status(plan_steps, "answer", "done")
@@ -889,9 +1047,18 @@ class BaseStreamingGenerator:
                         "evidence_count": len(evidence_items),
                         "memory_hit_count": len(memory_hits),
                         "request_id": request_id,
+                        "latency_metrics": latency.to_payload(),
                     },
-                    meta={"request_id": request_id, "total_duration_sec": total_duration_sec},
+                    meta={
+                        "request_id": request_id,
+                        "total_duration_sec": total_duration_sec,
+                        "latency_metrics": latency.to_payload(),
+                    },
                 )
+            ):
+                yield processed
+            async for processed in emit(
+                next_event("latency_metrics", content=latency.to_payload())
             ):
                 yield processed
             async for processed in emit(
@@ -909,8 +1076,21 @@ class BaseStreamingGenerator:
             logger.info(f"[{request_id}] ✅ 统一事件流完成，响应长度：{len(final_response)} 字符")
         finally:
             if not response_saved and response_chunks:
-                self._save_to_memory(query, "".join(response_chunks))
+                self._save_to_memory(
+                    query,
+                    "".join(response_chunks),
+                    use_long_term_memory=use_long_term_memory,
+                    latency=latency,
+                )
             self._finalize_request(request_id)
+
+
+class _nullcontext:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
 
 class StreamingService(BaseStreamingGenerator):
@@ -974,7 +1154,7 @@ class StreamingService(BaseStreamingGenerator):
                 except Exception as fallback_error:
                     logger.error(f"降级搜索也失败: {fallback_error}")
 
-            default_response = "抱歉，当前模型服务暂时不可用，无法回答你的问题。请检查API Key是否有效，或稍后再试。"
+            default_response = "抱歉，当前模型服务暂时不可用。请检查所选模型的 API Key、Base URL 配置，或稍后重试。"
             yield default_response
             self._save_to_memory(query, default_response)
 

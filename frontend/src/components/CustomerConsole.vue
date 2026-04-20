@@ -56,6 +56,7 @@
         <p>账号：{{ activeAccountName }}</p>
         <p class="mono">User ID: {{ userId }}</p>
         <p class="mono">Session ID: {{ sessionId }}</p>
+        <p class="mono">Model: {{ currentModelLabel }}</p>
         <button class="danger-btn full-width" @click="$emit('clear-session')">清空当前会话</button>
       </div>
     </aside>
@@ -106,6 +107,21 @@
       </div>
 
       <div class="customer-composer">
+        <div class="inline-form">
+          <label>
+            <span class="eyebrow">模型</span>
+            <select
+              :value="selectedModelKey"
+              :disabled="disabled"
+              @change="$emit('change-model', $event.target.value)"
+            >
+              <option v-for="option in modelOptions" :key="option.value" :value="option.value" :disabled="!option.configured">
+                {{ option.label }}{{ option.configured ? '' : '（未配置）' }}
+              </option>
+            </select>
+          </label>
+          <span class="status-pill subtle">{{ currentModelLabel }}</span>
+        </div>
         <textarea
           :value="modelValue"
           class="query-input"
@@ -228,6 +244,9 @@ const props = defineProps({
   userId: { type: String, required: true },
   sessionId: { type: String, required: true },
   modelValue: { type: String, required: true },
+  modelOptions: { type: Array, default: () => [] },
+  selectedModelKey: { type: String, default: '' },
+  currentModelLabel: { type: String, default: '' },
   messages: { type: Array, default: () => [] },
   streamingAnswer: { type: String, default: '' },
   disabled: { type: Boolean, required: true },
@@ -251,6 +270,7 @@ const emit = defineEmits([
   'add-conversation',
   'remove-conversation',
   'clear-session',
+  'change-model',
   'select-image',
   'select-audio',
   'clear-image',

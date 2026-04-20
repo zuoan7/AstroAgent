@@ -1,6 +1,7 @@
 from typing import Sequence
 
 from src.core.logger import logger
+from src.core.llm_factory import build_chat_model
 from src.memory.core.models import Message, SessionMemoryState
 from src.memory.short_term_memory.config import ShortTermMemoryConfig, get_memory_settings
 from src.memory.short_term_memory.context_builder import ROLE_LABELS
@@ -72,13 +73,10 @@ class ConversationSummarizer:
         return merged[:max_chars]
 
     def _summarize_with_llm(self, text: str) -> str:
-        from langchain_community.chat_models import ChatTongyi
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        settings = get_memory_settings()
-        llm = ChatTongyi(
-            model=settings.MODEL_NAME,
-            dashscope_api_key=settings.DASHSCOPE_API_KEY,
+        llm = build_chat_model(
+            model=get_memory_settings().MODEL_NAME,
             temperature=0.0,
             request_timeout=15,
         )

@@ -29,6 +29,11 @@ from src.memory.long_term_memory import (
 )
 from src.core.errors import AgentError, ErrorHandler, ErrorCode
 from src.core.config import settings
+from src.core.model_catalog import (
+    get_default_provider,
+    list_model_providers,
+    model_selection_payload,
+)
 from src.core.logger import logger
 import json
 import uuid
@@ -143,18 +148,87 @@ class SessionData:
         self.user_id = user_id
         self.session_id = session_id
         self.session_key = build_session_key(user_id, session_id)
+        self._base_agent = agent
         self.memory = ShortTermMemory(
             session_id=f"stm_{self.session_key}",
             user_id=user_id,
         )
-        self.streaming_service = StreamingService(
-            agent_executor=agent._agent_executor,
-            memory=self.memory,
-            long_term_memory=agent.long_term_memory,
-            user_id=user_id,
-            fallback_service=agent.fallback_service,
+        self.model_provider = ""
+        self.model_name = ""
+        self.model_label = ""
+        self.llm = None
+        self.task_orchestrator = None
+        self.streaming_service = None
+        self.agent_executor = None
+        default_provider = getattr(agent, "model_provider", None)
+        default_model_name = getattr(agent, "model_name", None)
+        self.apply_model_selection(
+            model_provider=default_provider if isinstance(default_provider, str) else get_default_provider(),
+            model_name=default_model_name if isinstance(default_model_name, str) else None,
         )
         self.last_access_time = time.time()
+
+    def apply_model_selection(
+        self,
+        *,
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ) -> Dict[str, str]:
+        runtime_factory = getattr(self._base_agent, "create_session_runtime", None)
+        runtime = None
+        if callable(runtime_factory):
+            candidate = runtime_factory(
+                user_id=self.user_id,
+                memory=self.memory,
+                model_provider=model_provider,
+                model_name=model_name,
+            )
+            if isinstance(candidate, dict) and "streaming_service" in candidate:
+                runtime = candidate
+
+        if runtime is None:
+            payload = model_selection_payload(model_provider, model_name)
+            self.llm = getattr(self._base_agent, "llm", None)
+            self.task_orchestrator = getattr(self._base_agent, "task_orchestrator", None)
+            self.streaming_service = StreamingService(
+                agent_executor=getattr(self._base_agent, "_agent_executor", None),
+                memory=self.memory,
+                long_term_memory=getattr(self._base_agent, "long_term_memory", None),
+                user_id=self.user_id,
+                fallback_service=getattr(self._base_agent, "fallback_service", None),
+                request_router=getattr(self._base_agent, "__dict__", {}).get("request_router"),
+                task_orchestrator=getattr(self._base_agent, "__dict__", {}).get("task_orchestrator"),
+                skill_manager=getattr(self._base_agent, "__dict__", {}).get("skill_manager"),
+                rag_retriever=getattr(self._base_agent, "__dict__", {}).get("rag"),
+            )
+            self.agent_executor = getattr(self._base_agent, "_agent_executor", None)
+            self.model_provider = payload["model_provider"]
+            self.model_name = payload["model_name"]
+            self.model_label = payload["model_label"]
+            return self.get_model_payload()
+
+        self.llm = runtime["llm"]
+        self.task_orchestrator = runtime["task_orchestrator"]
+        self.streaming_service = runtime["streaming_service"]
+        self.agent_executor = runtime["agent_executor"]
+        self.model_provider = runtime["model_provider"]
+        self.model_name = runtime["model_name"]
+        self.model_label = runtime["model_label"]
+        logger.info(
+            "会话模型已更新: user_id=%s, session_id=%s, provider=%s, model=%s",
+            self.user_id,
+            self.session_id,
+            self.model_provider,
+            self.model_name,
+        )
+        return self.get_model_payload()
+
+    def get_model_payload(self) -> Dict[str, str]:
+        return {
+            "model_provider": self.model_provider,
+            "model_name": self.model_name,
+            "model_label": self.model_label,
+        }
 
 
 class SessionManager:
@@ -165,7 +239,14 @@ class SessionManager:
         self._cleanup_interval = cleanup_interval or settings.SESSION_CLEANUP_INTERVAL_SECONDS
         self._last_cleanup = time.time()
 
-    def get_session(self, user_id: str, session_id: Optional[str] = None) -> SessionData:
+    def get_session(
+        self,
+        user_id: str,
+        session_id: Optional[str] = None,
+        *,
+        model_provider: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ) -> SessionData:
         with self._lock:
             now = time.time()
             if now - self._last_cleanup > self._cleanup_interval:
@@ -184,6 +265,16 @@ class SessionManager:
                 )
 
             session = self._sessions[session_key]
+            if model_provider or model_name:
+                requested = model_selection_payload(model_provider, model_name)
+                if (
+                    requested["model_provider"] != session.model_provider
+                    or requested["model_name"] != session.model_name
+                ):
+                    session.apply_model_selection(
+                        model_provider=requested["model_provider"],
+                        model_name=requested["model_name"],
+                    )
             session.last_access_time = now
             return session
 
@@ -234,11 +325,30 @@ session_manager = SessionManager()
 sse_adapter = SSEEventAdapter()
 
 
+@app.on_event("startup")
+async def startup_warmup():
+    try:
+        agent = await asyncio.to_thread(get_agent)
+        await asyncio.to_thread(agent.skill_manager.prewarm)
+        logger.info("✅ 启动预热完成：Agent 与 MCP 已预热")
+    except Exception as e:
+        logger.warning(f"启动预热失败，将在请求时懒加载: {e}")
+
+
 class QueryRequest(BaseModel):
     query: str
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     disable_long_term_memory: bool = False
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
+
+
+class ModelSwitchRequest(BaseModel):
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    model_provider: str
+    model_name: Optional[str] = None
 
 
 class KnowledgeRequest(BaseModel):
@@ -253,6 +363,8 @@ class UserProfileRequest(BaseModel):
 @app.exception_handler(AgentError)
 async def agent_error_handler(request: Request, exc: AgentError):
     status_map = {
+        ErrorCode.LLM_ERROR: 503,
+        ErrorCode.API_ERROR: 502,
         ErrorCode.VALIDATION_ERROR: 400,
         ErrorCode.PARAM_PARSE_ERROR: 400,
         ErrorCode.FILE_NOT_FOUND: 404,
@@ -276,7 +388,12 @@ async def generic_error_handler(request: Request, exc: Exception):
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def query_endpoint(request: Request, body: QueryRequest):
     user_id = normalize_user_id(body.user_id)
-    session = session_manager.get_session(user_id, body.session_id)
+    session = session_manager.get_session(
+        user_id,
+        body.session_id,
+        model_provider=body.model_provider,
+        model_name=body.model_name,
+    )
 
     async def generate():
         async for chunk in session.streaming_service.generate_sse(
@@ -296,6 +413,8 @@ async def query_with_image_endpoint(
     image: UploadFile = File(...),
     user_id: Optional[str] = Form(None),
     session_id: Optional[str] = Form(None),
+    model_provider: Optional[str] = Form(None),
+    model_name: Optional[str] = Form(None),
 ):
     sanitized_name = sanitize_filename(image.filename or "")
     ext = os.path.splitext(sanitized_name)[1].lower()
@@ -328,7 +447,12 @@ async def query_with_image_endpoint(
 
     image_url = f"/uploads/{file_id}{ext}"
     effective_user_id = normalize_user_id(user_id)
-    session = session_manager.get_session(effective_user_id, session_id)
+    session = session_manager.get_session(
+        effective_user_id,
+        session_id,
+        model_provider=model_provider,
+        model_name=model_name,
+    )
 
     async def generate():
         yield sse_adapter.serialize_payload(
@@ -348,6 +472,8 @@ async def query_with_audio_endpoint(
     audio: UploadFile = File(...),
     user_id: Optional[str] = Form(None),
     session_id: Optional[str] = Form(None),
+    model_provider: Optional[str] = Form(None),
+    model_name: Optional[str] = Form(None),
 ):
     sanitized_name = sanitize_filename(audio.filename or "")
     ext = os.path.splitext(sanitized_name)[1].lower()
@@ -379,7 +505,12 @@ async def query_with_audio_endpoint(
         f.write(content)
 
     effective_user_id = normalize_user_id(user_id)
-    session = session_manager.get_session(effective_user_id, session_id)
+    session = session_manager.get_session(
+        effective_user_id,
+        session_id,
+        model_provider=model_provider,
+        model_name=model_name,
+    )
 
     augmented_query = await asyncio.to_thread(
         get_agent().speech_service.build_speech_query, query, save_path
@@ -475,6 +606,53 @@ async def clear_memory_endpoint(
     }
 
 
+@app.get("/models")
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def list_models_endpoint(request: Request):
+    return {
+        "status": "success",
+        "default_provider": get_default_provider(),
+        "providers": list_model_providers(),
+    }
+
+
+@app.get("/session/model")
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def get_session_model_endpoint(
+    request: Request,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+):
+    effective_user_id = normalize_user_id(user_id)
+    effective_session_id = normalize_session_id(session_id)
+    session = session_manager.get_session(effective_user_id, effective_session_id)
+    return {
+        "status": "success",
+        "user_id": effective_user_id,
+        "session_id": effective_session_id,
+        **session.get_model_payload(),
+    }
+
+
+@app.post("/session/model")
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+async def set_session_model_endpoint(request: Request, body: ModelSwitchRequest):
+    effective_user_id = normalize_user_id(body.user_id)
+    effective_session_id = normalize_session_id(body.session_id)
+    session = session_manager.get_session(effective_user_id, effective_session_id)
+    payload = session.apply_model_selection(
+        model_provider=body.model_provider,
+        model_name=body.model_name,
+    )
+    return {
+        "status": "success",
+        "message": "会话模型切换成功，已保留历史消息，新消息将使用新模型生成",
+        "user_id": effective_user_id,
+        "session_id": effective_session_id,
+        **payload,
+    }
+
+
 class MemoryCreateRequest(BaseModel):
     user_id: Optional[str] = None
     memory_type: str
@@ -526,12 +704,16 @@ class BatchConfirmRequest(BaseModel):
 
 def _get_ltm() -> LongTermMemoryManager:
     agent = get_agent()
-    if not isinstance(agent.long_term_memory, LongTermMemoryManager):
+    ltm = agent.long_term_memory
+    if isinstance(ltm, LongTermMemoryManager):
+        return ltm
+    if hasattr(ltm, "delete_profile") and hasattr(ltm, "load_profile"):
+        return ltm
+    else:
         raise AgentError(
             code=ErrorCode.MEMORY_ERROR,
             message="长期记忆模块未正确初始化",
         )
-    return agent.long_term_memory
 
 
 @app.post("/memories")

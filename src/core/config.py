@@ -171,7 +171,22 @@ class AstronomyConfig(BaseSettings):
 
 class ModelConfig(BaseSettings):
     DASHSCOPE_API_KEY: Optional[str] = Field(None, description="千问模型 API Key")
+    DEFAULT_LLM_PROVIDER: str = Field("dashscope", description="默认主模型提供商")
     MODEL_NAME: str = Field("qwen-max", description="主模型名称")
+    OPENAI_COMPATIBLE_BASE_URL: str = Field(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        description="DashScope OpenAI兼容接口基础地址",
+    )
+    GLM_API_KEY: Optional[str] = Field(None, description="GLM API Key")
+    GLM_API_BASE_URL: str = Field(
+        "https://open.bigmodel.cn/api/paas/v4",
+        description="GLM OpenAI兼容接口基础地址",
+    )
+    MINIMAX_API_KEY: Optional[str] = Field(None, description="MiniMax API Key")
+    MINIMAX_API_BASE_URL: str = Field(
+        "https://api.minimaxi.com/v1",
+        description="MiniMax OpenAI兼容接口基础地址",
+    )
     EMBEDDING_MODEL_NAME: str = Field("text-embedding-v2", description="嵌入模型名称")
     VISION_MODEL_NAME: str = Field("qwen-vl-plus", description="视觉模型名称")
     SPEECH_MODEL_NAME: str = Field("paraformer-realtime-v2", description="语音模型名称")
