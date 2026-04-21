@@ -16,7 +16,7 @@ from src.core.llm_factory import build_chat_model
 from src.core.logger import logger
 from src.core.model_catalog import model_selection_payload, resolve_model_config
 from src.memory.api.memory_service import MemoryService
-from src.memory.long_term_memory import LongTermMemoryManager
+from src.memory.long_term_memory import LongTermMemoryService
 from src.rag.online_retriever import OnlineRetriever
 
 
@@ -42,7 +42,7 @@ class AstroAgent:
             session_id=f"mem_{self.user_id}",
             user_id=self.user_id,
         )
-        self.long_term_memory = LongTermMemoryManager(settings.LONG_TERM_MEMORY_PATH)
+        self.long_term_memory = LongTermMemoryService(settings.LONG_TERM_MEMORY_PATH)
 
         self.skill_manager = SkillManager(rag_retriever=self.rag)
         self.request_router = RequestRouter()

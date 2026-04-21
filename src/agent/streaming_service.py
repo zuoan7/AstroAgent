@@ -94,12 +94,12 @@ class BaseStreamingGenerator:
     def _format_user_profile(self) -> str:
         if not self._long_term_memory:
             return "暂无用户偏好信息"
-        if hasattr(self._long_term_memory, "format_smart_prompt"):
-            return self._long_term_memory.format_smart_prompt(
+        if hasattr(self._long_term_memory, "build_prompt_context"):
+            return self._long_term_memory.build_prompt_context(
                 self._user_id, self._current_query or ""
             )
-        if hasattr(self._long_term_memory, "format_profile_for_prompt"):
-            return self._long_term_memory.format_profile_for_prompt(self._user_id)
+        if hasattr(self._long_term_memory, "render_profile_prompt"):
+            return self._long_term_memory.render_profile_prompt(self._user_id)
         return "暂无用户偏好信息"
 
     def _extract_and_update_long_term_memory(
@@ -119,18 +119,6 @@ class BaseStreamingGenerator:
                     logger.info(
                         f"✅ 已提取并更新长期记忆 (user_id: {self._user_id}, count: {len(results)})"
                     )
-            elif hasattr(self._long_term_memory, "extract_from_conversation"):
-                extracted = self._long_term_memory.extract_from_conversation(
-                    user_message, assistant_message
-                )
-                has_info = (
-                    extracted.get("preferences")
-                    or extracted.get("habits")
-                    or extracted.get("constraints")
-                )
-                if has_info:
-                    self._long_term_memory.merge_and_update(self._user_id, extracted)
-                    logger.info(f"✅ 已提取并更新长期记忆 (user_id: {self._user_id})")
         except Exception as e:
             logger.error(f"❌ 更新长期记忆失败: {e}")
 
@@ -310,14 +298,16 @@ class BaseStreamingGenerator:
             updated.append(clone)
         return updated
 
-    def _explain_memory_hits(
+    def _explain_long_term_retrieval(
         self, query: str, use_long_term_memory: bool
     ) -> List[Dict[str, Any]]:
         if not use_long_term_memory or not self._long_term_memory:
             return []
-        if hasattr(self._long_term_memory, "explain_memory_hits"):
+        if hasattr(self._long_term_memory, "explain_retrieval_hits"):
             try:
-                hits = self._long_term_memory.explain_memory_hits(self._user_id, query)
+                hits = self._long_term_memory.explain_retrieval_hits(
+                    self._user_id, query
+                )
                 if isinstance(hits, list):
                     return [hit for hit in hits if isinstance(hit, dict)]
             except Exception as e:
@@ -773,7 +763,7 @@ class BaseStreamingGenerator:
         thinking_logged = False
         response_saved = False
         plan_steps = self._infer_plan_steps(query, use_long_term_memory)
-        memory_hits = self._explain_memory_hits(query, use_long_term_memory)
+        memory_hits = self._explain_long_term_retrieval(query, use_long_term_memory)
         tool_timeline: List[Dict[str, Any]] = []
         evidence_items: List[Dict[str, Any]] = []
         reasoning_fragments: List[str] = []

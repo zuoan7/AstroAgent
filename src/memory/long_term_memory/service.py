@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from src.core.config import settings
 from src.core.logger import logger
+from src.memory.long_term_memory.backup import BackupManager
 from src.memory.long_term_memory.candidate import CandidateManager
 from src.memory.long_term_memory.deletion import LongTermMemoryDeletionService
 from src.memory.long_term_memory.event_log import ConfirmationManager, EventLogger
@@ -37,7 +38,9 @@ class LongTermMemoryService:
     profile projection -> query-aware prompt injection.
     """
 
-    def __init__(self, db_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, db_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None
+    ):
         self.config = {
             "db_path": db_path or settings.LONG_TERM_MEMORY_PATH,
             "default_confidence": 0.5,
@@ -48,6 +51,7 @@ class LongTermMemoryService:
             "candidate_explicit_bypass": True,
             "max_prompt_tokens": 800,
             "max_memories_in_prompt": 15,
+            "auto_backup_interval_hours": 24,
         }
         if config:
             self.config.update(config)
@@ -74,6 +78,10 @@ class LongTermMemoryService:
             max_memories=self.config["max_memories_in_prompt"],
         )
         self.deletion = LongTermMemoryDeletionService(self.repository, self.projection)
+        self.backups = BackupManager(
+            self.repository,
+            auto_backup_interval_hours=self.config["auto_backup_interval_hours"],
+        )
 
     def add_memory(
         self,
@@ -92,7 +100,9 @@ class LongTermMemoryService:
     ) -> Optional[MemoryItem]:
         resolved_confidence = confidence
         if resolved_confidence is None:
-            resolved_confidence = self.quality.confidence_scorer.initial_confidence(source_type, is_explicit)
+            resolved_confidence = self.quality.confidence_scorer.initial_confidence(
+                source_type, is_explicit
+            )
 
         if not self.quality.should_store(resolved_confidence, is_explicit):
             logger.debug("长期记忆置信度过低，跳过: %s.%s", memory_type, key)
@@ -145,7 +155,14 @@ class LongTermMemoryService:
             old_value = existing.value
             existing.value = value
             existing.confidence = max(existing.confidence, confidence)
-            self.event_logger.log_updated(existing.user_id, existing.id, existing.key, old_value, value, "value_update")
+            self.event_logger.log_updated(
+                existing.user_id,
+                existing.id,
+                existing.key,
+                old_value,
+                value,
+                "value_update",
+            )
         else:
             existing.confidence = max(existing.confidence, confidence)
             existing.access_count += 1
@@ -166,7 +183,9 @@ class LongTermMemoryService:
     def _save_version(self, item: MemoryItem, reason: str):
         versions = self.repository.get_versions(item.id, limit=1)
         next_version = (versions[0].version + 1) if versions else 1
-        self.repository.add_version(item.id, next_version, item.value, item.confidence, reason)
+        self.repository.add_version(
+            item.id, next_version, item.value, item.confidence, reason
+        )
 
     def extract_and_store(
         self,
@@ -177,8 +196,12 @@ class LongTermMemoryService:
     ) -> List[MemoryItem]:
         if not self.extractor.should_attempt_extraction(user_message):
             return []
-        extracted = self.extractor.extract_from_conversation(user_message, assistant_message, conversation_id)
-        return self.store_extractions(user_id, extracted, conversation_id=conversation_id)
+        extracted = self.extractor.extract_from_conversation(
+            user_message, assistant_message, conversation_id
+        )
+        return self.store_extractions(
+            user_id, extracted, conversation_id=conversation_id
+        )
 
     def store_extractions(
         self,
@@ -197,7 +220,9 @@ class LongTermMemoryService:
                 key=item.key,
                 value=item.value,
                 confidence=item.confidence,
-                source_type=SourceType.EXPLICIT if item.is_explicit else item.source_type,
+                source_type=(
+                    SourceType.EXPLICIT if item.is_explicit else item.source_type
+                ),
                 is_explicit=item.is_explicit,
                 source_conversation_id=conversation_id,
                 source_content_snippet=item.raw_content,
@@ -208,6 +233,77 @@ class LongTermMemoryService:
         if promoted:
             self.projection.rebuild(user_id)
         return promoted
+
+    def upsert_profile(
+        self, user_id: str, profile_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        for key, value in (profile_data.get("preferences") or {}).items():
+            self.add_memory(
+                user_id=user_id,
+                memory_type=MemoryType.PREFERENCE,
+                category=key,
+                key=key,
+                value=value,
+                confidence=0.9,
+                source_type=SourceType.EXPLICIT,
+                is_explicit=True,
+            )
+        for key, value in (profile_data.get("habits") or {}).items():
+            stored_value = value
+            existing = self.repository.find_memory_by_type_key(
+                user_id, MemoryType.HABIT, key
+            )
+            if (
+                existing
+                and isinstance(existing.value, list)
+                and isinstance(value, list)
+            ):
+                stored_value = list(dict.fromkeys(existing.value + value))
+            self.add_memory(
+                user_id=user_id,
+                memory_type=MemoryType.HABIT,
+                category=key,
+                key=key,
+                value=stored_value,
+                confidence=0.8,
+                source_type=SourceType.AUTO,
+            )
+        for constraint in profile_data.get("constraints") or []:
+            constraint_key = f"constraint_{abs(hash(str(constraint))) % 100000}"
+            self.add_memory(
+                user_id=user_id,
+                memory_type=MemoryType.CONSTRAINT,
+                category="custom",
+                key=constraint_key,
+                value=constraint,
+                confidence=0.9,
+                source_type=SourceType.EXPLICIT,
+                is_explicit=True,
+            )
+        for key, value in (profile_data.get("background") or {}).items():
+            self.add_memory(
+                user_id=user_id,
+                memory_type=MemoryType.BACKGROUND,
+                category=key,
+                key=key,
+                value=value,
+                confidence=0.7,
+                source_type=SourceType.AUTO,
+            )
+        for index, fact in enumerate(profile_data.get("facts") or []):
+            if not isinstance(fact, dict):
+                continue
+            key = fact.get("key") or f"fact_{index}"
+            self.add_memory(
+                user_id=user_id,
+                memory_type=MemoryType.FACT,
+                category=fact.get("category", "basic_info"),
+                key=key,
+                value=fact.get("value"),
+                confidence=fact.get("confidence", 0.7),
+                source_type=SourceType.AUTO,
+            )
+        return self.rebuild_profile(user_id)
 
     def get_memory(self, memory_id: str) -> Optional[MemoryItem]:
         item = self.repository.get_memory(memory_id)
@@ -234,7 +330,9 @@ class LongTermMemoryService:
             self._save_version(item, "manual_update")
             old_value = item.value
             item.value = value
-            self.event_logger.log_updated(user_id, memory_id, item.key, old_value, value, "manual_update")
+            self.event_logger.log_updated(
+                user_id, memory_id, item.key, old_value, value, "manual_update"
+            )
         if confidence is not None:
             item.confidence = confidence
         if status is not None:
@@ -253,16 +351,24 @@ class LongTermMemoryService:
         return item
 
     def delete_memory(self, memory_id: str, user_id: str, reason: str = "") -> bool:
-        result = self.delete(LongTermMemoryDeletionRequest(
-            user_id=user_id, scope="memory", target_id=memory_id, reason=reason
-        ))
+        result = self.delete(
+            LongTermMemoryDeletionRequest(
+                user_id=user_id, scope="memory", target_id=memory_id, reason=reason
+            )
+        )
         return result.deleted_memories > 0
 
     def delete_profile(self, user_id: str, reason: str = "") -> bool:
-        result = self.delete(LongTermMemoryDeletionRequest(user_id=user_id, scope="profile", reason=reason))
+        result = self.delete(
+            LongTermMemoryDeletionRequest(
+                user_id=user_id, scope="profile", reason=reason
+            )
+        )
         return result.deleted_profiles > 0
 
-    def delete(self, request: LongTermMemoryDeletionRequest) -> LongTermMemoryDeletionResult:
+    def delete(
+        self, request: LongTermMemoryDeletionRequest
+    ) -> LongTermMemoryDeletionResult:
         return self.deletion.delete(request)
 
     def query_memories(self, query: MemoryQuery) -> List[MemoryItem]:
@@ -289,20 +395,34 @@ class LongTermMemoryService:
     def rebuild_profile(self, user_id: str) -> Dict[str, Any]:
         return self.projection.rebuild(user_id)
 
-    def load_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         return self.projection.load_or_rebuild(user_id)
 
-    def format_profile_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> str:
-        return self.prompt_injector.format_profile_for_prompt(user_id, task_type=task_type)
+    def render_profile_prompt(
+        self, user_id: str, task_type: Optional[str] = None
+    ) -> str:
+        return self.prompt_injector.format_profile_for_prompt(
+            user_id, task_type=task_type
+        )
 
-    def format_smart_prompt(self, user_id: str, query: str) -> str:
-        return self.prompt_injector.format_for_prompt(user_id, query)
+    def build_prompt_context(
+        self, user_id: str, query: str, task_type: Optional[str] = None
+    ) -> str:
+        return self.prompt_injector.format_for_prompt(
+            user_id, query, task_type=task_type
+        )
 
-    def explain_memory_hits(self, user_id: str, query: str, task_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    def explain_retrieval_hits(
+        self, user_id: str, query: str, task_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         resolved_task_type = task_type or self.prompt_injector.classify_task_type(query)
         hits = []
-        for item in self.prompt_injector.select_memories(user_id, query, resolved_task_type):
-            score, reasons = self.prompt_injector._retriever.score(item, query, resolved_task_type)
+        for item in self.prompt_injector.select_memories(
+            user_id, query, resolved_task_type
+        ):
+            score, reasons = self.prompt_injector._retriever.score(
+                item, query, resolved_task_type
+            )
             hits.append(
                 {
                     "memory_id": item.id,
@@ -337,7 +457,11 @@ class LongTermMemoryService:
             key=key,
             value=value,
             source_text=source_text,
-            confidence=confidence if confidence is not None else self.config["default_confidence"],
+            confidence=(
+                confidence
+                if confidence is not None
+                else self.config["default_confidence"]
+            ),
             status=status,
             metadata=metadata or {},
             last_confirmed_at=_utcnow_iso() if status == "active" else None,
@@ -350,7 +474,11 @@ class LongTermMemoryService:
                 event_type=EventType.CREATED,
                 event_detail=f"兼容 memory_event 已记录: {event_type}.{key}",
                 new_value=str(value),
-                metadata={"legacy_status": status, "source_text": source_text, **(metadata or {})},
+                metadata={
+                    "legacy_status": status,
+                    "source_text": source_text,
+                    **(metadata or {}),
+                },
             )
         )
         return stored
@@ -358,14 +486,117 @@ class LongTermMemoryService:
     def get_versions(self, memory_id: str, limit: int = 20) -> List[MemoryVersion]:
         return self.repository.get_versions(memory_id, limit=limit)
 
-    def list_candidates(self, user_id: str, limit: int = 50, offset: int = 0) -> List[MemoryCandidate]:
+    def restore_version(
+        self, memory_id: str, version: int, user_id: str
+    ) -> Optional[MemoryItem]:
+        item = self.repository.get_memory(memory_id)
+        if not item or item.user_id != user_id:
+            return None
+
+        target = next(
+            (
+                stored
+                for stored in self.repository.get_versions(memory_id, limit=50)
+                if stored.version == version
+            ),
+            None,
+        )
+        if not target:
+            return None
+
+        self._save_version(item, f"restore_to_v{version}")
+        old_value = item.value
+        item.value = target.value
+        item.confidence = target.confidence
+        item.updated_at = _utcnow_iso()
+        self.repository.update_memory(item)
+        self.event_logger.log_updated(
+            user_id,
+            memory_id,
+            item.key,
+            old_value,
+            target.value,
+            f"restore_to_v{version}",
+        )
+        self.projection.rebuild(user_id)
+        return item
+
+    def get_event_logs(
+        self,
+        user_id: str,
+        memory_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[EventLogEntry]:
+        return self.event_logger.get_event_logs(
+            user_id, memory_id=memory_id, limit=limit, offset=offset
+        )
+
+    def get_memory_trace(self, user_id: str, memory_id: str) -> List[EventLogEntry]:
+        return self.event_logger.get_memory_trace(user_id, memory_id)
+
+    def list_candidates(
+        self, user_id: str, limit: int = 50, offset: int = 0
+    ) -> List[MemoryCandidate]:
         return self.candidates.list_candidates(user_id, limit=limit, offset=offset)
 
     def reject_candidate(self, candidate_id: str, reason: str = "") -> bool:
         return self.candidates.reject_candidate(candidate_id, reason)
 
-    def list_pending_confirmations(self, user_id: str, limit: int = 20) -> List[MemoryConfirmation]:
+    def list_pending_confirmations(
+        self, user_id: str, limit: int = 20
+    ) -> List[MemoryConfirmation]:
         return self.confirmations.list_pending_confirmations(user_id, limit=limit)
 
-    def resolve_confirmation(self, confirmation_id: str, status: str) -> Optional[MemoryConfirmation]:
+    def resolve_confirmation(
+        self, confirmation_id: str, status: str
+    ) -> Optional[MemoryConfirmation]:
         return self.confirmations.resolve_confirmation(confirmation_id, status)
+
+    def batch_confirm(
+        self, user_id: str, confirmation_ids: List[str], status: str
+    ) -> List[MemoryConfirmation]:
+        return self.confirmations.batch_confirm(user_id, confirmation_ids, status)
+
+    def run_maintenance(self, user_id: str) -> Dict[str, int]:
+        expired = self.repository.expire_old_memories(user_id, _utcnow_iso())
+        archived = self.repository.archive_unused_memories(user_id)
+        promoted = self.promote_all_eligible(user_id)
+
+        self.projection.rebuild(user_id)
+        self.backups.maybe_auto_backup()
+
+        result = {
+            "expired": expired,
+            "archived": archived,
+            "promoted": len(promoted),
+        }
+        if any(result.values()):
+            logger.info("长期记忆维护完成 (user_id: %s): %s", user_id, result)
+        return result
+
+    def get_stats(self, user_id: str) -> Dict[str, Any]:
+        return self.repository.get_memory_stats(user_id)
+
+    def export_profile_snapshot(self, user_id: str) -> Dict[str, Any]:
+        profile = self.repository.load_profile(user_id)
+        if not profile:
+            return {}
+        memories = self.repository.query_memories(
+            MemoryQuery(user_id=user_id, status=MemoryStatus.ACTIVE, limit=100)
+        )
+        return {
+            "user_id": user_id,
+            "profile": profile,
+            "active_memory_count": len(memories),
+            "stats": self.repository.get_memory_stats(user_id),
+        }
+
+    def create_backup(self, tag: Optional[str] = None) -> Optional[str]:
+        return self.backups.create_backup(tag)
+
+    def list_backups(self) -> List[dict]:
+        return self.backups.list_backups()
+
+    def restore_from_backup(self, backup_path: str) -> bool:
+        return self.backups.restore_from_backup(backup_path)

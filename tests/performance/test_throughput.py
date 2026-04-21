@@ -186,13 +186,13 @@ class TestAstronomyDataProcessingThroughput:
         assert report["avg_ms"] < 10, f"记忆操作平均 {report['avg_ms']}ms 超过10ms阈值"
 
     def test_long_term_memory_throughput(self, perf_timer, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         for i in range(100):
             perf_timer.start()
-            memory.merge_and_update(
+            memory.upsert_profile(
                 f"user_{i}",
                 {
                     "preferences": {"style": "详细"},
@@ -256,13 +256,13 @@ class TestAPIResponseTime:
             mock_agent.long_term_memory = MagicMock()
 
             mock_profile = MagicMock()
-            mock_profile.user_id = "test_user"
-            mock_profile.preferences = {}
-            mock_profile.habits = {}
-            mock_profile.constraints = []
+            mock_profile["user_id"] = "test_user"
+            mock_profile["preferences"] = {}
+            mock_profile["habits"] = {}
+            mock_profile["constraints"] = []
             mock_profile.created_at = "2026-01-01T00:00:00"
             mock_profile.updated_at = "2026-04-08T00:00:00"
-            mock_agent.long_term_memory.load_profile.return_value = mock_profile
+            mock_agent.long_term_memory.get_profile.return_value = mock_profile
 
             MockAgent.return_value = mock_agent
 
@@ -364,12 +364,12 @@ class TestResourceUtilization:
         assert peak_mb < 50, f"记忆服务峰值内存 {peak_mb:.2f}MB 超过50MB阈值"
 
     def test_long_term_memory_disk_usage(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         for i in range(1000):
-            memory.merge_and_update(
+            memory.upsert_profile(
                 f"user_{i}",
                 {
                     "preferences": {"style": "详细", "level": "专业"},
@@ -445,7 +445,7 @@ class TestConcurrentUserSimulation:
     """测试并发用户场景"""
 
     def test_concurrent_memory_operations(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         errors = []
         results = []
@@ -453,7 +453,7 @@ class TestConcurrentUserSimulation:
         def write_user(user_id):
             try:
                 memory = LongTermMemory(db_path=temp_db_path)
-                memory.merge_and_update(
+                memory.upsert_profile(
                     f"user_{user_id}",
                     {
                         "preferences": {"style": "详细"},
@@ -461,7 +461,7 @@ class TestConcurrentUserSimulation:
                         "constraints": [],
                     },
                 )
-                profile = memory.load_profile(f"user_{user_id}")
+                profile = memory.get_profile(f"user_{user_id}")
                 results.append(profile is not None)
             except Exception as e:
                 errors.append(str(e))
@@ -599,13 +599,13 @@ class TestConcurrentUserSimulation:
             mock_agent.long_term_memory = MagicMock()
 
             mock_profile = MagicMock()
-            mock_profile.user_id = "test_user"
-            mock_profile.preferences = {}
-            mock_profile.habits = {}
-            mock_profile.constraints = []
+            mock_profile["user_id"] = "test_user"
+            mock_profile["preferences"] = {}
+            mock_profile["habits"] = {}
+            mock_profile["constraints"] = []
             mock_profile.created_at = "2026-01-01T00:00:00"
             mock_profile.updated_at = "2026-04-08T00:00:00"
-            mock_agent.long_term_memory.load_profile.return_value = mock_profile
+            mock_agent.long_term_memory.get_profile.return_value = mock_profile
 
             MockAgent.return_value = mock_agent
 

@@ -31,7 +31,7 @@ from src.core.model_catalog import (
 )
 from src.memory.api.memory_service import MemoryService
 from src.memory.long_term_memory import (
-    LongTermMemoryManager,
+    LongTermMemoryService,
     MemoryItem,
     MemoryQuery,
     MemoryStatus,
@@ -566,7 +566,7 @@ async def add_knowledge_endpoint(request: Request, body: KnowledgeRequest):
 async def get_profile_endpoint(request: Request, user_id: Optional[str] = None):
     effective_user_id = normalize_user_id(user_id)
     ltm = get_agent().long_term_memory
-    profile = ltm.load_profile(effective_user_id)
+    profile = ltm.get_profile(effective_user_id)
     if profile:
         return {
             "status": "success",
@@ -738,12 +738,12 @@ class BatchConfirmRequest(BaseModel):
     status: str
 
 
-def _get_ltm() -> LongTermMemoryManager:
+def _get_ltm() -> LongTermMemoryService:
     agent = get_agent()
     ltm = agent.long_term_memory
-    if isinstance(ltm, LongTermMemoryManager):
+    if isinstance(ltm, LongTermMemoryService):
         return ltm
-    if hasattr(ltm, "delete_profile") and hasattr(ltm, "load_profile"):
+    if hasattr(ltm, "delete_profile") and hasattr(ltm, "get_profile"):
         return ltm
     else:
         raise AgentError(
@@ -871,7 +871,7 @@ async def get_memory_versions_endpoint(
     request: Request, memory_id: str, limit: int = 20
 ):
     ltm = _get_ltm()
-    versions = ltm.get_memory_versions(memory_id, limit=limit)
+    versions = ltm.get_versions(memory_id, limit=limit)
     return {
         "status": "success",
         "memory_id": memory_id,
@@ -886,7 +886,7 @@ async def restore_memory_version_endpoint(
 ):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
-    item = ltm.restore_memory_version(memory_id, version, effective_user_id)
+    item = ltm.restore_version(memory_id, version, effective_user_id)
     if not item:
         raise AgentError(
             code=ErrorCode.MEMORY_NOT_FOUND,
@@ -1094,7 +1094,7 @@ async def memory_overview_endpoint(
     effective_session_id = normalize_session_id(session_id)
     ltm = _get_ltm()
     session = session_manager.get_session(effective_user_id, effective_session_id)
-    profile = ltm.load_profile(effective_user_id) or {
+    profile = ltm.get_profile(effective_user_id) or {
         "user_id": effective_user_id,
         "preferences": {},
         "habits": {},

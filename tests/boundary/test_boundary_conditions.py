@@ -313,12 +313,12 @@ class TestResourceBoundary:
         assert len(context["selected_recent_messages"]) <= 8
 
     def test_large_number_of_profiles(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         for i in range(500):
-            memory.merge_and_update(
+            memory.upsert_profile(
                 f"user_{i}",
                 {
                     "preferences": {"style": "详细"},
@@ -327,19 +327,19 @@ class TestResourceBoundary:
                 },
             )
 
-        profile = memory.load_profile("user_499")
+        profile = memory.get_profile("user_499")
         assert profile is not None
-        assert profile.user_id == "user_499"
+        assert profile["user_id"] == "user_499"
 
     def test_large_profile_data(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         large_topics = [f"天体_{i}" for i in range(1000)]
         large_constraints = [f"约束_{i}" for i in range(100)]
 
-        memory.merge_and_update(
+        memory.upsert_profile(
             "large_user",
             {
                 "preferences": {f"pref_{i}": f"value_{i}" for i in range(100)},
@@ -348,22 +348,22 @@ class TestResourceBoundary:
             },
         )
 
-        profile = memory.load_profile("large_user")
+        profile = memory.get_profile("large_user")
         assert profile is not None
-        assert len(profile.habits["topics"]) == 1000
-        assert len(profile.constraints) == 100
+        assert len(profile["habits"]["topics"]) == 1000
+        assert len(profile["constraints"]) == 100
 
     def test_concurrent_db_access(self, temp_db_path):
         import threading
 
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         errors = []
 
         def write_read(user_id):
             try:
                 memory = LongTermMemory(db_path=temp_db_path)
-                memory.merge_and_update(
+                memory.upsert_profile(
                     f"concurrent_{user_id}",
                     {
                         "preferences": {"id": str(user_id)},
@@ -371,7 +371,7 @@ class TestResourceBoundary:
                         "constraints": [],
                     },
                 )
-                profile = memory.load_profile(f"concurrent_{user_id}")
+                profile = memory.get_profile(f"concurrent_{user_id}")
                 assert profile is not None
             except Exception as e:
                 errors.append(str(e))

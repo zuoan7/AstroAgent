@@ -288,10 +288,10 @@ class TestMemoryModuleIntegration:
         assert memory.get_all_messages("integration_session") == []
 
     def test_long_term_memory_save_and_load(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
-        memory.merge_and_update(
+        memory.upsert_profile(
             "test_user",
             {
                 "preferences": {"style": "详细"},
@@ -300,7 +300,7 @@ class TestMemoryModuleIntegration:
             },
         )
 
-        loaded = memory.load_profile("test_user")
+        loaded = memory.get_profile("test_user")
 
         assert loaded is not None
         assert loaded["user_id"] == "test_user"
@@ -308,12 +308,12 @@ class TestMemoryModuleIntegration:
         assert "火星" in loaded["habits"]["topics"]
         assert "避免术语" in loaded["constraints"]
 
-    def test_long_term_memory_merge_and_update(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+    def test_long_term_memory_upsert_profile(self, temp_db_path):
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
-        memory.merge_and_update(
+        memory.upsert_profile(
             "test_user",
             {
                 "preferences": {"style": "简短"},
@@ -322,7 +322,7 @@ class TestMemoryModuleIntegration:
             },
         )
 
-        memory.merge_and_update(
+        memory.upsert_profile(
             "test_user",
             {
                 "preferences": {"style": "详细"},
@@ -331,20 +331,20 @@ class TestMemoryModuleIntegration:
             },
         )
 
-        profile = memory.load_profile("test_user")
+        profile = memory.get_profile("test_user")
         assert profile is not None
-        assert profile.preferences["style"] == "详细"
-        assert "火星" in profile.habits["topics"]
-        assert "木星" in profile.habits["topics"]
-        assert "避免术语" in profile.constraints
-        assert "控制长度" in profile.constraints
+        assert profile["preferences"]["style"] == "详细"
+        assert "火星" in profile["habits"]["topics"]
+        assert "木星" in profile["habits"]["topics"]
+        assert "避免术语" in profile["constraints"]
+        assert "控制长度" in profile["constraints"]
 
     def test_long_term_memory_delete_profile(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
-        memory.merge_and_update(
+        memory.upsert_profile(
             "test_user",
             {
                 "preferences": {},
@@ -353,17 +353,15 @@ class TestMemoryModuleIntegration:
             },
         )
 
-        assert memory.load_profile("test_user") is not None
+        assert memory.get_profile("test_user") is not None
         deleted = memory.delete_profile("test_user")
         assert deleted is True
-        assert memory.load_profile("test_user") is None
+        assert memory.get_profile("test_user") is None
 
-    def test_long_term_memory_extract_from_conversation(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+    def test_long_term_memory_extractor_legacy_projection(self, temp_db_path):
+        from src.memory.long_term_memory.extractor import MemoryExtractor
 
-        memory = LongTermMemory(db_path=temp_db_path)
-
-        extracted = memory.extract_from_conversation(
+        extracted = MemoryExtractor().extract_legacy_format(
             "请详细介绍一下火星的特征，不要使用专业术语", "火星是太阳系第四颗行星..."
         )
 
@@ -372,11 +370,11 @@ class TestMemoryModuleIntegration:
         assert "火星" in extracted["habits"]["frequent_topics"]
 
     def test_long_term_memory_format_for_prompt(self, temp_db_path):
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
-        memory.merge_and_update(
+        memory.upsert_profile(
             "test_user",
             {
                 "preferences": {"style": "详细"},
@@ -385,7 +383,7 @@ class TestMemoryModuleIntegration:
             },
         )
 
-        formatted = memory.format_profile_for_prompt("test_user")
+        formatted = memory.render_profile_prompt("test_user")
         assert "详细" in formatted
         assert "火星" in formatted
 

@@ -6,16 +6,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REMOVED_SESSION_MODULE = "short" + "_term" + "_memory"
 REMOVED_SESSION_CLASS = "Short" + "Term" + "Memory"
+REMOVED_LONG_TERM_MANAGER = "Long" + "Term" + "Memory" + "Manager"
+REMOVED_LONG_TERM_MANAGER_MODULE = "src.memory.long" + "_term" + "_memory.manager"
 FORBIDDEN_FILES = [
     ROOT / "src/memory" / REMOVED_SESSION_MODULE,
     ROOT / "src/memory/adapters",
     ROOT / "src/memory/adapters" / f"{REMOVED_SESSION_MODULE}_adapter.py",
     ROOT / "src/memory/context_builder.py",
     ROOT / "src/memory/summarizer.py",
+    ROOT / "src/memory/long_term_memory/manager.py",
 ]
 FORBIDDEN_PATTERNS = [
     REMOVED_SESSION_CLASS,
     f"src.memory.{REMOVED_SESSION_MODULE}",
+    REMOVED_LONG_TERM_MANAGER,
+    REMOVED_LONG_TERM_MANAGER_MODULE,
     ".add_message(",
     ".add_tool_call(",
     ".get_context(",

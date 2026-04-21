@@ -35,7 +35,7 @@ class TestAPIEndpointsIntegration:
                 "created_at": "2026-01-01T00:00:00",
                 "updated_at": "2026-04-08T00:00:00",
             }
-            mock_agent.long_term_memory.load_profile.return_value = mock_profile
+            mock_agent.long_term_memory.get_profile.return_value = mock_profile
             mock_agent.long_term_memory.delete_profile.return_value = True
 
             MockAgent.return_value = mock_agent
@@ -325,7 +325,7 @@ class TestStreamingServiceIntegration:
 
         from src.agent.streaming_service import StreamingService
         from src.memory.api.memory_service import MemoryService
-        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "test.sqlite")
@@ -350,5 +350,5 @@ class TestStreamingServiceIntegration:
                 "请详细介绍一下火星", "火星是太阳系第四颗行星..."
             )
 
-            profile = ltm.load_profile("test_user")
+            profile = ltm.get_profile("test_user")
             assert profile is not None
