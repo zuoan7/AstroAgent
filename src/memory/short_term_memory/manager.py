@@ -1,3 +1,20 @@
+"""
+短期记忆管理器模块
+
+该模块实现了短期记忆的核心管理功能，包括：
+- 消息的存储、管理和清理
+- 工具调用记录的追踪
+- 重要事实的提取和存储
+- 会话状态的持久化
+- 上下文构建和摘要生成
+
+主要功能：
+- 自动管理消息队列，支持基于大小和token预算的trim操作
+- 智能消息重要性评估和分级
+- 自动摘要触发和生成
+- 持久化存储和会话恢复
+"""
+
 import json
 import time
 from typing import Any, Dict, List, Optional, Sequence
@@ -11,7 +28,28 @@ from src.memory.short_term_memory.summarizer import ConversationSummarizer
 
 
 class ShortTermMemory:
+    """
+    短期记忆管理类
+
+    负责管理单个会话的短期记忆，包括消息、工具调用和重要事实的存储、
+    检索和管理。该类是短期记忆功能的核心入口。
+
+    主要功能：
+        - 消息的添加、管理和清理
+        - 工具调用记录的追踪和存储
+        - 重要事实的自动提取和持久化
+        - 会话状态的保存和恢复
+        - 上下文构建和摘要生成
+    """
+
     def __init__(self, session_id: Optional[str] = None, user_id: Optional[str] = None):
+        """
+        初始化短期记忆管理器
+
+        参数:
+            session_id: 会话ID，如果为None则生成新的会话ID
+            user_id: 用户ID，如果为None则使用默认用户ID
+        """
         from src.memory.config import settings as memory_settings
 
         self._settings = memory_settings
@@ -52,6 +90,19 @@ class ShortTermMemory:
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
+        """
+        估算文本的token数量
+
+        使用简化的token估算算法：
+        - 中文字符：每个字符约等于1.5个token
+        - 其他字符：每个字符约等于0.25个token
+
+        参数:
+            text: 输入文本
+
+        返回:
+            估算的token数量
+        """
         if not text:
             return 0
         chinese_chars = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
@@ -59,6 +110,12 @@ class ShortTermMemory:
         return int(chinese_chars * 1.5 + other_chars * 0.25)
 
     def _ensure_session_state(self):
+        """
+        确保会话状态已保存到持久化存储
+
+        更新会话状态的时间戳并保存到数据库。
+        只有在启用持久化时才会执行保存操作。
+        """
         if not self._repository:
             return
         self.state.updated_at = time.time()

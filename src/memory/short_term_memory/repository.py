@@ -1,3 +1,18 @@
+"""
+短期记忆持久化仓库模块
+
+该模块实现了短期记忆的SQLite持久化存储，包括：
+- 会话状态、消息、工具调用、重要事实的CRUD操作
+- 数据库表结构的版本管理
+- 数据序列化和反序列化
+
+主要功能：
+- 会话状态的保存和加载
+- 消息、工具调用、重要事实的存储管理
+- 基于时间范围的数据清理
+- 数据库模式的自动迁移
+"""
+
 import time
 from typing import Any, Dict, Optional
 
@@ -7,6 +22,22 @@ from src.memory.infrastructure.utils import _json_dumps, _json_loads, _utcnow_is
 
 
 class ShortTermMemoryRepository(SQLiteRepository):
+    """
+    短期记忆持久化仓库类
+
+    继承自SQLiteRepository，提供短期记忆数据的完整持久化功能。
+    管理四个核心数据表：
+        - stm_sessions: 会话状态表
+        - stm_messages: 消息记录表
+        - stm_tool_calls: 工具调用记录表
+        - stm_salient_facts: 重要事实表
+
+    主要功能：
+        - 数据库表结构的初始化和迁移
+        - 会话状态的保存和加载
+        - 消息、工具调用、重要事实的增删改查
+        - 基于时间范围的数据清理
+    """
     def initialize(self):
         with self._connect() as conn:
             conn.executescript(
