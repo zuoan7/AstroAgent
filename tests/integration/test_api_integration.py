@@ -1,12 +1,13 @@
-import os
 import json
+import os
 import time
-from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tests.mock_deps import mock_heavy_dependencies
+
 mock_heavy_dependencies()
 
 pytest.importorskip("fastapi")
@@ -40,6 +41,7 @@ class TestAPIEndpointsIntegration:
             MockAgent.return_value = mock_agent
 
             from src.api.main import app
+
             client = TestClient(app)
             yield client, mock_agent
 
@@ -171,6 +173,7 @@ class TestSkillManagerIntegration:
             MockRouter.return_value = mock_router
 
             from src.agent.skill_manager import SkillManager
+
             sm = SkillManager(rag_retriever=mock_rag)
             return sm, mock_router
 
@@ -230,27 +233,32 @@ class TestSkillManagerIntegration:
 class TestStreamingServiceIntegration:
     """测试流式服务与记忆模块的集成"""
 
-    def test_format_chat_history(self):
-        from src.memory.short_term_memory.manager import ShortTermMemory
+    def test_format_chat_history(self, tmp_path):
         from src.agent.streaming_service import StreamingService
+        from src.memory.api.dto import AppendMessageRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.short_term_memory.config.settings") as mock_s:
-            mock_s.MEMORY_SIZE = 15
-            mock_s.MEMORY_WINDOW = 8
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-            mock_s.DEFAULT_USER_ID = "test_user"
-            mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
-
-        memory.add_message("user", "你好", time.time())
-        memory.add_message("assistant", "你好！有什么天文问题吗？", time.time())
+        memory = MemoryService(
+            db_path=str(tmp_path / "memory.sqlite"),
+            session_id="stm_test_user",
+            user_id="test_user",
+        )
+        memory.append_message(
+            AppendMessageRequest(
+                session_id="stm_test_user",
+                role="user",
+                content="你好",
+                timestamp=time.time(),
+            )
+        )
+        memory.append_message(
+            AppendMessageRequest(
+                session_id="stm_test_user",
+                role="assistant",
+                content="你好！有什么天文问题吗？",
+                timestamp=time.time(),
+            )
+        )
 
         service = StreamingService(
             agent_executor=None,
@@ -263,24 +271,15 @@ class TestStreamingServiceIntegration:
         assert "你好" in history
         assert "助手" in history
 
-    def test_format_empty_chat_history(self):
-        from src.memory.short_term_memory.manager import ShortTermMemory
+    def test_format_empty_chat_history(self, tmp_path):
         from src.agent.streaming_service import StreamingService
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.short_term_memory.config.settings") as mock_s:
-            mock_s.MEMORY_SIZE = 15
-            mock_s.MEMORY_WINDOW = 8
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-            mock_s.DEFAULT_USER_ID = "test_user"
-            mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+        memory = MemoryService(
+            db_path=str(tmp_path / "memory.sqlite"),
+            session_id="stm_test_user",
+            user_id="test_user",
+        )
 
         service = StreamingService(
             agent_executor=None,
@@ -322,40 +321,33 @@ class TestStreamingServiceIntegration:
         assert isinstance(result, str)
 
     def test_extract_and_update_long_term_memory(self):
-        from src.memory.short_term_memory.manager import ShortTermMemory
-from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
-        from src.agent.streaming_service import StreamingService
         import tempfile
+
+        from src.agent.streaming_service import StreamingService
+        from src.memory.api.memory_service import MemoryService
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "test.sqlite")
             ltm = LongTermMemory(db_path=db_path)
-
-            with patch("src.memory.short_term_memory.config.settings") as mock_s:
-                mock_s.MEMORY_SIZE = 15
-                mock_s.MEMORY_WINDOW = 8
-                mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-                mock_s.STM_SUMMARY_MAX_TOKENS = 500
-                mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-                mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-                mock_s.STM_PERSISTENCE_ENABLED = False
-                mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-                mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-                mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-                mock_s.DEFAULT_USER_ID = "test_user"
-                mock_s.DASHSCOPE_API_KEY = None
-                stm = ShortTermMemory()
+            memory = MemoryService(
+                db_path=os.path.join(tmpdir, "memory.sqlite"),
+                session_id="stm_test_user",
+                user_id="test_user",
+            )
 
             service = StreamingService(
                 agent_executor=None,
-                memory=stm,
+                memory=memory,
                 long_term_memory=ltm,
                 user_id="test_user",
             )
 
             service._extract_and_update_long_term_memory(
-                "请详细介绍一下火星",
-                "火星是太阳系第四颗行星..."
+                "请详细介绍一下火星", "火星是太阳系第四颗行星..."
+            )
+            service._extract_and_update_long_term_memory(
+                "请详细介绍一下火星", "火星是太阳系第四颗行星..."
             )
 
             profile = ltm.load_profile("test_user")

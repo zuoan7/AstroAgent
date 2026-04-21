@@ -19,12 +19,23 @@ from src.skills.mcp_client import MCPClient
 class _MemoryStub:
     def __init__(self):
         self.messages = []
+        self.session_id = "test_session"
 
-    def get_recent_messages(self, window=4):
-        return self.messages[-window:]
+    def build_context(self, request):
+        formatted = [
+            f"{'用户' if msg['role'] == 'user' else '助手'}: {msg['content']}"
+            for msg in self.messages
+        ]
+        return {"context_text": "\n".join(formatted) or "无历史对话"}
 
-    def add_message(self, role, content, timestamp):
-        self.messages.append({"role": role, "content": content, "timestamp": timestamp})
+    def append_message(self, request):
+        self.messages.append(
+            {
+                "role": request.role,
+                "content": request.content,
+                "timestamp": request.timestamp,
+            }
+        )
 
 
 @pytest.mark.parametrize(

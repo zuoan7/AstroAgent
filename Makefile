@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-cov lint format type-check clean run-api run-mcp run-ui start-all
+.PHONY: help install install-dev test test-cov lint lint-memory format type-check clean run-api run-mcp run-ui start-all
 
 help: ## Show this help message
 	@echo "AstroAgent - AI-powered astronomy assistant"
@@ -22,6 +22,10 @@ lint: ## Run linters
 	flake8 src/ tests/
 	isort --check-only src/ tests/
 	black --check src/ tests/
+	python scripts/check_memory_migration.py
+
+lint-memory: ## Check memory migration guard
+	python scripts/check_memory_migration.py
 
 format: ## Format code
 	isort src/ tests/

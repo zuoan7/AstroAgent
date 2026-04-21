@@ -3,8 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.memory.adapters.short_term_memory_adapter import ShortTermMemoryAdapter
-from src.memory.api.dto import AppendMessageRequest, AppendToolCallRequest, BuildContextRequest, DeleteMemoryRequest
+from src.memory.api.dto import (
+    AppendMessageRequest,
+    AppendToolCallRequest,
+    BuildContextRequest,
+    DeleteMemoryRequest,
+)
 from src.memory.api.memory_service import MemoryService
 from src.memory.domain.events import MemoryEvent, MemoryEventType
 from src.memory.domain.task_state import TaskStateConflictError
@@ -97,7 +101,9 @@ def test_memory_service_stores_tool_artifact_and_event(stm_db):
 
     assert record.raw_artifact_id
     assert service.get_raw_artifact(record.raw_artifact_id) == "raw result with details"
-    events = service.event_store.list_by_session("session", event_type=MemoryEventType.TOOL_CALL_FINISHED.value)
+    events = service.event_store.list_by_session(
+        "session", event_type=MemoryEventType.TOOL_CALL_FINISHED.value
+    )
     assert len(events) == 1
     assert events[0].payload["raw_artifact_id"] == record.raw_artifact_id
 
@@ -117,22 +123,52 @@ def test_task_state_patch_uses_optimistic_lock(stm_db):
     assert state.version == 2
     assert state.current_goal == "完成记忆层 P0 改造"
     with pytest.raises(TaskStateConflictError):
-        service.update_task_state("session", {"next_action": "过期更新"}, expected_version=1)
+        service.update_task_state(
+            "session", {"next_action": "过期更新"}, expected_version=1
+        )
 
 
-def test_short_term_memory_adapter_preserves_legacy_surface(stm_db):
-    adapter = ShortTermMemoryAdapter(session_id="session", user_id="user", tenant_id="tenant")
+def test_memory_service_append_message_updates_event_view(stm_db):
+    service = MemoryService(
+        db_path=stm_db, tenant_id="tenant", session_id="session", user_id="user"
+    )
 
-    adapter.add_message("user", "请记录这个目标")
-    adapter.add_tool_call("search", "query", "full raw tool output")
+    message = service.append_message(
+        AppendMessageRequest(
+            tenant_id="tenant",
+            session_id="session",
+            user_id="user",
+            role="user",
+            content="请记录这个目标",
+        )
+    )
 
-    assert adapter.get_size() == 1
-    tool_calls = adapter.get_tool_calls()
-    assert tool_calls[0]["raw_artifact_id"]
-    assert "请记录这个目标" in adapter.get_context()
+    assert message.content == "请记录这个目标"
+    messages = service.get_all_messages()
+    assert len(messages) == 1
+    assert messages[0]["content"] == "请记录这个目标"
 
-    artifact_id = tool_calls[0]["raw_artifact_id"]
-    assert adapter._service.get_raw_artifact(artifact_id) == "full raw tool output"
+
+def test_memory_service_append_tool_call_exposes_raw_artifact(stm_db):
+    service = MemoryService(
+        db_path=stm_db, tenant_id="tenant", session_id="session", user_id="user"
+    )
+
+    record = service.append_tool_call(
+        AppendToolCallRequest(
+            tenant_id="tenant",
+            session_id="session",
+            user_id="user",
+            tool_name="search",
+            tool_input="query",
+            raw_output="full raw tool output",
+        )
+    )
+
+    assert record.raw_artifact_id
+    assert service.get_raw_artifact(record.raw_artifact_id) == "full raw tool output"
+    tool_calls = service.get_tool_calls()
+    assert tool_calls[0]["raw_artifact_id"] == record.raw_artifact_id
 
 
 def test_compression_creates_summary_snapshot_from_events(stm_db):
@@ -210,7 +246,7 @@ def test_retrieval_planner_includes_task_state_and_relevant_tool_evidence(stm_db
     assert context["retrieval_plan"]["selected_task_state_version"] >= 2
 
 
-def test_delete_tool_call_tombstones_event_artifact_and_projection(stm_db):
+def test_delete_tool_call_tombstones_event_and_artifact(stm_db):
     service = MemoryService(db_path=stm_db, tenant_id="tenant")
     record = service.append_tool_call(
         AppendToolCallRequest(
@@ -234,7 +270,7 @@ def test_delete_tool_call_tombstones_event_artifact_and_projection(stm_db):
     assert job.status == "completed"
     assert job.result["events_marked"] == 1
     assert service.get_raw_artifact(record.raw_artifact_id) is None
-    assert service.short_term_memory.get_tool_calls() == []
+    assert service.get_tool_calls("session") == []
     deleted_events = service.event_store.list_by_source(
         "session", "tool_call", record.tool_call_id, include_deleted=True
     )
@@ -244,9 +280,16 @@ def test_delete_tool_call_tombstones_event_artifact_and_projection(stm_db):
 def test_delete_session_marks_task_state_and_snapshot_deleted(stm_db):
     service = MemoryService(db_path=stm_db, tenant_id="tenant")
     service.append_message(
-        AppendMessageRequest(tenant_id="tenant", session_id="session", role="user", content="delete session")
+        AppendMessageRequest(
+            tenant_id="tenant",
+            session_id="session",
+            role="user",
+            content="delete session",
+        )
     )
-    service.update_task_state("session", {"current_goal": "temporary"}, tenant_id="tenant")
+    service.update_task_state(
+        "session", {"current_goal": "temporary"}, tenant_id="tenant"
+    )
     service.create_summary_snapshot("session", tenant_id="tenant")
 
     job = service.delete_memory(

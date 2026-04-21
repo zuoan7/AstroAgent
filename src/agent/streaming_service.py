@@ -5,9 +5,8 @@ import time
 import uuid
 from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
-from src.core.logger import logger
-from src.core.errors import ErrorHandler
-from src.core.mcp_protocol import extract_tool_data, is_tool_error
+
+from src.agent.latency import LatencyTracker
 from src.agent.streaming_events import (
     FrontendJsonEventAdapter,
     PlainTextStreamAdapter,
@@ -17,7 +16,14 @@ from src.agent.streaming_events import (
     StreamEventProcessor,
     apply_event_processors,
 )
-from src.agent.latency import LatencyTracker
+from src.core.errors import ErrorHandler
+from src.core.logger import logger
+from src.core.mcp_protocol import extract_tool_data, is_tool_error
+from src.memory.api.dto import (
+    AppendMessageRequest,
+    AppendToolCallRequest,
+    BuildContextRequest,
+)
 
 MAX_ACTION_HISTORY_ENTRIES = 100
 TOOL_INPUT_LOG_PREVIEW_CHARS = 300
@@ -72,69 +78,55 @@ class BaseStreamingGenerator:
         )
 
     def _format_chat_history(self) -> str:
-        if hasattr(self._memory, 'get_context'):
-            try:
-                context_text = self._memory.get_context()
-                if context_text and hasattr(self._memory, '_estimate_tokens'):
-                    token_count = self._memory._estimate_tokens(context_text)
-                    if token_count > 3000:
-                        logger.warning(f"短期记忆上下文过大({token_count} tokens)，降级为最近消息")
-                        messages = self._memory.get_recent_messages(window=4)
-                        if not messages:
-                            return "无历史对话"
-                        formatted = []
-                        for msg in messages:
-                            role = "用户" if msg["role"] == "user" else "助手"
-                            formatted.append(f"{role}: {msg['content']}")
-                        return "\n".join(formatted)
-                return context_text
-            except Exception as e:
-                logger.warning(f"get_context失败，降级为get_recent_messages: {type(e).__name__}: {e}")
-        if hasattr(self._memory, 'build_context'):
-            try:
-                context = self._memory.build_context()
-                context_text = context.get("context_text", "")
-                if context_text:
-                    return context_text
-            except Exception as e:
-                logger.warning(f"build_context失败，降级为get_recent_messages: {type(e).__name__}: {e}")
-        messages = self._memory.get_recent_messages()
-        if not messages:
+        try:
+            context = self._memory.build_context(
+                BuildContextRequest(
+                    session_id=self._memory_session_id(),
+                    query=self._current_query or "",
+                )
+            )
+            context_text = context.get("context_text", "")
+            return context_text or "无历史对话"
+        except Exception as e:
+            logger.warning(f"build_context失败，使用空历史: {type(e).__name__}: {e}")
             return "无历史对话"
-        formatted = []
-        for msg in messages:
-            role = "用户" if msg["role"] == "user" else "助手"
-            formatted.append(f"{role}: {msg['content']}")
-        return "\n".join(formatted)
 
     def _format_user_profile(self) -> str:
         if not self._long_term_memory:
             return "暂无用户偏好信息"
-        if hasattr(self._long_term_memory, 'format_smart_prompt'):
-            return self._long_term_memory.format_smart_prompt(self._user_id, self._current_query or "")
-        if hasattr(self._long_term_memory, 'format_profile_for_prompt'):
+        if hasattr(self._long_term_memory, "format_smart_prompt"):
+            return self._long_term_memory.format_smart_prompt(
+                self._user_id, self._current_query or ""
+            )
+        if hasattr(self._long_term_memory, "format_profile_for_prompt"):
             return self._long_term_memory.format_profile_for_prompt(self._user_id)
         return "暂无用户偏好信息"
 
-    def _extract_and_update_long_term_memory(self, user_message: str, assistant_message: str):
+    def _extract_and_update_long_term_memory(
+        self, user_message: str, assistant_message: str
+    ):
         if not self._long_term_memory:
             return
 
         try:
-            if hasattr(self._long_term_memory, 'extract_and_store'):
+            if hasattr(self._long_term_memory, "extract_and_store"):
                 results = self._long_term_memory.extract_and_store(
                     user_message=user_message,
                     assistant_message=assistant_message,
                     user_id=self._user_id,
                 )
                 if results:
-                    logger.info(f"✅ 已提取并更新长期记忆 (user_id: {self._user_id}, count: {len(results)})")
-            elif hasattr(self._long_term_memory, 'extract_from_conversation'):
-                extracted = self._long_term_memory.extract_from_conversation(user_message, assistant_message)
+                    logger.info(
+                        f"✅ 已提取并更新长期记忆 (user_id: {self._user_id}, count: {len(results)})"
+                    )
+            elif hasattr(self._long_term_memory, "extract_from_conversation"):
+                extracted = self._long_term_memory.extract_from_conversation(
+                    user_message, assistant_message
+                )
                 has_info = (
-                    extracted.get("preferences") or
-                    extracted.get("habits") or
-                    extracted.get("constraints")
+                    extracted.get("preferences")
+                    or extracted.get("habits")
+                    or extracted.get("constraints")
                 )
                 if has_info:
                     self._long_term_memory.merge_and_update(self._user_id, extracted)
@@ -142,7 +134,9 @@ class BaseStreamingGenerator:
         except Exception as e:
             logger.error(f"❌ 更新长期记忆失败: {e}")
 
-    def _schedule_long_term_memory_update(self, user_message: str, assistant_message: str) -> None:
+    def _schedule_long_term_memory_update(
+        self, user_message: str, assistant_message: str
+    ) -> None:
         if not self._long_term_memory:
             return
 
@@ -158,7 +152,9 @@ class BaseStreamingGenerator:
         thread = threading.Thread(target=_runner, daemon=True)
         thread.start()
 
-    def _check_repeated_action(self, request_id: str, tool_name: str, tool_input: str) -> bool:
+    def _check_repeated_action(
+        self, request_id: str, tool_name: str, tool_input: str
+    ) -> bool:
         if request_id not in self._action_history:
             self._action_history[request_id] = []
 
@@ -184,10 +180,10 @@ class BaseStreamingGenerator:
 
         tool_results = []
         for step in intermediate_steps:
-            if hasattr(step, '__iter__') and len(step) >= 2:
+            if hasattr(step, "__iter__") and len(step) >= 2:
                 action, observation = step[0], step[1]
-                tool_name = getattr(action, 'tool', 'unknown')
-                tool_input = getattr(action, 'tool_input', '')
+                tool_name = getattr(action, "tool", "unknown")
+                tool_input = getattr(action, "tool_input", "")
                 if observation and not ErrorHandler.is_error_response(observation):
                     if is_tool_error(observation):
                         continue
@@ -199,11 +195,15 @@ class BaseStreamingGenerator:
                             continue
                     except (json.JSONDecodeError, TypeError):
                         pass
-                    tool_results.append({
-                        "tool": tool_name,
-                        "input": self._preview_text(tool_input, 100),
-                        "output": self._preview_text(observation, FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS),
-                    })
+                    tool_results.append(
+                        {
+                            "tool": tool_name,
+                            "input": self._preview_text(tool_input, 100),
+                            "output": self._preview_text(
+                                observation, FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS
+                            ),
+                        }
+                    )
 
         if not tool_results:
             return ""
@@ -223,9 +223,13 @@ class BaseStreamingGenerator:
                         response_parts.append(f"\n{output_data['answer']}")
                         continue
                     if "name" in output_data:
-                        response_parts.append(f"\n目标名称：{output_data.get('name', '未知')}")
+                        response_parts.append(
+                            f"\n目标名称：{output_data.get('name', '未知')}"
+                        )
                     if "ra" in output_data and "dec" in output_data:
-                        response_parts.append(f"位置：赤经 {output_data['ra']}°，赤纬 {output_data['dec']}°")
+                        response_parts.append(
+                            f"位置：赤经 {output_data['ra']}°，赤纬 {output_data['dec']}°"
+                        )
                     for key, value in list(output_data.items())[:5]:
                         if key not in ["name", "ra", "dec", "error", "answer"]:
                             response_parts.append(f"\n{key}：{value}")
@@ -236,20 +240,30 @@ class BaseStreamingGenerator:
             if len(output) > 50:
                 response_parts.append(f"\n{output}")
 
-        response_parts.append("\n\n（注：由于处理时间限制，以上是基于已获取数据整理的信息。）")
+        response_parts.append(
+            "\n\n（注：由于处理时间限制，以上是基于已获取数据整理的信息。）"
+        )
         return "".join(response_parts)
 
-    def _prepare_input(self, query: str, use_long_term_memory: bool = True) -> Dict[str, str]:
-        chat_history = self._format_chat_history()
+    def _prepare_input(
+        self, query: str, use_long_term_memory: bool = True
+    ) -> Dict[str, str]:
         self._current_query = query
-        user_profile = self._format_user_profile() if use_long_term_memory else "本轮对话已禁用长期记忆"
+        chat_history = self._format_chat_history()
+        user_profile = (
+            self._format_user_profile()
+            if use_long_term_memory
+            else "本轮对话已禁用长期记忆"
+        )
         return {
             "input": query,
             "chat_history": chat_history,
-            "user_profile": user_profile
+            "user_profile": user_profile,
         }
 
-    def _infer_plan_steps(self, query: str, use_long_term_memory: bool) -> List[Dict[str, Any]]:
+    def _infer_plan_steps(
+        self, query: str, use_long_term_memory: bool
+    ) -> List[Dict[str, Any]]:
         steps = [
             {
                 "id": "understand",
@@ -296,7 +310,9 @@ class BaseStreamingGenerator:
             updated.append(clone)
         return updated
 
-    def _explain_memory_hits(self, query: str, use_long_term_memory: bool) -> List[Dict[str, Any]]:
+    def _explain_memory_hits(
+        self, query: str, use_long_term_memory: bool
+    ) -> List[Dict[str, Any]]:
         if not use_long_term_memory or not self._long_term_memory:
             return []
         if hasattr(self._long_term_memory, "explain_memory_hits"):
@@ -308,7 +324,9 @@ class BaseStreamingGenerator:
                 logger.warning(f"memory explain 失败: {type(e).__name__}: {e}")
         return []
 
-    def _extract_evidence(self, tool_name: str, tool_output: str, run_id: str) -> List[Dict[str, Any]]:
+    def _extract_evidence(
+        self, tool_name: str, tool_output: str, run_id: str
+    ) -> List[Dict[str, Any]]:
         evidence: List[Dict[str, Any]] = []
         preview = self._preview_text(tool_output, 240)
         if preview:
@@ -342,7 +360,10 @@ class BaseStreamingGenerator:
         return evidence
 
     def _compute_confidence(
-        self, tool_runs: List[Dict[str, Any]], memory_hits: List[Dict[str, Any]], evidence_items: List[Dict[str, Any]]
+        self,
+        tool_runs: List[Dict[str, Any]],
+        memory_hits: List[Dict[str, Any]],
+        evidence_items: List[Dict[str, Any]],
     ) -> float:
         confidence = 0.35
         if tool_runs:
@@ -362,12 +383,16 @@ class BaseStreamingGenerator:
             return text
         return text[:max_len] + "..."
 
-    def _handle_tool_start(self, request_id: str, run_id: str, data: dict, check_repeated: bool = False) -> Optional[str]:
+    def _handle_tool_start(
+        self, request_id: str, run_id: str, data: dict, check_repeated: bool = False
+    ) -> Optional[str]:
         tool_name = data.get("name") or data.get("tool")
         tool_input = data.get("input")
         tool_input_str = str(tool_input) if tool_input else ""
 
-        if check_repeated and self._check_repeated_action(request_id, tool_name or "unknown_tool", tool_input_str):
+        if check_repeated and self._check_repeated_action(
+            request_id, tool_name or "unknown_tool", tool_input_str
+        ):
             return "repeated"
 
         self._tool_runs[run_id] = {
@@ -383,14 +408,18 @@ class BaseStreamingGenerator:
                     "request_id": request_id,
                     "run_id": run_id,
                     "tool_name": tool_name or "unknown_tool",
-                    "input": self._preview_text(tool_input, TOOL_INPUT_LOG_PREVIEW_CHARS),
+                    "input": self._preview_text(
+                        tool_input, TOOL_INPUT_LOG_PREVIEW_CHARS
+                    ),
                 },
                 ensure_ascii=False,
             )
         )
         return None
 
-    def _handle_tool_end(self, request_id: str, run_id: str, data: dict) -> Dict[str, Any]:
+    def _handle_tool_end(
+        self, request_id: str, run_id: str, data: dict
+    ) -> Dict[str, Any]:
         meta = self._tool_runs.pop(run_id, {})
         duration = None
         if meta.get("start_time") is not None:
@@ -416,20 +445,28 @@ class BaseStreamingGenerator:
                     "tool_name": meta.get("name"),
                     "duration_sec": duration,
                     "success": success,
-                    "output_preview": self._preview_text(tool_output_str, TOOL_OUTPUT_LOG_PREVIEW_CHARS),
+                    "output_preview": self._preview_text(
+                        tool_output_str, TOOL_OUTPUT_LOG_PREVIEW_CHARS
+                    ),
                 },
                 ensure_ascii=False,
             )
         )
 
-        if meta and hasattr(self._memory, "add_tool_call"):
+        if meta:
             try:
-                self._memory.add_tool_call(
-                    tool_name=meta.get("name") or "unknown_tool",
-                    tool_input=meta.get("input", ""),
-                    result=tool_output_str,
-                    timestamp=time.time(),
-                    success=success,
+                self._memory.append_tool_call(
+                    AppendToolCallRequest(
+                        session_id=self._memory_session_id(),
+                        user_id=self._user_id,
+                        turn_id=request_id,
+                        tool_name=meta.get("name") or "unknown_tool",
+                        tool_input=meta.get("input", ""),
+                        raw_output=tool_output_str,
+                        timestamp=time.time(),
+                        success=success,
+                        content_type=self._infer_content_type(tool_output_str),
+                    )
                 )
             except Exception as e:
                 logger.error(f"❌ 工具调用写入短期记忆失败: {type(e).__name__}: {e}")
@@ -446,6 +483,7 @@ class BaseStreamingGenerator:
             extracted_url = self._fallback_service.extract_image_url(tool_output_str)
         elif not extracted_url:
             from src.agent.param_parser import ParamParser
+
             extracted_url = ParamParser.extract_image_url(tool_output_str)
 
         return {
@@ -464,9 +502,27 @@ class BaseStreamingGenerator:
         latency: Optional[LatencyTracker] = None,
     ):
         try:
-            with (latency.measure("memory_save_ms") if latency else _nullcontext()):
-                self._memory.add_message("user", query, time.time())
-                self._memory.add_message("assistant", response, time.time())
+            with latency.measure("memory_save_ms") if latency else _nullcontext():
+                self._memory.append_message(
+                    AppendMessageRequest(
+                        session_id=self._memory_session_id(),
+                        user_id=self._user_id,
+                        turn_id=self._current_request_id,
+                        role="user",
+                        content=query,
+                        timestamp=time.time(),
+                    )
+                )
+                self._memory.append_message(
+                    AppendMessageRequest(
+                        session_id=self._memory_session_id(),
+                        user_id=self._user_id,
+                        turn_id=self._current_request_id,
+                        role="assistant",
+                        content=response,
+                        timestamp=time.time(),
+                    )
+                )
         except Exception as e:
             logger.error(f"❌ 短期记忆写入失败: {type(e).__name__}: {e}")
 
@@ -479,6 +535,23 @@ class BaseStreamingGenerator:
         self._current_request_id = None
         self._cleanup_action_history(request_id)
         self._log_memory_usage()
+
+    def _memory_session_id(self) -> str:
+        session_id = getattr(self._memory, "session_id", None)
+        if session_id:
+            return session_id
+        return f"stm_{self._user_id}"
+
+    @staticmethod
+    def _infer_content_type(text: str) -> str:
+        stripped = (text or "").strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                json.loads(stripped)
+                return "application/json"
+            except Exception:
+                return "text/plain"
+        return "text/plain"
 
     def _extract_stream_text(self, data: dict) -> Optional[str]:
         chunk = data.get("chunk")
@@ -512,21 +585,29 @@ class BaseStreamingGenerator:
         }
 
         if not final_answer_started:
-            if re.search(r'(Thought:|Action:|Observation:)\s*$', combined_thinking, re.IGNORECASE):
+            if re.search(
+                r"(Thought:|Action:|Observation:)\s*$", combined_thinking, re.IGNORECASE
+            ):
                 result["is_thinking"] = True
                 result["thinking_text"] = text
-            elif re.search(r'Final Answer:\s*', combined_thinking, re.IGNORECASE):
+            elif re.search(r"Final Answer:\s*", combined_thinking, re.IGNORECASE):
                 result["final_answer_started"] = True
                 if not thinking_logged and combined_thinking:
                     result["thinking_logged"] = True
                     logger.info(f"[{request_id}] 🔍 Thinking: {combined_thinking}")
-                match = re.search(r'Final Answer:\s*(.*)', combined_thinking, re.IGNORECASE | re.DOTALL)
+                match = re.search(
+                    r"Final Answer:\s*(.*)",
+                    combined_thinking,
+                    re.IGNORECASE | re.DOTALL,
+                )
                 if match and not final_answer_extracted:
                     result["final_answer_extracted"] = True
                     final_answer_text = match.group(1).strip()
                     if final_answer_text:
                         result["final_answer_text"] = final_answer_text
-                        logger.info(f"[{request_id}] Final Answer: {final_answer_text[:100]}...")
+                        logger.info(
+                            f"[{request_id}] Final Answer: {final_answer_text[:100]}..."
+                        )
                 result["thinking_buffer"] = []
                 result["should_continue"] = False
                 return result
@@ -568,12 +649,16 @@ class BaseStreamingGenerator:
     def _snapshot_runtime_metrics(self) -> Dict[str, Dict[str, float]]:
         mcp = {}
         rag = {}
-        if self._skill_manager and hasattr(self._skill_manager, "get_runtime_metrics_snapshot"):
+        if self._skill_manager and hasattr(
+            self._skill_manager, "get_runtime_metrics_snapshot"
+        ):
             try:
                 mcp = self._skill_manager.get_runtime_metrics_snapshot()
             except Exception:
                 mcp = {}
-        if self._rag_retriever and hasattr(self._rag_retriever, "get_runtime_metrics_snapshot"):
+        if self._rag_retriever and hasattr(
+            self._rag_retriever, "get_runtime_metrics_snapshot"
+        ):
             try:
                 rag = self._rag_retriever.get_runtime_metrics_snapshot()
             except Exception:
@@ -581,7 +666,9 @@ class BaseStreamingGenerator:
         return {"mcp": mcp, "rag": rag}
 
     @staticmethod
-    def _metric_delta(after: Dict[str, float], before: Dict[str, float], key: str) -> float:
+    def _metric_delta(
+        after: Dict[str, float], before: Dict[str, float], key: str
+    ) -> float:
         return round(after.get(key, 0.0) - before.get(key, 0.0), 2)
 
     def _record_runtime_metric_deltas(
@@ -592,19 +679,27 @@ class BaseStreamingGenerator:
     ) -> None:
         latency.record_ms(
             "mcp_session_init_ms",
-            self._metric_delta(after.get("mcp", {}), before.get("mcp", {}), "mcp_session_init_ms"),
+            self._metric_delta(
+                after.get("mcp", {}), before.get("mcp", {}), "mcp_session_init_ms"
+            ),
         )
         latency.record_ms(
             "tool_exec_ms",
-            self._metric_delta(after.get("mcp", {}), before.get("mcp", {}), "tool_exec_ms"),
+            self._metric_delta(
+                after.get("mcp", {}), before.get("mcp", {}), "tool_exec_ms"
+            ),
         )
         latency.record_ms(
             "rag_total_ms",
-            self._metric_delta(after.get("rag", {}), before.get("rag", {}), "rag_total_ms"),
+            self._metric_delta(
+                after.get("rag", {}), before.get("rag", {}), "rag_total_ms"
+            ),
         )
         latency.record_ms(
             "rerank_ms",
-            self._metric_delta(after.get("rag", {}), before.get("rag", {}), "rerank_ms"),
+            self._metric_delta(
+                after.get("rag", {}), before.get("rag", {}), "rerank_ms"
+            ),
         )
 
     async def _run_direct_path(
@@ -620,7 +715,11 @@ class BaseStreamingGenerator:
         with latency.measure("agent_prepare_ms"):
             chat_history = self._format_chat_history()
             self._current_query = query
-            user_profile = self._format_user_profile() if use_long_term_memory else "本轮对话已禁用长期记忆"
+            user_profile = (
+                self._format_user_profile()
+                if use_long_term_memory
+                else "本轮对话已禁用长期记忆"
+            )
         with latency.measure("agent_total_ms"):
             result = await self._task_orchestrator.run(
                 decision,
@@ -719,7 +818,11 @@ class BaseStreamingGenerator:
             async for processed in emit(
                 next_event(
                     "step_end",
-                    content={"step_id": "understand", "title": "解析任务", "status": "done"},
+                    content={
+                        "step_id": "understand",
+                        "title": "解析任务",
+                        "status": "done",
+                    },
                 )
             ):
                 yield processed
@@ -749,7 +852,11 @@ class BaseStreamingGenerator:
                 async for processed in emit(
                     next_event(
                         "step_end",
-                        content={"step_id": "memory", "title": "读取记忆", "status": "done"},
+                        content={
+                            "step_id": "memory",
+                            "title": "读取记忆",
+                            "status": "done",
+                        },
                     )
                 ):
                     yield processed
@@ -758,7 +865,9 @@ class BaseStreamingGenerator:
             if self._request_router and hasattr(self._request_router, "route"):
                 with latency.measure("route_decision_ms"):
                     candidate = self._request_router.route(query)
-                if isinstance(getattr(candidate, "route", None), str) and hasattr(candidate, "to_meta"):
+                if isinstance(getattr(candidate, "route", None), str) and hasattr(
+                    candidate, "to_meta"
+                ):
                     decision = candidate
                     async for processed in emit(
                         next_event("route_decision", content=decision.to_meta())
@@ -766,7 +875,9 @@ class BaseStreamingGenerator:
                         yield processed
 
             plan_steps = self._update_plan_status(plan_steps, "tools", "running")
-            async for processed in emit(next_event("plan_update", content={"steps": plan_steps})):
+            async for processed in emit(
+                next_event("plan_update", content={"steps": plan_steps})
+            ):
                 yield processed
             async for processed in emit(
                 next_event(
@@ -802,7 +913,9 @@ class BaseStreamingGenerator:
                     yield processed
             else:
                 with latency.measure("agent_prepare_ms"):
-                    agent_input = self._prepare_input(query, use_long_term_memory=use_long_term_memory)
+                    agent_input = self._prepare_input(
+                        query, use_long_term_memory=use_long_term_memory
+                    )
                 agent_started = time.perf_counter()
                 async for raw_event in self._agent_executor.astream_events(
                     agent_input,
@@ -816,13 +929,34 @@ class BaseStreamingGenerator:
                         async for processed in emit(
                             next_event(
                                 "tool_start",
-                                content={"tool": (data.get("name") or data.get("tool") or "unknown_tool"), "input": "" if data.get("input") is None else str(data.get("input")), "status": "running"},
-                                meta={"run_id": run_id, "tool": data.get("name") or data.get("tool") or "unknown_tool"},
+                                content={
+                                    "tool": (
+                                        data.get("name")
+                                        or data.get("tool")
+                                        or "unknown_tool"
+                                    ),
+                                    "input": (
+                                        ""
+                                        if data.get("input") is None
+                                        else str(data.get("input"))
+                                    ),
+                                    "status": "running",
+                                },
+                                meta={
+                                    "run_id": run_id,
+                                    "tool": data.get("name")
+                                    or data.get("tool")
+                                    or "unknown_tool",
+                                },
                             )
                         ):
                             yield processed
-                        tool_name = data.get("name") or data.get("tool") or "unknown_tool"
-                        tool_input = "" if data.get("input") is None else str(data.get("input"))
+                        tool_name = (
+                            data.get("name") or data.get("tool") or "unknown_tool"
+                        )
+                        tool_input = (
+                            "" if data.get("input") is None else str(data.get("input"))
+                        )
                         result = self._handle_tool_start(
                             request_id,
                             run_id,
@@ -856,8 +990,16 @@ class BaseStreamingGenerator:
                                 content={
                                     "tool": tool_meta.get("name"),
                                     "output": tool_result.get("tool_output_str", ""),
-                                    "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
-                                    "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
+                                    "output_summary": self._preview_text(
+                                        tool_result.get("tool_output_str", ""), 240
+                                    ),
+                                    "status": (
+                                        "success"
+                                        if not ErrorHandler.is_error_response(
+                                            tool_result.get("tool_output_str", "")
+                                        )
+                                        else "error"
+                                    ),
                                 },
                                 meta={
                                     "run_id": run_id,
@@ -873,9 +1015,17 @@ class BaseStreamingGenerator:
                                 "run_id": run_id,
                                 "tool": tool_meta.get("name"),
                                 "input": tool_meta.get("input", ""),
-                                "output_summary": self._preview_text(tool_result.get("tool_output_str", ""), 240),
+                                "output_summary": self._preview_text(
+                                    tool_result.get("tool_output_str", ""), 240
+                                ),
                                 "duration_sec": tool_result.get("duration"),
-                                "status": "success" if not ErrorHandler.is_error_response(tool_result.get("tool_output_str", "")) else "error",
+                                "status": (
+                                    "success"
+                                    if not ErrorHandler.is_error_response(
+                                        tool_result.get("tool_output_str", "")
+                                    )
+                                    else "error"
+                                ),
                             }
                         )
                         for evidence in self._extract_evidence(
@@ -922,7 +1072,9 @@ class BaseStreamingGenerator:
                         reasoning_fragments.append(text)
 
                     async for processed in emit(
-                        next_event("raw_text_delta", content=text, meta={"run_id": run_id})
+                        next_event(
+                            "raw_text_delta", content=text, meta={"run_id": run_id}
+                        )
                     ):
                         yield processed
 
@@ -991,11 +1143,18 @@ class BaseStreamingGenerator:
                 )
             ):
                 yield processed
-            self._save_to_memory(query, fallback, use_long_term_memory=use_long_term_memory, latency=latency)
+            self._save_to_memory(
+                query,
+                fallback,
+                use_long_term_memory=use_long_term_memory,
+                latency=latency,
+            )
             response_saved = True
         else:
             runtime_metrics_after = self._snapshot_runtime_metrics()
-            self._record_runtime_metric_deltas(latency, runtime_metrics_before, runtime_metrics_after)
+            self._record_runtime_metric_deltas(
+                latency, runtime_metrics_before, runtime_metrics_after
+            )
             final_response = "".join(response_chunks)
             self._save_to_memory(
                 query,
@@ -1007,13 +1166,21 @@ class BaseStreamingGenerator:
             plan_steps = self._update_plan_status(plan_steps, "tools", "done")
             plan_steps = self._update_plan_status(plan_steps, "answer", "done")
             total_duration_sec = round(time.time() - request_started_at, 3)
-            tool_success_count = sum(1 for item in tool_timeline if item.get("status") == "success")
-            tool_error_count = sum(1 for item in tool_timeline if item.get("status") == "error")
+            tool_success_count = sum(
+                1 for item in tool_timeline if item.get("status") == "success"
+            )
+            tool_error_count = sum(
+                1 for item in tool_timeline if item.get("status") == "error"
+            )
 
-            reasoning_summary = self._preview_text("".join(thinking_buffer or reasoning_fragments), 300)
+            reasoning_summary = self._preview_text(
+                "".join(thinking_buffer or reasoning_fragments), 300
+            )
             if reasoning_summary:
                 async for processed in emit(
-                    next_event("reasoning_summary", content={"summary": reasoning_summary})
+                    next_event(
+                        "reasoning_summary", content={"summary": reasoning_summary}
+                    )
                 ):
                     yield processed
             async for processed in emit(
@@ -1037,7 +1204,9 @@ class BaseStreamingGenerator:
                         "final_answer": final_response,
                         "sources": evidence_items,
                         "tools_used": tool_timeline,
-                        "confidence": self._compute_confidence(tool_timeline, memory_hits, evidence_items),
+                        "confidence": self._compute_confidence(
+                            tool_timeline, memory_hits, evidence_items
+                        ),
                         "reasoning_summary": reasoning_summary,
                         "memory_hits": memory_hits,
                         "total_duration_sec": total_duration_sec,
@@ -1064,16 +1233,24 @@ class BaseStreamingGenerator:
             async for processed in emit(
                 next_event(
                     "step_end",
-                    content={"step_id": "answer", "title": "生成答案", "status": "done"},
+                    content={
+                        "step_id": "answer",
+                        "title": "生成答案",
+                        "status": "done",
+                    },
                 )
             ):
                 yield processed
-            async for processed in emit(next_event("plan_update", content={"steps": plan_steps})):
+            async for processed in emit(
+                next_event("plan_update", content={"steps": plan_steps})
+            ):
                 yield processed
 
             if not thinking_logged and thinking_buffer:
                 logger.info(f"[{request_id}] 🔍 Thinking: {''.join(thinking_buffer)}")
-            logger.info(f"[{request_id}] ✅ 统一事件流完成，响应长度：{len(final_response)} 字符")
+            logger.info(
+                f"[{request_id}] ✅ 统一事件流完成，响应长度：{len(final_response)} 字符"
+            )
         finally:
             if not response_saved and response_chunks:
                 self._save_to_memory(
@@ -1106,22 +1283,36 @@ class StreamingService(BaseStreamingGenerator):
             output = response.get("output", "")
             intermediate_steps = response.get("intermediate_steps", [])
 
-            if self._fallback_service and self._fallback_service.should_use_fallback(output):
-                logger.warning("检测到工具调用可能未返回有效结果，尝试从中间步骤生成答案...")
+            if self._fallback_service and self._fallback_service.should_use_fallback(
+                output
+            ):
+                logger.warning(
+                    "检测到工具调用可能未返回有效结果，尝试从中间步骤生成答案..."
+                )
                 tool_call_failed = True
 
                 if intermediate_steps:
-                    built_response = self._build_response_from_intermediate_steps(query, intermediate_steps)
+                    built_response = self._build_response_from_intermediate_steps(
+                        query, intermediate_steps
+                    )
                     if built_response:
                         output = built_response
                         logger.info("✅ 成功从中间步骤生成答案")
                     else:
-                        search_result = self._fallback_service.try_web_search_fallback(query)
-                        output = self._fallback_service.format_fallback_response(query, search_result)
+                        search_result = self._fallback_service.try_web_search_fallback(
+                            query
+                        )
+                        output = self._fallback_service.format_fallback_response(
+                            query, search_result
+                        )
                         fallback_used = True
                 else:
-                    search_result = self._fallback_service.try_web_search_fallback(query)
-                    output = self._fallback_service.format_fallback_response(query, search_result)
+                    search_result = self._fallback_service.try_web_search_fallback(
+                        query
+                    )
+                    output = self._fallback_service.format_fallback_response(
+                        query, search_result
+                    )
                     fallback_used = True
 
             final_response = output
@@ -1131,25 +1322,38 @@ class StreamingService(BaseStreamingGenerator):
             self._save_to_memory(query, final_response)
 
             if fallback_used:
-                logger.info(f"✅ 使用联网搜索降级 | 助手响应长度：{len(final_response)} 字符")
+                logger.info(
+                    f"✅ 使用联网搜索降级 | 助手响应长度：{len(final_response)} 字符"
+                )
             else:
-                logger.info(f"✅ 对话已存入记忆 | 助手响应长度：{len(final_response)} 字符")
+                logger.info(
+                    f"✅ 对话已存入记忆 | 助手响应长度：{len(final_response)} 字符"
+                )
 
         except Exception as e:
-            logger.error(f"❌ 生成响应失败：{type(e).__name__}: {str(e) or '(无错误消息)'}", exc_info=True)
+            logger.error(
+                f"❌ 生成响应失败：{type(e).__name__}: {str(e) or '(无错误消息)'}",
+                exc_info=True,
+            )
 
             if self._fallback_service and not tool_call_failed:
                 logger.warning("检测到异常，尝试使用联网搜索降级...")
                 try:
-                    search_result = self._fallback_service.try_web_search_fallback(query)
-                    fallback_response = self._fallback_service.format_fallback_response(query, search_result)
+                    search_result = self._fallback_service.try_web_search_fallback(
+                        query
+                    )
+                    fallback_response = self._fallback_service.format_fallback_response(
+                        query, search_result
+                    )
                     fallback_used = True
 
                     yield fallback_response
 
                     self._save_to_memory(query, fallback_response)
 
-                    logger.info(f"✅ 降级搜索成功 | 助手响应长度：{len(fallback_response)} 字符")
+                    logger.info(
+                        f"✅ 降级搜索成功 | 助手响应长度：{len(fallback_response)} 字符"
+                    )
                     return
                 except Exception as fallback_error:
                     logger.error(f"降级搜索也失败: {fallback_error}")
@@ -1184,7 +1388,10 @@ class StreamingService(BaseStreamingGenerator):
             yield event
 
     async def generate_sse(
-        self, query: str, image_path: Optional[str] = None, use_long_term_memory: bool = True
+        self,
+        query: str,
+        image_path: Optional[str] = None,
+        use_long_term_memory: bool = True,
     ) -> AsyncGenerator[str, None]:
         """返回可直接写入 StreamingResponse 的 SSE 文本流。"""
         adapter = SSEEventAdapter()
