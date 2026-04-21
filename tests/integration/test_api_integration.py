@@ -231,10 +231,10 @@ class TestStreamingServiceIntegration:
     """测试流式服务与记忆模块的集成"""
 
     def test_format_chat_history(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
         from src.agent.streaming_service import StreamingService
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.short_term_memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 15
             mock_s.MEMORY_WINDOW = 8
             mock_s.STM_CONTEXT_MAX_TOKENS = 4000
@@ -264,10 +264,10 @@ class TestStreamingServiceIntegration:
         assert "助手" in history
 
     def test_format_empty_chat_history(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
         from src.agent.streaming_service import StreamingService
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.short_term_memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 15
             mock_s.MEMORY_WINDOW = 8
             mock_s.STM_CONTEXT_MAX_TOKENS = 4000
@@ -322,7 +322,8 @@ class TestStreamingServiceIntegration:
         assert isinstance(result, str)
 
     def test_extract_and_update_long_term_memory(self):
-        from src.memory.memory import ShortTermMemory, LongTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
+from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
         from src.agent.streaming_service import StreamingService
         import tempfile
 
@@ -330,7 +331,7 @@ class TestStreamingServiceIntegration:
             db_path = os.path.join(tmpdir, "test.sqlite")
             ltm = LongTermMemory(db_path=db_path)
 
-            with patch("src.memory.memory.settings") as mock_s:
+            with patch("src.memory.short_term_memory.config.settings") as mock_s:
                 mock_s.MEMORY_SIZE = 15
                 mock_s.MEMORY_WINDOW = 8
                 mock_s.STM_CONTEXT_MAX_TOKENS = 4000

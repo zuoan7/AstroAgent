@@ -6,9 +6,9 @@ from src.core.config import settings as core_settings
 
 def get_memory_settings():
     try:
-        from src.memory import memory as memory_module
+        from src.memory.config import settings as memory_settings_module
 
-        return getattr(memory_module, "settings", core_settings)
+        return getattr(memory_settings_module, "settings", core_settings)
     except Exception:
         return core_settings
 

@@ -192,9 +192,9 @@ class TestMemoryModuleIntegration:
     """测试记忆模块与Agent模块之间的数据流转"""
 
     def test_short_term_memory_add_and_retrieve(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.short_term_memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 15
             mock_s.MEMORY_WINDOW = 8
             mock_s.STM_CONTEXT_MAX_TOKENS = 4000
@@ -218,9 +218,9 @@ class TestMemoryModuleIntegration:
         assert recent[1]["role"] == "assistant"
 
     def test_short_term_memory_window_limit(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.short_term_memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 5
             mock_s.MEMORY_WINDOW = 3
             mock_s.STM_CONTEXT_MAX_TOKENS = 4000
@@ -243,9 +243,9 @@ class TestMemoryModuleIntegration:
         assert len(recent) == 3
 
     def test_short_term_memory_clear(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.short_term_memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 15
             mock_s.MEMORY_WINDOW = 8
             mock_s.STM_CONTEXT_MAX_TOKENS = 4000
@@ -267,7 +267,8 @@ class TestMemoryModuleIntegration:
         assert memory.get_size() == 0
 
     def test_long_term_memory_save_and_load(self, temp_db_path):
-        from src.memory.memory import LongTermMemory, UserProfile
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
+from src.memory.long_term_memory.models import UserProfile
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -290,7 +291,7 @@ class TestMemoryModuleIntegration:
         assert "避免术语" in loaded.constraints
 
     def test_long_term_memory_merge_and_update(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -315,7 +316,7 @@ class TestMemoryModuleIntegration:
         assert "控制长度" in profile.constraints
 
     def test_long_term_memory_delete_profile(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -331,7 +332,7 @@ class TestMemoryModuleIntegration:
         assert memory.load_profile("test_user") is None
 
     def test_long_term_memory_extract_from_conversation(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -345,7 +346,7 @@ class TestMemoryModuleIntegration:
         assert "火星" in extracted["habits"]["frequent_topics"]
 
     def test_long_term_memory_format_for_prompt(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 

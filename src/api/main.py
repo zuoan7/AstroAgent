@@ -18,7 +18,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from src.agent import AstroAgent
 from src.agent.streaming_events import SSEEventAdapter
 from src.agent.streaming_service import StreamingService
-from src.memory.memory import ShortTermMemory
+from src.memory.short_term_memory.manager import ShortTermMemory
 from src.memory.long_term_memory import (
     LongTermMemoryManager,
     MemoryItem,

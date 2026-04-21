@@ -12,9 +12,9 @@ from src.memory.short_term_memory.summarizer import ConversationSummarizer
 
 class ShortTermMemory:
     def __init__(self, session_id: Optional[str] = None, user_id: Optional[str] = None):
-        from src.memory import memory as memory_module
+        from src.memory.config import settings as memory_settings
 
-        self._settings = memory_module.settings
+        self._settings = memory_settings
         self.config = ShortTermMemoryConfig.from_settings(self._settings)
         self.session_id = session_id or f"session_{int(time.time())}"
         self.user_id = user_id or self._settings.DEFAULT_USER_ID

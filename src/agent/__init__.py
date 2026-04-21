@@ -4,7 +4,7 @@ from src.core.config import settings
 from src.core.llm_factory import build_chat_model
 from src.core.model_catalog import model_selection_payload, resolve_model_config
 from src.rag.online_retriever import OnlineRetriever
-from src.memory.memory import ShortTermMemory, LongTermMemory
+from src.memory.short_term_memory.manager import ShortTermMemory
 from src.memory.long_term_memory import LongTermMemoryManager
 from src.agent.skill_manager import SkillManager
 from src.agent.fallback_service import FallbackService

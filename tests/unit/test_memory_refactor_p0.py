@@ -39,7 +39,7 @@ def _settings(db_path: str) -> SimpleNamespace:
 @pytest.fixture
 def stm_db(tmp_path, monkeypatch):
     db_path = os.path.join(tmp_path, "stm.sqlite")
-    from src.memory import memory as memory_module
+    from src.memory import config as memory_module
 
     monkeypatch.setattr(memory_module, "settings", _settings(db_path))
     return db_path

@@ -131,7 +131,7 @@ class TestAstronomyDataProcessingThroughput:
         assert report["avg_ms"] < 5, f"参数解析平均 {report['avg_ms']}ms 超过5ms阈值"
 
     def test_memory_operations_throughput(self, perf_timer):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 100
@@ -159,7 +159,7 @@ class TestAstronomyDataProcessingThroughput:
         assert report["avg_ms"] < 5, f"记忆操作平均 {report['avg_ms']}ms 超过5ms阈值"
 
     def test_long_term_memory_throughput(self, perf_timer, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -287,7 +287,7 @@ class TestResourceUtilization:
     """测试资源利用率"""
 
     def test_short_term_memory_usage(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 1000
@@ -316,7 +316,7 @@ class TestResourceUtilization:
         assert peak_mb < 50, f"短期记忆峰值内存 {peak_mb:.2f}MB 超过50MB阈值"
 
     def test_long_term_memory_disk_usage(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -392,7 +392,7 @@ class TestConcurrentUserSimulation:
     """测试并发用户场景"""
 
     def test_concurrent_memory_operations(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         errors = []
         results = []
@@ -424,7 +424,7 @@ class TestConcurrentUserSimulation:
         assert all(results), "部分用户画像未成功写入"
 
     def test_concurrent_short_term_memory(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 100

@@ -203,7 +203,7 @@ class TestInputDataBoundary:
         assert isinstance(result2, dict)
 
     def test_empty_knowledge_list(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 15
@@ -284,7 +284,7 @@ class TestResourceBoundary:
     """测试系统资源边界条件"""
 
     def test_memory_size_limit_enforcement(self):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.short_term_memory.manager import ShortTermMemory
 
         with patch("src.memory.memory.settings") as mock_s:
             mock_s.MEMORY_SIZE = 5
@@ -307,7 +307,7 @@ class TestResourceBoundary:
         assert memory.get_size() == 5
 
     def test_large_number_of_profiles(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -323,7 +323,7 @@ class TestResourceBoundary:
         assert profile.user_id == "user_499"
 
     def test_large_profile_data(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
@@ -343,7 +343,7 @@ class TestResourceBoundary:
 
     def test_concurrent_db_access(self, temp_db_path):
         import threading
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryManager as LongTermMemory
 
         errors = []
 
