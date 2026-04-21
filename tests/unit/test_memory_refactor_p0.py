@@ -21,36 +21,36 @@ def _settings(db_path: str) -> SimpleNamespace:
         DEFAULT_USER_ID="test_user",
         MEMORY_SIZE=15,
         MEMORY_WINDOW=8,
-        STM_CONTEXT_MAX_TOKENS=4000,
-        STM_CONTEXT_BUDGET=4000,
-        STM_MAX_RECENT_MESSAGES=6,
-        STM_MAX_TOOL_RECORDS=5,
-        STM_MAX_SALIENT_FACTS=32,
-        STM_SUMMARY_MAX_TOKENS=500,
-        STM_SUMMARY_TRIGGER_MESSAGES=100,
-        STM_SUMMARY_TRIGGER_TOKENS=100000,
-        STM_SUMMARY_KEEP_LAST_N=3,
-        STM_ENABLE_SUMMARY=True,
-        STM_PERSISTENCE_ENABLED=True,
-        STM_PERSISTENCE_PATH=db_path,
-        STM_IMPORTANCE_HIGH_ROLES={"user", "system"},
-        STM_TOOL_RESULT_MAX_LENGTH=120,
+        MEMORY_CONTEXT_MAX_TOKENS=4000,
+        MEMORY_CONTEXT_BUDGET=4000,
+        MEMORY_MAX_RECENT_MESSAGES=6,
+        MEMORY_MAX_TOOL_RECORDS=5,
+        MEMORY_MAX_SALIENT_FACTS=32,
+        MEMORY_SUMMARY_MAX_TOKENS=500,
+        MEMORY_SUMMARY_TRIGGER_MESSAGES=100,
+        MEMORY_SUMMARY_TRIGGER_TOKENS=100000,
+        MEMORY_SUMMARY_KEEP_LAST_N=3,
+        MEMORY_ENABLE_SUMMARY=True,
+        MEMORY_PERSISTENCE_ENABLED=True,
+        MEMORY_PERSISTENCE_PATH=db_path,
+        MEMORY_IMPORTANCE_HIGH_ROLES={"user", "system"},
+        MEMORY_TOOL_RESULT_MAX_LENGTH=120,
         DASHSCOPE_API_KEY="",
         MODEL_NAME="test-model",
     )
 
 
 @pytest.fixture
-def stm_db(tmp_path, monkeypatch):
-    db_path = os.path.join(tmp_path, "stm.sqlite")
+def memory_db(tmp_path, monkeypatch):
+    db_path = os.path.join(tmp_path, "memory.sqlite")
     from src.memory import config as memory_module
 
     monkeypatch.setattr(memory_module, "settings", _settings(db_path))
     return db_path
 
 
-def test_event_store_append_is_idempotent(stm_db):
-    store = EventStore(stm_db)
+def test_event_store_append_is_idempotent(memory_db):
+    store = EventStore(memory_db)
     event = MemoryEvent(
         event_id="evt_fixed",
         tenant_id="tenant",
@@ -68,8 +68,8 @@ def test_event_store_append_is_idempotent(stm_db):
     assert events[0].payload["content"] == "hello"
 
 
-def test_artifact_store_round_trips_raw_tool_output(stm_db):
-    store = ArtifactStore(stm_db)
+def test_artifact_store_round_trips_raw_tool_output(memory_db):
+    store = ArtifactStore(memory_db)
 
     artifact = store.put(
         tenant_id="tenant",
@@ -84,8 +84,8 @@ def test_artifact_store_round_trips_raw_tool_output(stm_db):
     assert store.get_content(artifact.artifact_id) == '{"large": "payload"}'
 
 
-def test_memory_service_stores_tool_artifact_and_event(stm_db):
-    service = MemoryService(db_path=stm_db, tenant_id="tenant")
+def test_memory_service_stores_tool_artifact_and_event(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
 
     record = service.append_tool_call(
         AppendToolCallRequest(
@@ -108,8 +108,8 @@ def test_memory_service_stores_tool_artifact_and_event(stm_db):
     assert events[0].payload["raw_artifact_id"] == record.raw_artifact_id
 
 
-def test_task_state_patch_uses_optimistic_lock(stm_db):
-    service = MemoryService(db_path=stm_db, tenant_id="tenant")
+def test_task_state_patch_uses_optimistic_lock(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
 
     state = service.update_task_state(
         "session",
@@ -128,9 +128,9 @@ def test_task_state_patch_uses_optimistic_lock(stm_db):
         )
 
 
-def test_memory_service_append_message_updates_event_view(stm_db):
+def test_memory_service_append_message_updates_event_view(memory_db):
     service = MemoryService(
-        db_path=stm_db, tenant_id="tenant", session_id="session", user_id="user"
+        db_path=memory_db, tenant_id="tenant", session_id="session", user_id="user"
     )
 
     message = service.append_message(
@@ -149,9 +149,9 @@ def test_memory_service_append_message_updates_event_view(stm_db):
     assert messages[0]["content"] == "请记录这个目标"
 
 
-def test_memory_service_append_tool_call_exposes_raw_artifact(stm_db):
+def test_memory_service_append_tool_call_exposes_raw_artifact(memory_db):
     service = MemoryService(
-        db_path=stm_db, tenant_id="tenant", session_id="session", user_id="user"
+        db_path=memory_db, tenant_id="tenant", session_id="session", user_id="user"
     )
 
     record = service.append_tool_call(
@@ -171,8 +171,8 @@ def test_memory_service_append_tool_call_exposes_raw_artifact(stm_db):
     assert tool_calls[0]["raw_artifact_id"] == record.raw_artifact_id
 
 
-def test_compression_creates_summary_snapshot_from_events(stm_db):
-    service = MemoryService(db_path=stm_db, tenant_id="tenant")
+def test_compression_creates_summary_snapshot_from_events(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
     service.append_message(
         AppendMessageRequest(
             tenant_id="tenant",
@@ -201,8 +201,8 @@ def test_compression_creates_summary_snapshot_from_events(stm_db):
     assert latest and latest.snapshot_id == snapshot.snapshot_id
 
 
-def test_retrieval_planner_includes_task_state_and_relevant_tool_evidence(stm_db):
-    service = MemoryService(db_path=stm_db, tenant_id="tenant")
+def test_retrieval_planner_includes_task_state_and_relevant_tool_evidence(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
     service.append_message(
         AppendMessageRequest(
             tenant_id="tenant",
@@ -246,8 +246,8 @@ def test_retrieval_planner_includes_task_state_and_relevant_tool_evidence(stm_db
     assert context["retrieval_plan"]["selected_task_state_version"] >= 2
 
 
-def test_delete_tool_call_tombstones_event_and_artifact(stm_db):
-    service = MemoryService(db_path=stm_db, tenant_id="tenant")
+def test_delete_tool_call_tombstones_event_and_artifact(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
     record = service.append_tool_call(
         AppendToolCallRequest(
             tenant_id="tenant",
@@ -277,8 +277,8 @@ def test_delete_tool_call_tombstones_event_and_artifact(stm_db):
     assert deleted_events and deleted_events[0].is_deleted is True
 
 
-def test_delete_session_marks_task_state_and_snapshot_deleted(stm_db):
-    service = MemoryService(db_path=stm_db, tenant_id="tenant")
+def test_delete_session_marks_task_state_and_snapshot_deleted(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
     service.append_message(
         AppendMessageRequest(
             tenant_id="tenant",

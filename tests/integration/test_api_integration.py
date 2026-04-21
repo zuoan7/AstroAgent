@@ -240,12 +240,12 @@ class TestStreamingServiceIntegration:
 
         memory = MemoryService(
             db_path=str(tmp_path / "memory.sqlite"),
-            session_id="stm_test_user",
+            session_id="mem_test_user",
             user_id="test_user",
         )
         memory.append_message(
             AppendMessageRequest(
-                session_id="stm_test_user",
+                session_id="mem_test_user",
                 role="user",
                 content="你好",
                 timestamp=time.time(),
@@ -253,7 +253,7 @@ class TestStreamingServiceIntegration:
         )
         memory.append_message(
             AppendMessageRequest(
-                session_id="stm_test_user",
+                session_id="mem_test_user",
                 role="assistant",
                 content="你好！有什么天文问题吗？",
                 timestamp=time.time(),
@@ -277,7 +277,7 @@ class TestStreamingServiceIntegration:
 
         memory = MemoryService(
             db_path=str(tmp_path / "memory.sqlite"),
-            session_id="stm_test_user",
+            session_id="mem_test_user",
             user_id="test_user",
         )
 
@@ -332,7 +332,7 @@ class TestStreamingServiceIntegration:
             ltm = LongTermMemory(db_path=db_path)
             memory = MemoryService(
                 db_path=os.path.join(tmpdir, "memory.sqlite"),
-                session_id="stm_test_user",
+                session_id="mem_test_user",
                 user_id="test_user",
             )
 

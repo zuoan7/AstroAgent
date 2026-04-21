@@ -469,7 +469,9 @@ class BaseStreamingGenerator:
                     )
                 )
             except Exception as e:
-                logger.error(f"❌ 工具调用写入短期记忆失败: {type(e).__name__}: {e}")
+                logger.error(
+                    f"❌ memory tool-call append failed: {type(e).__name__}: {e}"
+                )
 
         extracted_url = None
         if tool_output_str.strip().startswith("{"):
@@ -524,7 +526,7 @@ class BaseStreamingGenerator:
                     )
                 )
         except Exception as e:
-            logger.error(f"❌ 短期记忆写入失败: {type(e).__name__}: {e}")
+            logger.error(f"❌ memory message append failed: {type(e).__name__}: {e}")
 
         if use_long_term_memory:
             self._schedule_long_term_memory_update(query, response)
@@ -540,7 +542,7 @@ class BaseStreamingGenerator:
         session_id = getattr(self._memory, "session_id", None)
         if session_id:
             return session_id
-        return f"stm_{self._user_id}"
+        return f"mem_{self._user_id}"
 
     @staticmethod
     def _infer_content_type(text: str) -> str:

@@ -40,7 +40,7 @@ from src.memory.long_term_memory import (
 )
 
 app = FastAPI(
-    title="天文Agent API", description="具有短期记忆、长期记忆和流式输出的天文知识助手"
+    title="天文Agent API", description="具有会话记忆、长期记忆和流式输出的天文知识助手"
 )
 app.add_middleware(
     CORSMiddleware,
@@ -154,8 +154,8 @@ class SessionData:
         self.session_key = build_session_key(user_id, session_id)
         self._base_agent = agent
         self.memory = MemoryService(
-            db_path=settings.STM_PERSISTENCE_PATH,
-            session_id=f"stm_{self.session_key}",
+            db_path=settings.MEMORY_PERSISTENCE_PATH,
+            session_id=f"mem_{self.session_key}",
             user_id=user_id,
         )
         self.model_provider = ""
@@ -1126,7 +1126,7 @@ async def memory_overview_endpoint(
         "candidates": [item.to_dict() for item in candidates],
         "confirmations": [item.to_dict() for item in confirmations],
         "recent_events": [item.to_dict() for item in recent_events],
-        "short_term": {
+        "session_memory": {
             "summary": session.memory.get_summary(),
             "messages": session.memory.get_all_messages(),
             "tool_calls": session.memory.get_tool_calls(),

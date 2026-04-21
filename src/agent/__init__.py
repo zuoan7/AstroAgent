@@ -38,8 +38,8 @@ class AstroAgent:
 
         self.rag = OnlineRetriever()
         self.memory = MemoryService(
-            db_path=settings.STM_PERSISTENCE_PATH,
-            session_id=f"stm_{self.user_id}",
+            db_path=settings.MEMORY_PERSISTENCE_PATH,
+            session_id=f"mem_{self.user_id}",
             user_id=self.user_id,
         )
         self.long_term_memory = LongTermMemoryManager(settings.LONG_TERM_MEMORY_PATH)

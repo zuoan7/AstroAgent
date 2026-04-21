@@ -7,7 +7,7 @@
 主要功能：
 - 导入并导出核心配置 settings
 - 提供记忆层统一的配置访问点
-- 支持短期记忆和长期记忆的配置统一管理
+- 支持会话记忆和长期记忆的配置统一管理
 
 使用示例：
     from src.memory.config import settings

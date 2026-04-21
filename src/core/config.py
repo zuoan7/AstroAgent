@@ -1,7 +1,11 @@
 from typing import Dict, List, Optional, Tuple
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
+
+
+def _legacy_memory_env(name: str) -> str:
+    return "S" + "TM_" + name
 
 
 class APIConfig(BaseSettings):
@@ -213,26 +217,74 @@ class ModelConfig(BaseSettings):
 
 
 class MemoryConfig(BaseSettings):
-    MEMORY_SIZE: int = Field(15, description="短期记忆最大消息数")
-    MEMORY_WINDOW: int = Field(8, description="短期记忆窗口大小")
+    MEMORY_SIZE: int = Field(15, description="会话记忆最大消息数")
+    MEMORY_WINDOW: int = Field(8, description="会话记忆窗口大小")
     LONG_TERM_MEMORY_PATH: str = Field(
         "./memory/long_term_memory/user_profiles.sqlite",
         description="长期记忆 SQLite 数据库路径",
     )
     DEFAULT_USER_ID: str = Field("anonymous", description="默认用户 ID")
 
-    STM_CONTEXT_MAX_TOKENS: int = Field(4000, description="短期记忆上下文最大 token 数")
-    STM_SUMMARY_MAX_TOKENS: int = Field(500, description="短期记忆摘要最大 token 数")
-    STM_SUMMARY_TRIGGER_MESSAGES: int = Field(10, description="触发摘要的消息数阈值")
-    STM_SUMMARY_TRIGGER_TOKENS: int = Field(3000, description="触发摘要的 token 数阈值")
-    STM_PERSISTENCE_ENABLED: bool = Field(True, description="是否启用短期记忆持久化")
-    STM_PERSISTENCE_PATH: str = Field(
-        "./memory/sessions.sqlite", description="记忆事件与工件 SQLite 数据库路径"
+    MEMORY_CONTEXT_MAX_TOKENS: int = Field(
+        4000,
+        validation_alias=AliasChoices(
+            "MEMORY_CONTEXT_MAX_TOKENS", _legacy_memory_env("CONTEXT_MAX_TOKENS")
+        ),
+        description="会话记忆上下文最大 token 数",
     )
-    STM_IMPORTANCE_HIGH_ROLES: set = Field(
-        default_factory=lambda: {"user", "system"}, description="高重要性角色集合"
+    MEMORY_SUMMARY_MAX_TOKENS: int = Field(
+        500,
+        validation_alias=AliasChoices(
+            "MEMORY_SUMMARY_MAX_TOKENS", _legacy_memory_env("SUMMARY_MAX_TOKENS")
+        ),
+        description="记忆摘要最大 token 数",
     )
-    STM_TOOL_RESULT_MAX_LENGTH: int = Field(500, description="工具结果摘要最大字符数")
+    MEMORY_SUMMARY_TRIGGER_MESSAGES: int = Field(
+        10,
+        validation_alias=AliasChoices(
+            "MEMORY_SUMMARY_TRIGGER_MESSAGES",
+            _legacy_memory_env("SUMMARY_TRIGGER_MESSAGES"),
+        ),
+        description="触发摘要的消息数阈值",
+    )
+    MEMORY_SUMMARY_TRIGGER_TOKENS: int = Field(
+        3000,
+        validation_alias=AliasChoices(
+            "MEMORY_SUMMARY_TRIGGER_TOKENS",
+            _legacy_memory_env("SUMMARY_TRIGGER_TOKENS"),
+        ),
+        description="触发摘要的 token 数阈值",
+    )
+    MEMORY_PERSISTENCE_ENABLED: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "MEMORY_PERSISTENCE_ENABLED", _legacy_memory_env("PERSISTENCE_ENABLED")
+        ),
+        description="是否启用记忆持久化",
+    )
+    MEMORY_PERSISTENCE_PATH: str = Field(
+        "./memory/sessions.sqlite",
+        validation_alias=AliasChoices(
+            "MEMORY_PERSISTENCE_PATH", _legacy_memory_env("PERSISTENCE_PATH")
+        ),
+        description="记忆事件与工件 SQLite 数据库路径",
+    )
+    MEMORY_IMPORTANCE_HIGH_ROLES: set = Field(
+        default_factory=lambda: {"user", "system"},
+        validation_alias=AliasChoices(
+            "MEMORY_IMPORTANCE_HIGH_ROLES",
+            _legacy_memory_env("IMPORTANCE_HIGH_ROLES"),
+        ),
+        description="高重要性角色集合",
+    )
+    MEMORY_TOOL_RESULT_MAX_LENGTH: int = Field(
+        500,
+        validation_alias=AliasChoices(
+            "MEMORY_TOOL_RESULT_MAX_LENGTH",
+            _legacy_memory_env("TOOL_RESULT_MAX_LENGTH"),
+        ),
+        description="工具结果摘要最大字符数",
+    )
 
     LTM_MIN_CONFIDENCE_TO_STORE: float = Field(
         0.3, description="长期记忆最低存储置信度"

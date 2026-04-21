@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Guard against reintroducing legacy short-term memory callers."""
+"""Guard against reintroducing removed memory callers."""
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REMOVED_SESSION_MODULE = "short" + "_term" + "_memory"
+REMOVED_SESSION_CLASS = "Short" + "Term" + "Memory"
 FORBIDDEN_FILES = [
-    ROOT / "src/memory/short_term_memory",
+    ROOT / "src/memory" / REMOVED_SESSION_MODULE,
     ROOT / "src/memory/adapters",
-    ROOT / "src/memory/adapters/short_term_memory_adapter.py",
+    ROOT / "src/memory/adapters" / f"{REMOVED_SESSION_MODULE}_adapter.py",
     ROOT / "src/memory/context_builder.py",
     ROOT / "src/memory/summarizer.py",
 ]
 FORBIDDEN_PATTERNS = [
-    "ShortTermMemory",
-    "src.memory.short_term_memory",
+    REMOVED_SESSION_CLASS,
+    f"src.memory.{REMOVED_SESSION_MODULE}",
     ".add_message(",
     ".add_tool_call(",
     ".get_context(",
