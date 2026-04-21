@@ -1,13 +1,14 @@
-import os
 import json
 import math
+import os
 import time
-from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tests.mock_deps import mock_heavy_dependencies
+
 mock_heavy_dependencies()
 
 
@@ -24,8 +25,8 @@ class TestExtremeAstronomicalValues:
         assert safe_float("1.0e-10") == 1.0e-10
 
     def test_extreme_coordinate_values(self):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         calc = PlanetaryCalculator(ephemeris=mock_eph)
@@ -73,14 +74,16 @@ class TestExtremeAstronomicalValues:
         assert result3 is None
 
     def test_extreme_planet_name_handling(self):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         mock_eph.is_loaded = True
         calc = PlanetaryCalculator(ephemeris=mock_eph)
 
-        with patch("src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}):
+        with patch(
+            "src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}
+        ):
             with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                 mock_t = MagicMock()
                 mock_ts_obj = MagicMock()
@@ -97,8 +100,8 @@ class TestExtremeAstronomicalValues:
                         pass
 
     def test_rise_set_polar_regions(self):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         calc = PlanetaryCalculator(ephemeris=mock_eph)
@@ -112,7 +115,9 @@ class TestExtremeAstronomicalValues:
     def test_moon_phase_extreme_dates(self):
         from src.astronomy.events_predictor import EventsPredictor
 
-        with patch.object(EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")):
+        with patch.object(
+            EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")
+        ):
             mock_eph = MagicMock()
             predictor = EventsPredictor(ephemeris=mock_eph, location=(39.9, 116.4))
 
@@ -147,7 +152,7 @@ class TestInputDataBoundary:
         result = ParamParser.parse('{"city": "北京"')
         assert isinstance(result, dict)
 
-        result2 = ParamParser.parse('{city: 北京}')
+        result2 = ParamParser.parse("{city: 北京}")
         assert isinstance(result2, dict)
 
         result3 = ParamParser.parse('{"city": undefined}')
@@ -202,29 +207,28 @@ class TestInputDataBoundary:
         result2 = ParamParser.parse(sql_injection)
         assert isinstance(result2, dict)
 
-    def test_empty_knowledge_list(self):
-        from src.memory.memory import ShortTermMemory
+    def test_empty_knowledge_list(self, tmp_path):
+        from src.memory.api.dto import AppendMessageRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
-            mock_s.MEMORY_SIZE = 15
-            mock_s.MEMORY_WINDOW = 8
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-            mock_s.DEFAULT_USER_ID = "test_user"
-            mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+        memory = MemoryService(
+            db_path=str(tmp_path / "memory.sqlite"),
+            session_id="boundary_session",
+            user_id="test_user",
+        )
 
-        memory.add_message("user", "", time.time())
-        assert memory.get_size() == 1
+        memory.append_message(
+            AppendMessageRequest(
+                session_id="boundary_session",
+                role="user",
+                content="",
+                timestamp=time.time(),
+            )
+        )
 
-        recent = memory.get_recent_messages()
-        assert recent[0]["content"] == ""
+        messages = memory.get_all_messages("boundary_session")
+        assert len(messages) == 1
+        assert messages[0]["content"] == ""
 
     def test_parse_date_edge_cases(self):
         from src.utils.helpers import parse_date
@@ -283,79 +287,91 @@ class TestInputDataBoundary:
 class TestResourceBoundary:
     """测试系统资源边界条件"""
 
-    def test_memory_size_limit_enforcement(self):
-        from src.memory.memory import ShortTermMemory
+    def test_memory_context_selection_bounds(self, tmp_path):
+        from src.memory.api.dto import AppendMessageRequest, BuildContextRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
-            mock_s.MEMORY_SIZE = 5
-            mock_s.MEMORY_WINDOW = 3
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-            mock_s.DEFAULT_USER_ID = "test_user"
-            mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+        memory = MemoryService(
+            db_path=str(tmp_path / "memory.sqlite"),
+            session_id="boundary_session",
+            user_id="test_user",
+        )
 
         for i in range(100):
-            memory.add_message("user", f"消息{i}", time.time())
+            memory.append_message(
+                AppendMessageRequest(
+                    session_id="boundary_session",
+                    role="user",
+                    content=f"消息{i}",
+                    timestamp=time.time(),
+                )
+            )
 
-        assert memory.get_size() == 5
+        context = memory.build_context(
+            BuildContextRequest(session_id="boundary_session", max_tokens=200)
+        )
+        assert len(context["selected_recent_messages"]) <= 8
 
     def test_large_number_of_profiles(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         for i in range(500):
-            memory.merge_and_update(f"user_{i}", {
-                "preferences": {"style": "详细"},
-                "habits": {"topics": ["火星"]},
-                "constraints": [],
-            })
+            memory.upsert_profile(
+                f"user_{i}",
+                {
+                    "preferences": {"style": "详细"},
+                    "habits": {"topics": ["火星"]},
+                    "constraints": [],
+                },
+            )
 
-        profile = memory.load_profile("user_499")
+        profile = memory.get_profile("user_499")
         assert profile is not None
-        assert profile.user_id == "user_499"
+        assert profile["user_id"] == "user_499"
 
     def test_large_profile_data(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         large_topics = [f"天体_{i}" for i in range(1000)]
         large_constraints = [f"约束_{i}" for i in range(100)]
 
-        memory.merge_and_update("large_user", {
-            "preferences": {f"pref_{i}": f"value_{i}" for i in range(100)},
-            "habits": {"topics": large_topics},
-            "constraints": large_constraints,
-        })
+        memory.upsert_profile(
+            "large_user",
+            {
+                "preferences": {f"pref_{i}": f"value_{i}" for i in range(100)},
+                "habits": {"topics": large_topics},
+                "constraints": large_constraints,
+            },
+        )
 
-        profile = memory.load_profile("large_user")
+        profile = memory.get_profile("large_user")
         assert profile is not None
-        assert len(profile.habits["topics"]) == 1000
-        assert len(profile.constraints) == 100
+        assert len(profile["habits"]["topics"]) == 1000
+        assert len(profile["constraints"]) == 100
 
     def test_concurrent_db_access(self, temp_db_path):
         import threading
-        from src.memory.memory import LongTermMemory
+
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         errors = []
 
         def write_read(user_id):
             try:
                 memory = LongTermMemory(db_path=temp_db_path)
-                memory.merge_and_update(f"concurrent_{user_id}", {
-                    "preferences": {"id": str(user_id)},
-                    "habits": {},
-                    "constraints": [],
-                })
-                profile = memory.load_profile(f"concurrent_{user_id}")
+                memory.upsert_profile(
+                    f"concurrent_{user_id}",
+                    {
+                        "preferences": {"id": str(user_id)},
+                        "habits": {},
+                        "constraints": [],
+                    },
+                )
+                profile = memory.get_profile(f"concurrent_{user_id}")
                 assert profile is not None
             except Exception as e:
                 errors.append(str(e))
@@ -388,17 +404,9 @@ class TestResourceBoundary:
     def test_param_parser_with_deeply_nested_json(self):
         from src.agent.param_parser import ParamParser
 
-        nested = json.dumps({
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "level4": {
-                            "value": "deep"
-                        }
-                    }
-                }
-            }
-        })
+        nested = json.dumps(
+            {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
+        )
 
         result = ParamParser.parse(nested)
         assert isinstance(result, dict)
@@ -412,6 +420,7 @@ class TestResourceBoundary:
 
         with patch("requests.post") as mock_post:
             import requests
+
             mock_post.side_effect = requests.exceptions.Timeout("请求超时")
 
             result = service.search("测试查询")
@@ -426,6 +435,7 @@ class TestResourceBoundary:
 
         with patch("requests.post") as mock_post:
             import requests
+
             mock_post.side_effect = requests.exceptions.ConnectionError("连接失败")
 
             result = service.search("测试查询")
@@ -504,7 +514,9 @@ class TestTimeBoundary:
             service.get_neo_data(start_date="2026-04-01", end_date="2026-04-15")
 
             call_args = mock_get.call_args
-            params = call_args[1].get("params", call_args[0][1] if len(call_args[0]) > 1 else {})
+            params = call_args[1].get(
+                "params", call_args[0][1] if len(call_args[0]) > 1 else {}
+            )
             if "params" in call_args[1]:
                 end_date_param = call_args[1]["params"].get("end_date")
                 if end_date_param:
@@ -516,10 +528,16 @@ class TestTimeBoundary:
         from src.astronomy.events_predictor import EventsPredictor
 
         mock_eph = MagicMock()
-        with patch.object(EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")):
+        with patch.object(
+            EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")
+        ):
             with patch.object(EventsPredictor, "get_visible_planets", return_value=[]):
-                with patch.object(EventsPredictor, "get_sunrise_sunset", return_value=(None, None)):
-                    predictor = EventsPredictor(ephemeris=mock_eph, location=(39.9, 116.4))
+                with patch.object(
+                    EventsPredictor, "get_sunrise_sunset", return_value=(None, None)
+                ):
+                    predictor = EventsPredictor(
+                        ephemeris=mock_eph, location=(39.9, 116.4)
+                    )
 
                     result = predictor.get_weekly_events(start_date="2026-01-01")
                     assert isinstance(result, str)
@@ -565,7 +583,9 @@ class TestTimeBoundary:
         from src.astronomy.events_predictor import EventsPredictor
 
         mock_eph = MagicMock()
-        with patch.object(EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")):
+        with patch.object(
+            EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")
+        ):
             predictor = EventsPredictor(ephemeris=mock_eph, location=(39.9, 116.4))
 
             result = predictor.get_monthly_events(year=2026, month=1)

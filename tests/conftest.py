@@ -1,14 +1,15 @@
-import os
 import json
-import time
-import tempfile
+import os
 import sqlite3
-from unittest.mock import MagicMock, patch, AsyncMock
+import tempfile
+import time
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tests.mock_deps import mock_heavy_dependencies
+
 mock_heavy_dependencies()
 
 
@@ -38,14 +39,14 @@ def mock_settings():
         instance.MEMORY_WINDOW = 8
         instance.LONG_TERM_MEMORY_PATH = "/tmp/test_memory/user_profiles.sqlite"
         instance.DEFAULT_USER_ID = "test_user"
-        instance.STM_CONTEXT_MAX_TOKENS = 4000
-        instance.STM_SUMMARY_MAX_TOKENS = 500
-        instance.STM_SUMMARY_TRIGGER_MESSAGES = 100
-        instance.STM_SUMMARY_TRIGGER_TOKENS = 100000
-        instance.STM_PERSISTENCE_ENABLED = False
-        instance.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-        instance.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-        instance.STM_TOOL_RESULT_MAX_LENGTH = 500
+        instance.MEMORY_CONTEXT_MAX_TOKENS = 4000
+        instance.MEMORY_SUMMARY_MAX_TOKENS = 500
+        instance.MEMORY_SUMMARY_TRIGGER_MESSAGES = 100
+        instance.MEMORY_SUMMARY_TRIGGER_TOKENS = 100000
+        instance.MEMORY_PERSISTENCE_ENABLED = False
+        instance.MEMORY_PERSISTENCE_PATH = "/tmp/test_memory/sessions.sqlite"
+        instance.MEMORY_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+        instance.MEMORY_TOOL_RESULT_MAX_LENGTH = 500
         instance.API_HOST = "0.0.0.0"
         instance.API_PORT = 8000
         instance.MCP_PORT = 8001
@@ -64,26 +65,59 @@ def mock_settings():
         instance.DEFAULT_LOCATION = (39.9, 116.4)
         instance.SUPPORTED_YEAR_RANGE = (2026, 2030)
         instance.PLANET_MAPPING = {
-            'mercury': 199, 'venus': 299, 'mars': 499,
-            'jupiter': 5, 'saturn': 6, 'uranus': 7, 'neptune': 8
+            "mercury": 199,
+            "venus": 299,
+            "mars": 499,
+            "jupiter": 5,
+            "saturn": 6,
+            "uranus": 7,
+            "neptune": 8,
         }
-        instance.VALID_PLANETS = {'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'}
+        instance.VALID_PLANETS = {
+            "mercury",
+            "venus",
+            "mars",
+            "jupiter",
+            "saturn",
+            "uranus",
+            "neptune",
+        }
         instance.PLANET_NAMES_CN = {
-            'mercury': '水星', 'venus': '金星', 'mars': '火星',
-            'jupiter': '木星', 'saturn': '土星', 'uranus': '天王星', 'neptune': '海王星'
+            "mercury": "水星",
+            "venus": "金星",
+            "mars": "火星",
+            "jupiter": "木星",
+            "saturn": "土星",
+            "uranus": "天王星",
+            "neptune": "海王星",
         }
         instance.PLANET_MAX_MAGNITUDE = {
-            'mercury': -1.9, 'venus': -4.6, 'mars': -2.0,
-            'jupiter': -2.7, 'saturn': -0.3,
+            "mercury": -1.9,
+            "venus": -4.6,
+            "mars": -2.0,
+            "jupiter": -2.7,
+            "saturn": -0.3,
         }
-        instance.SUPPORTED_BODIES = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn']
+        instance.SUPPORTED_BODIES = [
+            "sun",
+            "moon",
+            "mercury",
+            "venus",
+            "mars",
+            "jupiter",
+            "saturn",
+        ]
         instance.CELESTIAL_NAME_MAPPING = {
-            'Andromeda Galaxy': 'M31', '仙女座星系': 'M31',
-            'Milky Way': 'Milky Way Galaxy', '银河系': 'Milky Way Galaxy',
+            "Andromeda Galaxy": "M31",
+            "仙女座星系": "M31",
+            "Milky Way": "Milky Way Galaxy",
+            "银河系": "Milky Way Galaxy",
         }
         instance.GALAXY_NAME_MAPPING = {
-            'Milky Way': 'Milky Way Galaxy', '银河系': 'Milky Way Galaxy',
-            'Andromeda Galaxy': 'M31', '仙女座星系': 'M31',
+            "Milky Way": "Milky Way Galaxy",
+            "银河系": "Milky Way Galaxy",
+            "Andromeda Galaxy": "M31",
+            "仙女座星系": "M31",
         }
         instance.MOON_PHASE_THRESHOLDS = [
             (22.5, "🌑 新月", "月光微弱，适合观测深空天体"),
@@ -96,16 +130,30 @@ def mock_settings():
             (337.5, "🌘 残月", "凌晨可见"),
         ]
         instance.OBSERVING_TIPS_TEMPLATES = {
-            'bad_weather': "天气现象不佳，不建议深空观测。",
-            'good_weather': "若夜间少云，可尝试行星/亮星团观测。",
-            'high_humidity': "湿度偏高，建议准备除露带。",
-            'high_wind': "风力偏大，三脚架需加重。",
-            'new_moon': "今晚特别适合深空观测！",
-            'full_moon': "满月光太强，建议观测明亮的行星和双星。",
+            "bad_weather": "天气现象不佳，不建议深空观测。",
+            "good_weather": "若夜间少云，可尝试行星/亮星团观测。",
+            "high_humidity": "湿度偏高，建议准备除露带。",
+            "high_wind": "风力偏大，三脚架需加重。",
+            "new_moon": "今晚特别适合深空观测！",
+            "full_moon": "满月光太强，建议观测明亮的行星和双星。",
         }
         instance.MAX_UPLOAD_SIZE = 10 * 1024 * 1024
-        instance.ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
-        instance.ALLOWED_AUDIO_EXTENSIONS = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac'}
+        instance.ALLOWED_IMAGE_EXTENSIONS = {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".webp",
+            ".bmp",
+        }
+        instance.ALLOWED_AUDIO_EXTENSIONS = {
+            ".wav",
+            ".mp3",
+            ".ogg",
+            ".flac",
+            ".m4a",
+            ".aac",
+        }
         instance.RATE_LIMIT_PER_MINUTE = 30
         instance.UPLOAD_RATE_LIMIT_PER_MINUTE = 10
         instance.SESSION_MAX_AGE_SECONDS = 3600
@@ -350,6 +398,7 @@ def perf_timer():
 @pytest.fixture
 def skill_manager():
     from unittest.mock import MagicMock, patch
+
     with patch("src.core.config.settings") as mock_settings:
         mock_settings.DASHSCOPE_API_KEY = "test-key"
         mock_settings.MODEL_NAME = "qwen-max"
@@ -361,11 +410,49 @@ def skill_manager():
         mock_settings.EPHEMERIS_FILE = "de421.bsp"
         mock_settings.DEFAULT_LOCATION = (39.9, 116.4)
         mock_settings.SUPPORTED_YEAR_RANGE = (2026, 2030)
-        mock_settings.PLANET_MAPPING = {'mercury': 199, 'venus': 299, 'mars': 499, 'jupiter': 5, 'saturn': 6, 'uranus': 7, 'neptune': 8}
-        mock_settings.VALID_PLANETS = {'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'}
-        mock_settings.PLANET_NAMES_CN = {'mercury': '水星', 'venus': '金星', 'mars': '火星', 'jupiter': '木星', 'saturn': '土星', 'uranus': '天王星', 'neptune': '海王星'}
-        mock_settings.PLANET_MAX_MAGNITUDE = {'mercury': -1.9, 'venus': -4.6, 'mars': -2.0, 'jupiter': -2.7, 'saturn': -0.3}
-        mock_settings.SUPPORTED_BODIES = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn']
+        mock_settings.PLANET_MAPPING = {
+            "mercury": 199,
+            "venus": 299,
+            "mars": 499,
+            "jupiter": 5,
+            "saturn": 6,
+            "uranus": 7,
+            "neptune": 8,
+        }
+        mock_settings.VALID_PLANETS = {
+            "mercury",
+            "venus",
+            "mars",
+            "jupiter",
+            "saturn",
+            "uranus",
+            "neptune",
+        }
+        mock_settings.PLANET_NAMES_CN = {
+            "mercury": "水星",
+            "venus": "金星",
+            "mars": "火星",
+            "jupiter": "木星",
+            "saturn": "土星",
+            "uranus": "天王星",
+            "neptune": "海王星",
+        }
+        mock_settings.PLANET_MAX_MAGNITUDE = {
+            "mercury": -1.9,
+            "venus": -4.6,
+            "mars": -2.0,
+            "jupiter": -2.7,
+            "saturn": -0.3,
+        }
+        mock_settings.SUPPORTED_BODIES = [
+            "sun",
+            "moon",
+            "mercury",
+            "venus",
+            "mars",
+            "jupiter",
+            "saturn",
+        ]
         mock_settings.CELESTIAL_NAME_MAPPING = {}
         mock_settings.GALAXY_NAME_MAPPING = {}
         mock_settings.MOON_PHASE_THRESHOLDS = []
@@ -377,7 +464,9 @@ def skill_manager():
         mock_settings.NASA_NEO_MAX_DAYS = 7
         mock_settings.AMAP_API_KEY = "test-amap-key"
         mock_settings.AMAP_DEFAULT_CITY = "北京"
-        mock_settings.AMAP_WEATHER_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
+        mock_settings.AMAP_WEATHER_URL = (
+            "https://restapi.amap.com/v3/weather/weatherInfo"
+        )
         mock_settings.AMAP_GEOCODE_URL = "https://restapi.amap.com/v3/geocode/regeo"
         mock_settings.TAVILY_API_KEY = "test-tavily-key"
         mock_settings.TAVILY_SEARCH_URL = "https://api.tavily.com/search"
@@ -386,8 +475,8 @@ def skill_manager():
         mock_settings.API_HOST = "0.0.0.0"
         mock_settings.API_PORT = 8000
         mock_settings.MAX_UPLOAD_SIZE = 10 * 1024 * 1024
-        mock_settings.ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png'}
-        mock_settings.ALLOWED_AUDIO_EXTENSIONS = {'.wav', '.mp3'}
+        mock_settings.ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+        mock_settings.ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3"}
         mock_settings.RATE_LIMIT_PER_MINUTE = 30
         mock_settings.UPLOAD_RATE_LIMIT_PER_MINUTE = 10
         mock_settings.SESSION_MAX_AGE_SECONDS = 3600
@@ -414,5 +503,6 @@ def skill_manager():
             MockRouter.return_value = mock_router
 
             from src.agent.skill_manager import SkillManager
+
             sm = SkillManager()
             yield sm

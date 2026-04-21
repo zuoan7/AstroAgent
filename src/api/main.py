@@ -1,46 +1,47 @@
+import asyncio
+import json
 import os
 import re
-import time
 import threading
+import time
+import uuid
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Request, UploadFile, File, Form, Query
-from fastapi.responses import StreamingResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 from src.agent import AstroAgent
 from src.agent.streaming_events import SSEEventAdapter
 from src.agent.streaming_service import StreamingService
-from src.memory.memory import ShortTermMemory
-from src.memory.long_term_memory import (
-    LongTermMemoryManager,
-    MemoryItem,
-    MemoryQuery,
-    MemoryType,
-    MemoryStatus,
-    SourceType,
-)
-from src.core.errors import AgentError, ErrorHandler, ErrorCode
 from src.core.config import settings
+from src.core.errors import AgentError, ErrorCode, ErrorHandler
+from src.core.logger import logger
 from src.core.model_catalog import (
     get_default_provider,
     list_model_providers,
     model_selection_payload,
 )
-from src.core.logger import logger
-import json
-import uuid
-import asyncio
+from src.memory.api.memory_service import MemoryService
+from src.memory.long_term_memory import (
+    LongTermMemoryService,
+    MemoryItem,
+    MemoryQuery,
+    MemoryStatus,
+    MemoryType,
+    SourceType,
+)
 
-
-app = FastAPI(title="天文Agent API", description="具有短期记忆、长期记忆和流式输出的天文知识助手")
+app = FastAPI(
+    title="天文Agent API", description="具有会话记忆、长期记忆和流式输出的天文知识助手"
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -64,15 +65,18 @@ def sanitize_filename(filename: str) -> str:
         return ""
     filename = filename.replace("\\", "/")
     filename = os.path.basename(filename)
-    filename = re.sub(r'[^\w\s\-.]', '', filename)
-    filename = re.sub(r'\.{2,}', '.', filename)
-    return filename.strip('. ')
+    filename = re.sub(r"[^\w\s\-.]", "", filename)
+    filename = re.sub(r"\.{2,}", ".", filename)
+    return filename.strip(". ")
 
 
 def validate_upload_path(save_path: str) -> bool:
     resolved = os.path.abspath(save_path)
     upload_dir_resolved = os.path.abspath(UPLOAD_DIR)
-    return resolved.startswith(upload_dir_resolved + os.sep) or resolved == upload_dir_resolved
+    return (
+        resolved.startswith(upload_dir_resolved + os.sep)
+        or resolved == upload_dir_resolved
+    )
 
 
 def validate_file_type(filename: str, allowed_extensions: set) -> bool:
@@ -149,8 +153,9 @@ class SessionData:
         self.session_id = session_id
         self.session_key = build_session_key(user_id, session_id)
         self._base_agent = agent
-        self.memory = ShortTermMemory(
-            session_id=f"stm_{self.session_key}",
+        self.memory = MemoryService(
+            db_path=settings.MEMORY_PERSISTENCE_PATH,
+            session_id=f"mem_{self.session_key}",
             user_id=user_id,
         )
         self.model_provider = ""
@@ -163,8 +168,14 @@ class SessionData:
         default_provider = getattr(agent, "model_provider", None)
         default_model_name = getattr(agent, "model_name", None)
         self.apply_model_selection(
-            model_provider=default_provider if isinstance(default_provider, str) else get_default_provider(),
-            model_name=default_model_name if isinstance(default_model_name, str) else None,
+            model_provider=(
+                default_provider
+                if isinstance(default_provider, str)
+                else get_default_provider()
+            ),
+            model_name=(
+                default_model_name if isinstance(default_model_name, str) else None
+            ),
         )
         self.last_access_time = time.time()
 
@@ -189,16 +200,24 @@ class SessionData:
         if runtime is None:
             payload = model_selection_payload(model_provider, model_name)
             self.llm = getattr(self._base_agent, "llm", None)
-            self.task_orchestrator = getattr(self._base_agent, "task_orchestrator", None)
+            self.task_orchestrator = getattr(
+                self._base_agent, "task_orchestrator", None
+            )
             self.streaming_service = StreamingService(
                 agent_executor=getattr(self._base_agent, "_agent_executor", None),
                 memory=self.memory,
                 long_term_memory=getattr(self._base_agent, "long_term_memory", None),
                 user_id=self.user_id,
                 fallback_service=getattr(self._base_agent, "fallback_service", None),
-                request_router=getattr(self._base_agent, "__dict__", {}).get("request_router"),
-                task_orchestrator=getattr(self._base_agent, "__dict__", {}).get("task_orchestrator"),
-                skill_manager=getattr(self._base_agent, "__dict__", {}).get("skill_manager"),
+                request_router=getattr(self._base_agent, "__dict__", {}).get(
+                    "request_router"
+                ),
+                task_orchestrator=getattr(self._base_agent, "__dict__", {}).get(
+                    "task_orchestrator"
+                ),
+                skill_manager=getattr(self._base_agent, "__dict__", {}).get(
+                    "skill_manager"
+                ),
                 rag_retriever=getattr(self._base_agent, "__dict__", {}).get("rag"),
             )
             self.agent_executor = getattr(self._base_agent, "_agent_executor", None)
@@ -236,7 +255,9 @@ class SessionManager:
         self._sessions: Dict[str, SessionData] = {}
         self._lock = threading.Lock()
         self._max_age = max_age or settings.SESSION_MAX_AGE_SECONDS
-        self._cleanup_interval = cleanup_interval or settings.SESSION_CLEANUP_INTERVAL_SECONDS
+        self._cleanup_interval = (
+            cleanup_interval or settings.SESSION_CLEANUP_INTERVAL_SECONDS
+        )
         self._last_cleanup = time.time()
 
     def get_session(
@@ -294,19 +315,24 @@ class SessionManager:
     def clear_sessions_for_user(self, user_id: str) -> int:
         with self._lock:
             matched_keys = [
-                key for key, session in self._sessions.items() if session.user_id == user_id
+                key
+                for key, session in self._sessions.items()
+                if session.user_id == user_id
             ]
             for key in matched_keys:
                 self._sessions[key].memory.clear()
                 del self._sessions[key]
             if matched_keys:
-                logger.info(f"已清除用户全部会话: user_id={user_id}, count={len(matched_keys)}")
+                logger.info(
+                    f"已清除用户全部会话: user_id={user_id}, count={len(matched_keys)}"
+                )
             return len(matched_keys)
 
     def _cleanup_stale_sessions(self):
         now = time.time()
         stale_users = [
-            uid for uid, session in self._sessions.items()
+            uid
+            for uid, session in self._sessions.items()
             if now - session.last_access_time > self._max_age
         ]
         for uid in stale_users:
@@ -458,7 +484,9 @@ async def query_with_image_endpoint(
         yield sse_adapter.serialize_payload(
             {"type": "image", "url": image_url, "meta": {"source": "user_upload"}}
         )
-        async for chunk in session.streaming_service.generate_sse(query, image_path=save_path):
+        async for chunk in session.streaming_service.generate_sse(
+            query, image_path=save_path
+        ):
             yield chunk
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -538,7 +566,7 @@ async def add_knowledge_endpoint(request: Request, body: KnowledgeRequest):
 async def get_profile_endpoint(request: Request, user_id: Optional[str] = None):
     effective_user_id = normalize_user_id(user_id)
     ltm = get_agent().long_term_memory
-    profile = ltm.load_profile(effective_user_id)
+    profile = ltm.get_profile(effective_user_id)
     if profile:
         return {
             "status": "success",
@@ -570,9 +598,17 @@ async def delete_profile_endpoint(request: Request, user_id: Optional[str] = Non
     effective_user_id = normalize_user_id(user_id)
     deleted = get_agent().long_term_memory.delete_profile(effective_user_id)
     if deleted:
-        return {"status": "success", "message": "用户画像已删除", "user_id": effective_user_id}
+        return {
+            "status": "success",
+            "message": "用户画像已删除",
+            "user_id": effective_user_id,
+        }
     else:
-        return {"status": "success", "message": "用户画像不存在或已被删除", "user_id": effective_user_id}
+        return {
+            "status": "success",
+            "message": "用户画像不存在或已被删除",
+            "user_id": effective_user_id,
+        }
 
 
 @app.post("/clear_memory")
@@ -702,12 +738,12 @@ class BatchConfirmRequest(BaseModel):
     status: str
 
 
-def _get_ltm() -> LongTermMemoryManager:
+def _get_ltm() -> LongTermMemoryService:
     agent = get_agent()
     ltm = agent.long_term_memory
-    if isinstance(ltm, LongTermMemoryManager):
+    if isinstance(ltm, LongTermMemoryService):
         return ltm
-    if hasattr(ltm, "delete_profile") and hasattr(ltm, "load_profile"):
+    if hasattr(ltm, "delete_profile") and hasattr(ltm, "get_profile"):
         return ltm
     else:
         raise AgentError(
@@ -742,11 +778,15 @@ async def create_memory_endpoint(request: Request, body: MemoryCreateRequest):
 
 @app.get("/memories/{memory_id}")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def get_memory_endpoint(request: Request, memory_id: str, user_id: Optional[str] = None):
+async def get_memory_endpoint(
+    request: Request, memory_id: str, user_id: Optional[str] = None
+):
     ltm = _get_ltm()
     item = ltm.get_memory(memory_id)
     if not item:
-        raise AgentError(code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆不存在: {memory_id}")
+        raise AgentError(
+            code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆不存在: {memory_id}"
+        )
     effective_user_id = normalize_user_id(user_id)
     if item.user_id != effective_user_id:
         raise AgentError(code=ErrorCode.MEMORY_ACCESS_DENIED, message="无权访问该记忆")
@@ -755,7 +795,9 @@ async def get_memory_endpoint(request: Request, memory_id: str, user_id: Optiona
 
 @app.put("/memories/{memory_id}")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def update_memory_endpoint(request: Request, memory_id: str, body: MemoryUpdateRequest):
+async def update_memory_endpoint(
+    request: Request, memory_id: str, body: MemoryUpdateRequest
+):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(body.user_id)
     item = ltm.update_memory(
@@ -769,18 +811,26 @@ async def update_memory_endpoint(request: Request, memory_id: str, body: MemoryU
         metadata=body.metadata,
     )
     if not item:
-        raise AgentError(code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆不存在或无权修改: {memory_id}")
+        raise AgentError(
+            code=ErrorCode.MEMORY_NOT_FOUND,
+            message=f"记忆不存在或无权修改: {memory_id}",
+        )
     return {"status": "success", "memory": item.to_dict()}
 
 
 @app.delete("/memories/{memory_id}")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def delete_memory_endpoint(request: Request, memory_id: str, user_id: Optional[str] = None):
+async def delete_memory_endpoint(
+    request: Request, memory_id: str, user_id: Optional[str] = None
+):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
     deleted = ltm.delete_memory(memory_id, effective_user_id)
     if not deleted:
-        raise AgentError(code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆不存在或无权删除: {memory_id}")
+        raise AgentError(
+            code=ErrorCode.MEMORY_NOT_FOUND,
+            message=f"记忆不存在或无权删除: {memory_id}",
+        )
     return {"status": "success", "message": "记忆已删除", "memory_id": memory_id}
 
 
@@ -817,9 +867,11 @@ async def query_memories_endpoint(request: Request, body: MemoryQueryRequest):
 
 @app.get("/memories/{memory_id}/versions")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def get_memory_versions_endpoint(request: Request, memory_id: str, limit: int = 20):
+async def get_memory_versions_endpoint(
+    request: Request, memory_id: str, limit: int = 20
+):
     ltm = _get_ltm()
-    versions = ltm.get_memory_versions(memory_id, limit=limit)
+    versions = ltm.get_versions(memory_id, limit=limit)
     return {
         "status": "success",
         "memory_id": memory_id,
@@ -829,18 +881,25 @@ async def get_memory_versions_endpoint(request: Request, memory_id: str, limit: 
 
 @app.post("/memories/{memory_id}/restore_version")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def restore_memory_version_endpoint(request: Request, memory_id: str, version: int, user_id: Optional[str] = None):
+async def restore_memory_version_endpoint(
+    request: Request, memory_id: str, version: int, user_id: Optional[str] = None
+):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
-    item = ltm.restore_memory_version(memory_id, version, effective_user_id)
+    item = ltm.restore_version(memory_id, version, effective_user_id)
     if not item:
-        raise AgentError(code=ErrorCode.MEMORY_NOT_FOUND, message=f"记忆或版本不存在: {memory_id} v{version}")
+        raise AgentError(
+            code=ErrorCode.MEMORY_NOT_FOUND,
+            message=f"记忆或版本不存在: {memory_id} v{version}",
+        )
     return {"status": "success", "memory": item.to_dict()}
 
 
 @app.get("/memories/{memory_id}/trace")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def get_memory_trace_endpoint(request: Request, memory_id: str, user_id: Optional[str] = None):
+async def get_memory_trace_endpoint(
+    request: Request, memory_id: str, user_id: Optional[str] = None
+):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
     trace = ltm.get_memory_trace(effective_user_id, memory_id)
@@ -853,7 +912,9 @@ async def get_memory_trace_endpoint(request: Request, memory_id: str, user_id: O
 
 @app.get("/candidates")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def list_candidates_endpoint(request: Request, user_id: Optional[str] = None, limit: int = 50, offset: int = 0):
+async def list_candidates_endpoint(
+    request: Request, user_id: Optional[str] = None, limit: int = 50, offset: int = 0
+):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
     candidates = ltm.list_candidates(effective_user_id, limit=limit, offset=offset)
@@ -869,23 +930,33 @@ async def promote_candidate_endpoint(request: Request, candidate_id: str):
     ltm = _get_ltm()
     item = ltm.promote_candidate(candidate_id)
     if not item:
-        raise AgentError(code=ErrorCode.MEMORY_CANDIDATE_ERROR, message=f"候选记忆提升失败: {candidate_id}")
+        raise AgentError(
+            code=ErrorCode.MEMORY_CANDIDATE_ERROR,
+            message=f"候选记忆提升失败: {candidate_id}",
+        )
     return {"status": "success", "memory": item.to_dict()}
 
 
 @app.post("/candidates/{candidate_id}/reject")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def reject_candidate_endpoint(request: Request, candidate_id: str, reason: str = ""):
+async def reject_candidate_endpoint(
+    request: Request, candidate_id: str, reason: str = ""
+):
     ltm = _get_ltm()
     rejected = ltm.reject_candidate(candidate_id, reason)
     if not rejected:
-        raise AgentError(code=ErrorCode.MEMORY_CANDIDATE_ERROR, message=f"候选记忆拒绝失败: {candidate_id}")
+        raise AgentError(
+            code=ErrorCode.MEMORY_CANDIDATE_ERROR,
+            message=f"候选记忆拒绝失败: {candidate_id}",
+        )
     return {"status": "success", "message": "候选记忆已拒绝"}
 
 
 @app.get("/confirmations")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def list_confirmations_endpoint(request: Request, user_id: Optional[str] = None, limit: int = 20):
+async def list_confirmations_endpoint(
+    request: Request, user_id: Optional[str] = None, limit: int = 20
+):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
     confirmations = ltm.list_pending_confirmations(effective_user_id, limit=limit)
@@ -897,11 +968,16 @@ async def list_confirmations_endpoint(request: Request, user_id: Optional[str] =
 
 @app.post("/confirmations/{confirmation_id}/resolve")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
-async def resolve_confirmation_endpoint(request: Request, confirmation_id: str, body: ConfirmationResolveRequest):
+async def resolve_confirmation_endpoint(
+    request: Request, confirmation_id: str, body: ConfirmationResolveRequest
+):
     ltm = _get_ltm()
     result = ltm.resolve_confirmation(confirmation_id, body.status)
     if not result:
-        raise AgentError(code=ErrorCode.MEMORY_CONFIRMATION_ERROR, message=f"确认请求处理失败: {confirmation_id}")
+        raise AgentError(
+            code=ErrorCode.MEMORY_CONFIRMATION_ERROR,
+            message=f"确认请求处理失败: {confirmation_id}",
+        )
     return {"status": "success", "confirmation": result.to_dict()}
 
 
@@ -921,12 +997,17 @@ async def batch_confirm_endpoint(request: Request, body: BatchConfirmRequest):
 @app.get("/events")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def list_events_endpoint(
-    request: Request, user_id: Optional[str] = None,
-    memory_id: Optional[str] = None, limit: int = 50, offset: int = 0
+    request: Request,
+    user_id: Optional[str] = None,
+    memory_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
 ):
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
-    events = ltm.get_event_logs(effective_user_id, memory_id=memory_id, limit=limit, offset=offset)
+    events = ltm.get_event_logs(
+        effective_user_id, memory_id=memory_id, limit=limit, offset=offset
+    )
     return {
         "status": "success",
         "events": [e.to_dict() for e in events],
@@ -1013,7 +1094,7 @@ async def memory_overview_endpoint(
     effective_session_id = normalize_session_id(session_id)
     ltm = _get_ltm()
     session = session_manager.get_session(effective_user_id, effective_session_id)
-    profile = ltm.load_profile(effective_user_id) or {
+    profile = ltm.get_profile(effective_user_id) or {
         "user_id": effective_user_id,
         "preferences": {},
         "habits": {},
@@ -1028,9 +1109,13 @@ async def memory_overview_endpoint(
     )
     memories = ltm.query_memories(memories_query)
     candidates = ltm.list_candidates(effective_user_id, limit=limit, offset=0)
-    confirmations = ltm.list_pending_confirmations(effective_user_id, limit=min(limit, 20))
+    confirmations = ltm.list_pending_confirmations(
+        effective_user_id, limit=min(limit, 20)
+    )
     stats = ltm.get_stats(effective_user_id)
-    recent_events = ltm.get_event_logs(effective_user_id, limit=min(limit, 20), offset=0)
+    recent_events = ltm.get_event_logs(
+        effective_user_id, limit=min(limit, 20), offset=0
+    )
     return {
         "status": "success",
         "user_id": effective_user_id,
@@ -1041,7 +1126,7 @@ async def memory_overview_endpoint(
         "candidates": [item.to_dict() for item in candidates],
         "confirmations": [item.to_dict() for item in confirmations],
         "recent_events": [item.to_dict() for item in recent_events],
-        "short_term": {
+        "session_memory": {
             "summary": session.memory.get_summary(),
             "messages": session.memory.get_all_messages(),
             "tool_calls": session.memory.get_tool_calls(),
@@ -1071,9 +1156,7 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
-        "src.api.main:app",
-        host=settings.API_HOST,
-        port=settings.API_PORT,
-        reload=True
+        "src.api.main:app", host=settings.API_HOST, port=settings.API_PORT, reload=True
     )

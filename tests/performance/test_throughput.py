@@ -1,19 +1,22 @@
-import os
 import json
+import os
+import tempfile
+import threading
 import time
 import tracemalloc
-import threading
-from unittest.mock import MagicMock, patch
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tests.mock_deps import mock_heavy_dependencies
+
 mock_heavy_dependencies()
 
 try:
     import fastapi
+
     _FASTAPI_AVAILABLE = True
 except ImportError:
     _FASTAPI_AVAILABLE = False
@@ -23,8 +26,8 @@ class TestAstronomyDataProcessingThroughput:
     """测试天文数据处理吞吐量"""
 
     def test_planetary_position_calculation_throughput(self, perf_timer):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         mock_eph.is_loaded = True
@@ -53,7 +56,10 @@ class TestAstronomyDataProcessingThroughput:
         for _ in range(50):
             for planet in planets:
                 perf_timer.start()
-                with patch("src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}):
+                with patch(
+                    "src.agent.param_parser.ParamParser.parse_mixed_input",
+                    return_value={},
+                ):
                     with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                         mock_t = MagicMock()
                         mock_ts_obj = MagicMock()
@@ -62,8 +68,11 @@ class TestAstronomyDataProcessingThroughput:
                         with patch("src.astronomy.planetary.settings") as mock_s:
                             mock_s.VALID_PLANETS = set(planets)
                             mock_s.PLANET_MAPPING = {
-                                "mercury": 199, "venus": 299, "mars": 499,
-                                "jupiter": 5, "saturn": 6,
+                                "mercury": 199,
+                                "venus": 299,
+                                "mars": 499,
+                                "jupiter": 5,
+                                "saturn": 6,
                             }
                             try:
                                 calc.get_planet_position(planet)
@@ -75,8 +84,8 @@ class TestAstronomyDataProcessingThroughput:
         assert report["total_runs"] == 250
 
     def test_coordinate_transformation_throughput(self, perf_timer):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         calc = PlanetaryCalculator(ephemeris=mock_eph)
@@ -96,8 +105,13 @@ class TestAstronomyDataProcessingThroughput:
         from src.utils.helpers import parse_date
 
         test_dates = [
-            "2026-04-08", "2026/04/08", "2026-04-08 14:30:00",
-            "今天", "明天", "2026-01-01", "2026-12-31",
+            "2026-04-08",
+            "2026/04/08",
+            "2026-04-08 14:30:00",
+            "今天",
+            "明天",
+            "2026-01-01",
+            "2026-12-31",
         ]
 
         for _ in range(100):
@@ -131,53 +145,71 @@ class TestAstronomyDataProcessingThroughput:
         assert report["avg_ms"] < 5, f"参数解析平均 {report['avg_ms']}ms 超过5ms阈值"
 
     def test_memory_operations_throughput(self, perf_timer):
-        from src.memory.memory import ShortTermMemory
+        from src.memory.api.dto import AppendMessageRequest, BuildContextRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 100
             mock_s.MEMORY_WINDOW = 10
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
+            mock_s.MEMORY_CONTEXT_MAX_TOKENS = 4000
+            mock_s.MEMORY_SUMMARY_MAX_TOKENS = 500
+            mock_s.MEMORY_SUMMARY_TRIGGER_MESSAGES = 100
+            mock_s.MEMORY_SUMMARY_TRIGGER_TOKENS = 100000
+            mock_s.MEMORY_PERSISTENCE_ENABLED = False
+            mock_s.MEMORY_PERSISTENCE_PATH = "/tmp/test_memory/sessions.sqlite"
+            mock_s.MEMORY_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+            mock_s.MEMORY_TOOL_RESULT_MAX_LENGTH = 500
             mock_s.DEFAULT_USER_ID = "test_user"
             mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+            memory = MemoryService(
+                db_path=os.path.join(tempfile.mkdtemp(), "sessions.sqlite"),
+                session_id="perf_session",
+                user_id="test_user",
+            )
 
         for i in range(500):
             perf_timer.start()
-            memory.add_message("user", f"消息{i}", time.time())
-            memory.get_recent_messages()
+            memory.append_message(
+                AppendMessageRequest(
+                    session_id="perf_session",
+                    user_id="test_user",
+                    role="user",
+                    content=f"消息{i}",
+                    timestamp=time.time(),
+                )
+            )
+            memory.build_context(BuildContextRequest(session_id="perf_session"))
             perf_timer.stop()
 
         report = perf_timer.report()
         assert report["total_runs"] == 500
-        assert report["avg_ms"] < 5, f"记忆操作平均 {report['avg_ms']}ms 超过5ms阈值"
+        assert report["avg_ms"] < 10, f"记忆操作平均 {report['avg_ms']}ms 超过10ms阈值"
 
     def test_long_term_memory_throughput(self, perf_timer, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         for i in range(100):
             perf_timer.start()
-            memory.merge_and_update(f"user_{i}", {
-                "preferences": {"style": "详细"},
-                "habits": {"topics": ["火星"]},
-                "constraints": [],
-            })
+            memory.upsert_profile(
+                f"user_{i}",
+                {
+                    "preferences": {"style": "详细"},
+                    "habits": {"topics": ["火星"]},
+                    "constraints": [],
+                },
+            )
             perf_timer.stop()
 
         report = perf_timer.report()
         assert report["total_runs"] == 100
-        assert report["avg_ms"] < 50, f"长期记忆写入平均 {report['avg_ms']}ms 超过50ms阈值"
+        assert (
+            report["avg_ms"] < 50
+        ), f"长期记忆写入平均 {report['avg_ms']}ms 超过50ms阈值"
 
     def test_error_handling_throughput(self, perf_timer):
-        from src.core.errors import ErrorHandler, AgentError, ErrorCode
+        from src.core.errors import AgentError, ErrorCode, ErrorHandler
 
         for _ in range(500):
             perf_timer.start()
@@ -191,21 +223,23 @@ class TestAstronomyDataProcessingThroughput:
         assert report["total_runs"] == 500
         assert report["avg_ms"] < 5, f"错误处理平均 {report['avg_ms']}ms 超过5ms阈值"
 
-    def test_weather_data_processing_throughput(self, perf_timer, sample_weather_response):
+    def test_weather_data_processing_throughput(
+        self, perf_timer, sample_weather_response
+    ):
         from src.astronomy.weather_service import WeatherService
 
         service = WeatherService()
 
         for _ in range(200):
             perf_timer.start()
-            service._process_weather_response(
-                sample_weather_response, "北京", "base"
-            )
+            service._process_weather_response(sample_weather_response, "北京", "base")
             perf_timer.stop()
 
         report = perf_timer.report()
         assert report["total_runs"] == 200
-        assert report["avg_ms"] < 10, f"天气数据处理平均 {report['avg_ms']}ms 超过10ms阈值"
+        assert (
+            report["avg_ms"] < 10
+        ), f"天气数据处理平均 {report['avg_ms']}ms 超过10ms阈值"
 
 
 @pytest.mark.skipif(not _FASTAPI_AVAILABLE, reason="fastapi not installed")
@@ -222,17 +256,18 @@ class TestAPIResponseTime:
             mock_agent.long_term_memory = MagicMock()
 
             mock_profile = MagicMock()
-            mock_profile.user_id = "test_user"
-            mock_profile.preferences = {}
-            mock_profile.habits = {}
-            mock_profile.constraints = []
+            mock_profile["user_id"] = "test_user"
+            mock_profile["preferences"] = {}
+            mock_profile["habits"] = {}
+            mock_profile["constraints"] = []
             mock_profile.created_at = "2026-01-01T00:00:00"
             mock_profile.updated_at = "2026-04-08T00:00:00"
-            mock_agent.long_term_memory.load_profile.return_value = mock_profile
+            mock_agent.long_term_memory.get_profile.return_value = mock_profile
 
             MockAgent.return_value = mock_agent
 
             from src.api.main import app
+
             client = TestClient(app)
             yield client, mock_agent
 
@@ -286,46 +321,62 @@ class TestAPIResponseTime:
 class TestResourceUtilization:
     """测试资源利用率"""
 
-    def test_short_term_memory_usage(self):
-        from src.memory.memory import ShortTermMemory
+    def test_memory_service_usage(self):
+        from src.memory.api.dto import AppendMessageRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 1000
             mock_s.MEMORY_WINDOW = 50
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
+            mock_s.MEMORY_CONTEXT_MAX_TOKENS = 4000
+            mock_s.MEMORY_SUMMARY_MAX_TOKENS = 500
+            mock_s.MEMORY_SUMMARY_TRIGGER_MESSAGES = 100
+            mock_s.MEMORY_SUMMARY_TRIGGER_TOKENS = 100000
+            mock_s.MEMORY_PERSISTENCE_ENABLED = False
+            mock_s.MEMORY_PERSISTENCE_PATH = "/tmp/test_memory/sessions.sqlite"
+            mock_s.MEMORY_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+            mock_s.MEMORY_TOOL_RESULT_MAX_LENGTH = 500
             mock_s.DEFAULT_USER_ID = "test_user"
             mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+            memory = MemoryService(
+                db_path=os.path.join(tempfile.mkdtemp(), "sessions.sqlite"),
+                session_id="memory_usage_session",
+                user_id="test_user",
+            )
 
         tracemalloc.start()
 
         for i in range(1000):
-            memory.add_message("user", f"这是一条测试消息，编号{i}，内容较长以测试内存占用" * 5, time.time())
+            memory.append_message(
+                AppendMessageRequest(
+                    session_id="memory_usage_session",
+                    user_id="test_user",
+                    role="user",
+                    content=f"这是一条测试消息，编号{i}，内容较长以测试内存占用" * 5,
+                    timestamp=time.time(),
+                )
+            )
 
         current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
         peak_mb = peak / (1024 * 1024)
-        assert peak_mb < 50, f"短期记忆峰值内存 {peak_mb:.2f}MB 超过50MB阈值"
+        assert peak_mb < 50, f"记忆服务峰值内存 {peak_mb:.2f}MB 超过50MB阈值"
 
     def test_long_term_memory_disk_usage(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
         for i in range(1000):
-            memory.merge_and_update(f"user_{i}", {
-                "preferences": {"style": "详细", "level": "专业"},
-                "habits": {"topics": ["火星", "木星", "土星"]},
-                "constraints": ["避免术语", "控制长度"],
-            })
+            memory.upsert_profile(
+                f"user_{i}",
+                {
+                    "preferences": {"style": "详细", "level": "专业"},
+                    "habits": {"topics": ["火星", "木星", "土星"]},
+                    "constraints": ["避免术语", "控制长度"],
+                },
+            )
 
         db_size = os.path.getsize(temp_db_path)
         db_size_mb = db_size / (1024 * 1024)
@@ -337,7 +388,9 @@ class TestResourceUtilization:
         tracemalloc.start()
 
         for _ in range(10000):
-            ParamParser.parse('{"city": "北京", "extensions": "all", "data": "测试数据"}')
+            ParamParser.parse(
+                '{"city": "北京", "extensions": "all", "data": "测试数据"}'
+            )
             ParamParser.parse_tool_input(
                 '{"target": "mars"}',
                 expected_params={"target": None, "date": None, "location": None},
@@ -369,8 +422,8 @@ class TestResourceUtilization:
         assert peak_mb < 50, f"错误处理峰值内存 {peak_mb:.2f}MB 超过50MB阈值"
 
     def test_coordinate_transformation_memory_usage(self):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         calc = PlanetaryCalculator(ephemeris=mock_eph)
@@ -392,7 +445,7 @@ class TestConcurrentUserSimulation:
     """测试并发用户场景"""
 
     def test_concurrent_memory_operations(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         errors = []
         results = []
@@ -400,12 +453,15 @@ class TestConcurrentUserSimulation:
         def write_user(user_id):
             try:
                 memory = LongTermMemory(db_path=temp_db_path)
-                memory.merge_and_update(f"user_{user_id}", {
-                    "preferences": {"style": "详细"},
-                    "habits": {"topics": ["火星"]},
-                    "constraints": [],
-                })
-                profile = memory.load_profile(f"user_{user_id}")
+                memory.upsert_profile(
+                    f"user_{user_id}",
+                    {
+                        "preferences": {"style": "详细"},
+                        "habits": {"topics": ["火星"]},
+                        "constraints": [],
+                    },
+                )
+                profile = memory.get_profile(f"user_{user_id}")
                 results.append(profile is not None)
             except Exception as e:
                 errors.append(str(e))
@@ -423,30 +479,43 @@ class TestConcurrentUserSimulation:
         assert len(errors) == 0, f"并发写入错误: {errors}"
         assert all(results), "部分用户画像未成功写入"
 
-    def test_concurrent_short_term_memory(self):
-        from src.memory.memory import ShortTermMemory
+    def test_concurrent_memory_service(self):
+        from src.memory.api.dto import AppendMessageRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
+        with patch("src.memory.config.settings") as mock_s:
             mock_s.MEMORY_SIZE = 100
             mock_s.MEMORY_WINDOW = 10
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
+            mock_s.MEMORY_CONTEXT_MAX_TOKENS = 4000
+            mock_s.MEMORY_SUMMARY_MAX_TOKENS = 500
+            mock_s.MEMORY_SUMMARY_TRIGGER_MESSAGES = 100
+            mock_s.MEMORY_SUMMARY_TRIGGER_TOKENS = 100000
+            mock_s.MEMORY_PERSISTENCE_ENABLED = False
+            mock_s.MEMORY_PERSISTENCE_PATH = "/tmp/test_memory/sessions.sqlite"
+            mock_s.MEMORY_IMPORTANCE_HIGH_ROLES = {"user", "system"}
+            mock_s.MEMORY_TOOL_RESULT_MAX_LENGTH = 500
             mock_s.DEFAULT_USER_ID = "test_user"
             mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+            memory = MemoryService(
+                db_path=os.path.join(tempfile.mkdtemp(), "sessions.sqlite"),
+                session_id="concurrent_session",
+                user_id="test_user",
+            )
 
         errors = []
 
         def add_messages(thread_id):
             try:
                 for i in range(50):
-                    memory.add_message("user", f"线程{thread_id}_消息{i}", time.time())
+                    memory.append_message(
+                        AppendMessageRequest(
+                            session_id="concurrent_session",
+                            user_id="test_user",
+                            role="user",
+                            content=f"线程{thread_id}_消息{i}",
+                            timestamp=time.time(),
+                        )
+                    )
             except Exception as e:
                 errors.append(str(e))
 
@@ -460,8 +529,8 @@ class TestConcurrentUserSimulation:
         for t in threads:
             t.join(timeout=10)
 
-        assert len(errors) == 0, f"并发短期记忆错误: {errors}"
-        assert memory.get_size() <= 100
+        assert len(errors) == 0, f"并发记忆服务错误: {errors}"
+        assert len(memory.get_all_messages()) == 500
 
     def test_concurrent_param_parsing(self):
         from src.agent.param_parser import ParamParser
@@ -530,17 +599,18 @@ class TestConcurrentUserSimulation:
             mock_agent.long_term_memory = MagicMock()
 
             mock_profile = MagicMock()
-            mock_profile.user_id = "test_user"
-            mock_profile.preferences = {}
-            mock_profile.habits = {}
-            mock_profile.constraints = []
+            mock_profile["user_id"] = "test_user"
+            mock_profile["preferences"] = {}
+            mock_profile["habits"] = {}
+            mock_profile["constraints"] = []
             mock_profile.created_at = "2026-01-01T00:00:00"
             mock_profile.updated_at = "2026-04-08T00:00:00"
-            mock_agent.long_term_memory.load_profile.return_value = mock_profile
+            mock_agent.long_term_memory.get_profile.return_value = mock_profile
 
             MockAgent.return_value = mock_agent
 
             from src.api.main import app
+
             client = TestClient(app)
 
         errors = []

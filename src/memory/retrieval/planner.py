@@ -6,7 +6,8 @@ from typing import Any, Dict, Sequence
 from src.memory.core.models import Message, SalientFact, ToolCallRecord
 from src.memory.domain.summary_snapshot import SummarySnapshot
 from src.memory.domain.task_state import TaskState
-from src.memory.short_term_memory.context_builder import ROLE_LABELS
+
+ROLE_LABELS = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 
 
 @dataclass
@@ -27,8 +28,8 @@ class RetrievalPlanner:
     """P0 query-aware context assembler.
 
     It keeps hard slots for task state and recent conversation, then ranks
-    facts/tool calls/messages by simple query overlap. This is intentionally
-    deterministic so it can be compared against the legacy fixed-section builder.
+    facts/tool calls/messages by simple query overlap. This deterministic
+    behavior makes context selection easy to test and inspect.
     """
 
     def __init__(self, token_counter):
@@ -45,7 +46,9 @@ class RetrievalPlanner:
         tool_calls: Sequence[ToolCallRecord],
     ) -> Dict[str, Any]:
         query_type = self._classify_query(query)
-        plan = RetrievalPlan(query=query, query_type=query_type, token_budget=token_budget)
+        plan = RetrievalPlan(
+            query=query, query_type=query_type, token_budget=token_budget
+        )
         sections: list[tuple[str, str]] = []
 
         task_text = self._format_task_state(task_state)
@@ -54,12 +57,16 @@ class RetrievalPlanner:
             plan.selected_task_state_version = task_state.version
 
         if summary_snapshot and summary_snapshot.summary_text:
-            summary_text = self._truncate_to_budget(summary_snapshot.summary_text, max(256, int(token_budget * 0.2)))
+            summary_text = self._truncate_to_budget(
+                summary_snapshot.summary_text, max(256, int(token_budget * 0.2))
+            )
             sections.append(("summary snapshot", summary_text))
             plan.selected_snapshot_id = summary_snapshot.snapshot_id
 
         selected_facts = self._rank_facts(query, facts)[:8]
-        facts_text = "\n".join(f"- [{fact.fact_type}] {fact.content}" for fact in selected_facts)
+        facts_text = "\n".join(
+            f"- [{fact.fact_type}] {fact.content}" for fact in selected_facts
+        )
         if facts_text:
             sections.append(("relevant facts", facts_text))
             plan.selected_fact_ids = [fact.fact_id for fact in selected_facts]
@@ -72,7 +79,10 @@ class RetrievalPlanner:
 
         selected_messages = self._rank_messages(query, messages)[:8]
         selected_messages.sort(key=lambda item: item.timestamp)
-        message_text = "\n".join(f"{ROLE_LABELS.get(msg.role, msg.role)}: {msg.content}" for msg in selected_messages)
+        message_text = "\n".join(
+            f"{ROLE_LABELS.get(msg.role, msg.role)}: {msg.content}"
+            for msg in selected_messages
+        )
         if message_text:
             sections.append(("recent/relevant messages", message_text))
             plan.selected_message_ids = [msg.message_id for msg in selected_messages]
@@ -86,7 +96,9 @@ class RetrievalPlanner:
             "selected_recent_messages": [msg.to_dict() for msg in selected_messages],
             "selected_salient_facts": [fact.to_dict() for fact in selected_facts],
             "selected_tool_calls": [call.to_dict() for call in selected_tools],
-            "selected_summary_snapshot": summary_snapshot.to_dict() if summary_snapshot else None,
+            "selected_summary_snapshot": (
+                summary_snapshot.to_dict() if summary_snapshot else None
+            ),
             "selected_task_state": task_state.to_dict(),
             "built_at": time.time(),
         }
@@ -102,16 +114,31 @@ class RetrievalPlanner:
         return "general"
 
     def _rank_messages(self, query: str, messages: Sequence[Message]) -> list[Message]:
-        return sorted(messages, key=lambda msg: (self._score(query, msg.content), msg.timestamp), reverse=True)
+        return sorted(
+            messages,
+            key=lambda msg: (self._score(query, msg.content), msg.timestamp),
+            reverse=True,
+        )
 
-    def _rank_facts(self, query: str, facts: Sequence[SalientFact]) -> list[SalientFact]:
-        return sorted(facts, key=lambda fact: (self._score(query, fact.content), fact.timestamp), reverse=True)
+    def _rank_facts(
+        self, query: str, facts: Sequence[SalientFact]
+    ) -> list[SalientFact]:
+        return sorted(
+            facts,
+            key=lambda fact: (self._score(query, fact.content), fact.timestamp),
+            reverse=True,
+        )
 
-    def _rank_tools(self, query: str, tool_calls: Sequence[ToolCallRecord]) -> list[ToolCallRecord]:
+    def _rank_tools(
+        self, query: str, tool_calls: Sequence[ToolCallRecord]
+    ) -> list[ToolCallRecord]:
         return sorted(
             tool_calls,
             key=lambda call: (
-                self._score(query, " ".join([call.tool_name, call.input_summary, call.output_summary])),
+                self._score(
+                    query,
+                    " ".join([call.tool_name, call.input_summary, call.output_summary]),
+                ),
                 call.importance,
                 call.timestamp,
             ),
@@ -126,14 +153,20 @@ class RetrievalPlanner:
         return len(query_terms & text_terms)
 
     def _terms(self, text: str) -> list[str]:
-        return [item.lower() for item in re.findall(r"[\w\u4e00-\u9fff]+", text or "") if len(item) > 1]
+        return [
+            item.lower()
+            for item in re.findall(r"[\w\u4e00-\u9fff]+", text or "")
+            if len(item) > 1
+        ]
 
     def _format_task_state(self, state: TaskState) -> str:
         parts = []
         if state.current_goal:
             parts.append(f"current_goal: {state.current_goal}")
         if state.active_constraints:
-            parts.append("active_constraints: " + "; ".join(state.active_constraints[:8]))
+            parts.append(
+                "active_constraints: " + "; ".join(state.active_constraints[:8])
+            )
         if state.pending_steps:
             parts.append("pending_steps: " + "; ".join(state.pending_steps[:8]))
         if state.blockers:
@@ -152,7 +185,9 @@ class RetrievalPlanner:
         status = "success" if call.success else "error"
         return f"- {call.tool_name} ({status}){tag_text}: {call.output_summary}"
 
-    def _fit_sections(self, sections: Sequence[tuple[str, str]], token_budget: int) -> str:
+    def _fit_sections(
+        self, sections: Sequence[tuple[str, str]], token_budget: int
+    ) -> str:
         rendered: list[str] = []
         for title, body in sections:
             section = f"=== {title} ===\n{body}"
@@ -160,7 +195,9 @@ class RetrievalPlanner:
             if self._estimate_tokens(tentative) <= token_budget:
                 rendered.append(section)
                 continue
-            remaining = max(token_budget - self._estimate_tokens("\n\n".join(rendered)), 0)
+            remaining = max(
+                token_budget - self._estimate_tokens("\n\n".join(rendered)), 0
+            )
             if remaining <= 32:
                 break
             truncated = self._truncate_to_budget(body, remaining)

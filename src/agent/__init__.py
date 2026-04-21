@@ -1,21 +1,23 @@
+import traceback
+from typing import List, Optional
+
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
-from src.core.config import settings
-from src.core.llm_factory import build_chat_model
-from src.core.model_catalog import model_selection_payload, resolve_model_config
-from src.rag.online_retriever import OnlineRetriever
-from src.memory.memory import ShortTermMemory, LongTermMemory
-from src.memory.long_term_memory import LongTermMemoryManager
-from src.agent.skill_manager import SkillManager
+
 from src.agent.fallback_service import FallbackService
-from src.agent.vision_service import VisionService
+from src.agent.request_router import RequestRouter
+from src.agent.skill_manager import SkillManager
 from src.agent.speech_service import SpeechService
 from src.agent.streaming_service import StreamingService
-from src.agent.request_router import RequestRouter
 from src.agent.task_orchestrator import TaskOrchestrator
-from typing import List, Optional
-import traceback
+from src.agent.vision_service import VisionService
+from src.core.config import settings
+from src.core.llm_factory import build_chat_model
 from src.core.logger import logger
+from src.core.model_catalog import model_selection_payload, resolve_model_config
+from src.memory.api.memory_service import MemoryService
+from src.memory.long_term_memory import LongTermMemoryService
+from src.rag.online_retriever import OnlineRetriever
 
 
 class AstroAgent:
@@ -27,14 +29,20 @@ class AstroAgent:
         model_name: Optional[str] = None,
     ):
         self.user_id = user_id or settings.DEFAULT_USER_ID
-        self.model_provider = model_provider or getattr(settings, "DEFAULT_LLM_PROVIDER", "dashscope")
+        self.model_provider = model_provider or getattr(
+            settings, "DEFAULT_LLM_PROVIDER", "dashscope"
+        )
         self.model_name = model_name or settings.MODEL_NAME
 
         resolve_model_config(self.model_provider, self.model_name)
 
         self.rag = OnlineRetriever()
-        self.memory = ShortTermMemory(session_id=f"stm_{self.user_id}", user_id=self.user_id)
-        self.long_term_memory = LongTermMemoryManager(settings.LONG_TERM_MEMORY_PATH)
+        self.memory = MemoryService(
+            db_path=settings.MEMORY_PERSISTENCE_PATH,
+            session_id=f"mem_{self.user_id}",
+            user_id=self.user_id,
+        )
+        self.long_term_memory = LongTermMemoryService(settings.LONG_TERM_MEMORY_PATH)
 
         self.skill_manager = SkillManager(rag_retriever=self.rag)
         self.request_router = RequestRouter()
@@ -57,7 +65,9 @@ class AstroAgent:
 
         logger.info("✅ AstroAgent初始化完成，使用统一的SkillManager")
 
-    def _init_llm(self, model_provider: Optional[str] = None, model_name: Optional[str] = None):
+    def _init_llm(
+        self, model_provider: Optional[str] = None, model_name: Optional[str] = None
+    ):
         try:
             resolved = resolve_model_config(model_provider, model_name)
             llm = build_chat_model(
@@ -79,7 +89,7 @@ class AstroAgent:
             template = self._load_prompt_template()
         except Exception as e:
             logger.error(f"❌ 读取prompt模板文件失败：{str(e)}")
-            template = '''
+            template = """
                     你是一个专业又亲切的天文助手，帮助用户解答天文问题。
 
                     **用户画像与偏好**：
@@ -127,18 +137,14 @@ class AstroAgent:
 
                     Question: {input}
                     Thought: {agent_scratchpad}
-                    '''
+                    """
             logger.info("⚠️  使用默认prompt模板")
 
         prompt = PromptTemplate.from_template(template)
 
         tools = self.skill_manager.get_langchain_tools()
 
-        agent = create_react_agent(
-            llm=llm or self.llm,
-            tools=tools,
-            prompt=prompt
-        )
+        agent = create_react_agent(llm=llm or self.llm, tools=tools, prompt=prompt)
 
         agent_executor = AgentExecutor(
             agent=agent,
@@ -158,7 +164,7 @@ class AstroAgent:
         from src.core.config import resolve_path
 
         template_path = resolve_path(settings.PROMPT_TEMPLATE_PATH)
-        with open(template_path, 'r', encoding='utf-8') as f:
+        with open(template_path, "r", encoding="utf-8") as f:
             template = f.read()
         logger.info(f"✅ 成功从外部文件读取prompt模板: {template_path}")
         return template
@@ -167,7 +173,7 @@ class AstroAgent:
         self,
         *,
         user_id: str,
-        memory: ShortTermMemory,
+        memory: MemoryService,
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
     ):
@@ -222,6 +228,7 @@ class AstroAgent:
 
         try:
             from langchain.schema import Document
+
             documents = [Document(page_content=k) for k in knowledge]
             self.rag.add_documents(documents)
             logger.info(f"✅ 成功添加 {len(knowledge)} 条知识到RAG系统")
@@ -239,9 +246,9 @@ class AstroAgent:
 
     def __del__(self):
         try:
-            if hasattr(self, 'skill_manager') and self.skill_manager:
-                router = getattr(self.skill_manager, '_skill_router', None)
-                if router and hasattr(router, 'shutdown'):
+            if hasattr(self, "skill_manager") and self.skill_manager:
+                router = getattr(self.skill_manager, "_skill_router", None)
+                if router and hasattr(router, "shutdown"):
                     router.shutdown()
                     logger.info("✅ MCP Router已关闭")
         except Exception:

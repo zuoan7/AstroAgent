@@ -1,12 +1,13 @@
-import os
 import json
+import os
 import time
-from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tests.mock_deps import mock_heavy_dependencies
+
 mock_heavy_dependencies()
 
 
@@ -42,7 +43,9 @@ class TestAstronomyModuleIntegration:
         mock_ephemeris.earth.__add__ = MagicMock(return_value=mock_observer)
         mock_ephemeris.planets.__getitem__ = MagicMock(return_value=mock_planet)
 
-        with patch("src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}):
+        with patch(
+            "src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}
+        ):
             with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                 mock_t = MagicMock()
                 mock_ts_obj = MagicMock()
@@ -53,7 +56,9 @@ class TestAstronomyModuleIntegration:
                 with patch("src.astronomy.planetary.settings") as mock_s:
                     mock_s.VALID_PLANETS = {"mars"}
                     mock_s.PLANET_MAPPING = {"mars": 499}
-                    result = calc.get_planet_position("mars", latitude=39.9, longitude=116.4)
+                    result = calc.get_planet_position(
+                        "mars", latitude=39.9, longitude=116.4
+                    )
 
         assert "ra_hours" in result
         assert "ra_degrees" in result
@@ -61,8 +66,8 @@ class TestAstronomyModuleIntegration:
         assert "distance_au" in result
 
     def test_ephemeris_not_loaded_returns_error(self):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         mock_eph.is_loaded = False
@@ -98,8 +103,12 @@ class TestAstronomyModuleIntegration:
             side_effect=lambda x: {"earth": mock_e, "moon": mock_m, "sun": mock_s}[x]
         )
 
-        with patch.object(EventsPredictor, "get_moon_phase", return_value=("🌕 满月", "整夜可见")):
-            predictor = EventsPredictor(ephemeris=mock_ephemeris, location=(39.9, 116.4))
+        with patch.object(
+            EventsPredictor, "get_moon_phase", return_value=("🌕 满月", "整夜可见")
+        ):
+            predictor = EventsPredictor(
+                ephemeris=mock_ephemeris, location=(39.9, 116.4)
+            )
             phase, desc = predictor.get_moon_phase(datetime(2026, 4, 8))
 
         assert phase is not None
@@ -132,14 +141,16 @@ class TestAstronomyModuleIntegration:
             mock_resp.json.return_value = sample_neo_response
             mock_get.return_value = mock_resp
 
-            result = service.get_neo_data(start_date="2026-04-08", end_date="2026-04-09")
+            result = service.get_neo_data(
+                start_date="2026-04-08", end_date="2026-04-09"
+            )
 
         assert "near_earth_objects" in result
         assert "2026-04-08" in result["near_earth_objects"]
 
     def test_coordinate_transformation_icrs_to_fk5(self):
-        from src.astronomy.planetary import PlanetaryCalculator
         from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         calc = PlanetaryCalculator(ephemeris=mock_eph)
@@ -163,26 +174,33 @@ class TestAstronomyModuleIntegration:
         assert isinstance(result["dec"], float)
 
     def test_rise_set_times_data_flow(self):
-        from src.astronomy.planetary import PlanetaryCalculator
-        from src.astronomy.base import EphemerisManager
-        from datetime import timezone
         import zoneinfo
+        from datetime import timezone
+
+        from src.astronomy.base import EphemerisManager
+        from src.astronomy.planetary import PlanetaryCalculator
 
         mock_eph = MagicMock(spec=EphemerisManager)
         mock_eph.is_loaded = True
         mock_eph.planets = MagicMock()
         mock_eph.earth = MagicMock()
         mock_eph.timescale = MagicMock()
-        
+
         calc = PlanetaryCalculator(ephemeris=mock_eph)
 
-        with patch("src.astronomy.planetary.skyfield_almanac.find_discrete") as mock_find:
+        with patch(
+            "src.astronomy.planetary.skyfield_almanac.find_discrete"
+        ) as mock_find:
             mock_times = [MagicMock(), MagicMock()]
-            mock_times[0].utc_datetime.return_value = datetime(2026, 4, 8, 5, 30, tzinfo=timezone.utc)
-            mock_times[1].utc_datetime.return_value = datetime(2026, 4, 8, 18, 45, tzinfo=timezone.utc)
+            mock_times[0].utc_datetime.return_value = datetime(
+                2026, 4, 8, 5, 30, tzinfo=timezone.utc
+            )
+            mock_times[1].utc_datetime.return_value = datetime(
+                2026, 4, 8, 18, 45, tzinfo=timezone.utc
+            )
             mock_events = [1, 0]
             mock_find.return_value = (mock_times, mock_events)
-            
+
             result = calc.get_rise_set_times("sun", 39.9, 116.4, "2026-04-08")
 
         assert "rise_time" in result or "error" in result
@@ -191,153 +209,160 @@ class TestAstronomyModuleIntegration:
 class TestMemoryModuleIntegration:
     """测试记忆模块与Agent模块之间的数据流转"""
 
-    def test_short_term_memory_add_and_retrieve(self):
-        from src.memory.memory import ShortTermMemory
+    def test_memory_service_add_and_retrieve(self, tmp_path):
+        from src.memory.api.dto import AppendMessageRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
-            mock_s.MEMORY_SIZE = 15
-            mock_s.MEMORY_WINDOW = 8
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-            mock_s.DEFAULT_USER_ID = "test_user"
-            mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+        memory = MemoryService(
+            db_path=str(tmp_path / "memory.sqlite"),
+            session_id="integration_session",
+            user_id="test_user",
+        )
+        memory.append_message(
+            AppendMessageRequest(
+                session_id="integration_session",
+                role="user",
+                content="你好",
+                timestamp=time.time(),
+            )
+        )
+        memory.append_message(
+            AppendMessageRequest(
+                session_id="integration_session",
+                role="assistant",
+                content="你好！有什么天文问题吗？",
+                timestamp=time.time(),
+            )
+        )
 
-        memory.add_message("user", "你好", time.time())
-        memory.add_message("assistant", "你好！有什么天文问题吗？", time.time())
-
-        recent = memory.get_recent_messages()
+        recent = memory.get_all_messages("integration_session")
         assert len(recent) == 2
         assert recent[0]["role"] == "user"
         assert recent[1]["role"] == "assistant"
 
-    def test_short_term_memory_window_limit(self):
-        from src.memory.memory import ShortTermMemory
+    def test_memory_service_context_limit(self, tmp_path):
+        from src.memory.api.dto import AppendMessageRequest, BuildContextRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
-            mock_s.MEMORY_SIZE = 5
-            mock_s.MEMORY_WINDOW = 3
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-            mock_s.DEFAULT_USER_ID = "test_user"
-            mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
-
+        memory = MemoryService(
+            db_path=str(tmp_path / "memory.sqlite"),
+            session_id="integration_session",
+            user_id="test_user",
+        )
         for i in range(10):
-            memory.add_message("user", f"消息{i}", time.time())
+            memory.append_message(
+                AppendMessageRequest(
+                    session_id="integration_session",
+                    role="user",
+                    content=f"消息{i}",
+                    timestamp=time.time(),
+                )
+            )
 
-        assert memory.get_size() == 5
-        recent = memory.get_recent_messages(window=3)
-        assert len(recent) == 3
+        context = memory.build_context(
+            BuildContextRequest(session_id="integration_session", max_tokens=300)
+        )
+        assert len(memory.get_all_messages("integration_session")) == 10
+        assert len(context["selected_recent_messages"]) <= 8
 
-    def test_short_term_memory_clear(self):
-        from src.memory.memory import ShortTermMemory
+    def test_memory_service_clear(self, tmp_path):
+        from src.memory.api.dto import AppendMessageRequest
+        from src.memory.api.memory_service import MemoryService
 
-        with patch("src.memory.memory.settings") as mock_s:
-            mock_s.MEMORY_SIZE = 15
-            mock_s.MEMORY_WINDOW = 8
-            mock_s.STM_CONTEXT_MAX_TOKENS = 4000
-            mock_s.STM_SUMMARY_MAX_TOKENS = 500
-            mock_s.STM_SUMMARY_TRIGGER_MESSAGES = 100
-            mock_s.STM_SUMMARY_TRIGGER_TOKENS = 100000
-            mock_s.STM_PERSISTENCE_ENABLED = False
-            mock_s.STM_PERSISTENCE_PATH = "/tmp/test_stm/sessions.sqlite"
-            mock_s.STM_IMPORTANCE_HIGH_ROLES = {"user", "system"}
-            mock_s.STM_TOOL_RESULT_MAX_LENGTH = 500
-            mock_s.DEFAULT_USER_ID = "test_user"
-            mock_s.DASHSCOPE_API_KEY = None
-            memory = ShortTermMemory()
+        memory = MemoryService(
+            db_path=str(tmp_path / "memory.sqlite"),
+            session_id="integration_session",
+            user_id="test_user",
+        )
+        memory.append_message(
+            AppendMessageRequest(
+                session_id="integration_session",
+                role="user",
+                content="测试",
+                timestamp=time.time(),
+            )
+        )
+        assert len(memory.get_all_messages("integration_session")) == 1
 
-        memory.add_message("user", "测试", time.time())
-        assert memory.get_size() == 1
-
-        memory.clear()
-        assert memory.get_size() == 0
+        memory.clear("integration_session")
+        assert memory.get_all_messages("integration_session") == []
 
     def test_long_term_memory_save_and_load(self, temp_db_path):
-        from src.memory.memory import LongTermMemory, UserProfile
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
-
-        profile = UserProfile(
-            user_id="test_user",
-            preferences={"style": "详细"},
-            habits={"topics": ["火星"]},
-            constraints=["避免术语"],
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat(),
+        memory.upsert_profile(
+            "test_user",
+            {
+                "preferences": {"style": "详细"},
+                "habits": {"topics": ["火星"]},
+                "constraints": ["避免术语"],
+            },
         )
 
-        memory.save_profile(profile)
-        loaded = memory.load_profile("test_user")
+        loaded = memory.get_profile("test_user")
 
         assert loaded is not None
-        assert loaded.user_id == "test_user"
-        assert loaded.preferences["style"] == "详细"
-        assert "火星" in loaded.habits["topics"]
-        assert "避免术语" in loaded.constraints
+        assert loaded["user_id"] == "test_user"
+        assert loaded["preferences"]["style"] == "详细"
+        assert "火星" in loaded["habits"]["topics"]
+        assert "避免术语" in loaded["constraints"]
 
-    def test_long_term_memory_merge_and_update(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+    def test_long_term_memory_upsert_profile(self, temp_db_path):
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
-        memory.merge_and_update("test_user", {
-            "preferences": {"style": "简短"},
-            "habits": {"topics": ["火星"]},
-            "constraints": ["避免术语"],
-        })
+        memory.upsert_profile(
+            "test_user",
+            {
+                "preferences": {"style": "简短"},
+                "habits": {"topics": ["火星"]},
+                "constraints": ["避免术语"],
+            },
+        )
 
-        memory.merge_and_update("test_user", {
-            "preferences": {"style": "详细"},
-            "habits": {"topics": ["木星"]},
-            "constraints": ["控制长度"],
-        })
+        memory.upsert_profile(
+            "test_user",
+            {
+                "preferences": {"style": "详细"},
+                "habits": {"topics": ["木星"]},
+                "constraints": ["控制长度"],
+            },
+        )
 
-        profile = memory.load_profile("test_user")
+        profile = memory.get_profile("test_user")
         assert profile is not None
-        assert profile.preferences["style"] == "详细"
-        assert "火星" in profile.habits["topics"]
-        assert "木星" in profile.habits["topics"]
-        assert "避免术语" in profile.constraints
-        assert "控制长度" in profile.constraints
+        assert profile["preferences"]["style"] == "详细"
+        assert "火星" in profile["habits"]["topics"]
+        assert "木星" in profile["habits"]["topics"]
+        assert "避免术语" in profile["constraints"]
+        assert "控制长度" in profile["constraints"]
 
     def test_long_term_memory_delete_profile(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
-        memory.merge_and_update("test_user", {
-            "preferences": {},
-            "habits": {},
-            "constraints": [],
-        })
+        memory.upsert_profile(
+            "test_user",
+            {
+                "preferences": {},
+                "habits": {},
+                "constraints": [],
+            },
+        )
 
-        assert memory.load_profile("test_user") is not None
+        assert memory.get_profile("test_user") is not None
         deleted = memory.delete_profile("test_user")
         assert deleted is True
-        assert memory.load_profile("test_user") is None
+        assert memory.get_profile("test_user") is None
 
-    def test_long_term_memory_extract_from_conversation(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+    def test_long_term_memory_extractor_legacy_projection(self, temp_db_path):
+        from src.memory.long_term_memory.extractor import MemoryExtractor
 
-        memory = LongTermMemory(db_path=temp_db_path)
-
-        extracted = memory.extract_from_conversation(
-            "请详细介绍一下火星的特征，不要使用专业术语",
-            "火星是太阳系第四颗行星..."
+        extracted = MemoryExtractor().extract_legacy_format(
+            "请详细介绍一下火星的特征，不要使用专业术语", "火星是太阳系第四颗行星..."
         )
 
         assert extracted["preferences"]["response_style"] == "详细"
@@ -345,17 +370,20 @@ class TestMemoryModuleIntegration:
         assert "火星" in extracted["habits"]["frequent_topics"]
 
     def test_long_term_memory_format_for_prompt(self, temp_db_path):
-        from src.memory.memory import LongTermMemory
+        from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory
 
         memory = LongTermMemory(db_path=temp_db_path)
 
-        memory.merge_and_update("test_user", {
-            "preferences": {"style": "详细"},
-            "habits": {"topics": ["火星", "木星"]},
-            "constraints": ["避免术语"],
-        })
+        memory.upsert_profile(
+            "test_user",
+            {
+                "preferences": {"style": "详细"},
+                "habits": {"topics": ["火星", "木星"]},
+                "constraints": ["避免术语"],
+            },
+        )
 
-        formatted = memory.format_profile_for_prompt("test_user")
+        formatted = memory.render_profile_prompt("test_user")
         assert "详细" in formatted
         assert "火星" in formatted
 
@@ -364,7 +392,7 @@ class TestErrorHandlingIntegration:
     """测试错误处理机制在模块间的集成"""
 
     def test_error_handler_maps_value_error(self):
-        from src.core.errors import ErrorHandler, ErrorCode
+        from src.core.errors import ErrorCode, ErrorHandler
 
         try:
             raise ValueError("测试值错误")
@@ -375,7 +403,7 @@ class TestErrorHandlingIntegration:
         assert "测试值错误" in error.message
 
     def test_error_handler_maps_file_not_found(self):
-        from src.core.errors import ErrorHandler, ErrorCode
+        from src.core.errors import ErrorCode, ErrorHandler
 
         try:
             raise FileNotFoundError("文件不存在")
@@ -385,7 +413,7 @@ class TestErrorHandlingIntegration:
         assert error.code == ErrorCode.FILE_NOT_FOUND
 
     def test_error_handler_preserves_agent_error(self):
-        from src.core.errors import ErrorHandler, AgentError, ErrorCode
+        from src.core.errors import AgentError, ErrorCode, ErrorHandler
 
         original = AgentError(
             code=ErrorCode.NASA_API_ERROR,
@@ -413,7 +441,7 @@ class TestErrorHandlingIntegration:
         assert d["details"]["tool"] == "get_weather"
 
     def test_safe_tool_call_decorator(self):
-        from src.core.errors import safe_tool_call, AgentError, ErrorCode
+        from src.core.errors import AgentError, ErrorCode, safe_tool_call
 
         @safe_tool_call
         def failing_tool():
@@ -493,7 +521,9 @@ class TestParamParserIntegration:
         from src.agent.param_parser import ParamParser
 
         result = ParamParser.normalize_date("明天")
-        expected = (datetime.now() + __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
+        expected = (datetime.now() + __import__("datetime").timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
         assert result == expected
 
     def test_normalize_date_iso_format(self):
@@ -564,12 +594,18 @@ class TestFallbackServiceIntegration:
         mock_sm = MagicMock()
         service = FallbackService(skill_manager=mock_sm)
 
-        search_data = json.dumps({
-            "answer": "火星是太阳系第四颗行星",
-            "results": [
-                {"title": "火星简介", "url": "https://example.com", "content": "火星相关信息"}
-            ],
-        })
+        search_data = json.dumps(
+            {
+                "answer": "火星是太阳系第四颗行星",
+                "results": [
+                    {
+                        "title": "火星简介",
+                        "url": "https://example.com",
+                        "content": "火星相关信息",
+                    }
+                ],
+            }
+        )
 
         response = service.format_fallback_response("火星是什么", search_data)
         assert "火星" in response
@@ -581,11 +617,13 @@ class TestFallbackServiceIntegration:
         mock_sm = MagicMock()
         service = FallbackService(skill_manager=mock_sm)
 
-        error_data = json.dumps({
-            "error": True,
-            "code": "API_ERROR",
-            "message": "搜索服务不可用",
-        })
+        error_data = json.dumps(
+            {
+                "error": True,
+                "code": "API_ERROR",
+                "message": "搜索服务不可用",
+            }
+        )
 
         response = service.format_fallback_response("测试查询", error_data)
         assert "问题" in response or "抱歉" in response
