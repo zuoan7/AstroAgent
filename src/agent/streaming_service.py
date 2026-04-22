@@ -109,6 +109,13 @@ class BaseStreamingGenerator:
             return
 
         try:
+            if hasattr(self._long_term_memory, "extract_and_store_async"):
+                self._long_term_memory.extract_and_store_async(
+                    user_message=user_message,
+                    assistant_message=assistant_message,
+                    user_id=self._user_id,
+                )
+                return
             if hasattr(self._long_term_memory, "extract_and_store"):
                 results = self._long_term_memory.extract_and_store(
                     user_message=user_message,
@@ -126,6 +133,10 @@ class BaseStreamingGenerator:
         self, user_message: str, assistant_message: str
     ) -> None:
         if not self._long_term_memory:
+            return
+
+        if hasattr(self._long_term_memory, "extract_and_store_async"):
+            self._extract_and_update_long_term_memory(user_message, assistant_message)
             return
 
         def _runner() -> None:

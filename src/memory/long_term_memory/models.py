@@ -17,6 +17,9 @@ class MemoryType(str, Enum):
 class MemoryStatus(str, Enum):
     ACTIVE = "active"
     CANDIDATE = "candidate"
+    NEEDS_CONFIRM = "needs_confirm"
+    PROMOTED = "promoted"
+    REJECTED = "rejected"
     CONFIRMED = "confirmed"
     EXPIRED = "expired"
     ARCHIVED = "archived"

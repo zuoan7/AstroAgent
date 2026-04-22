@@ -18,6 +18,12 @@ class CandidateManager:
     PROMOTION_OCCURRENCE_THRESHOLD = 2
     PROMOTION_CONFIDENCE_THRESHOLD = 0.6
     PROMOTION_EXPLICIT_BYPASS = True
+    HIGH_RISK_MEMORY_TYPES = {MemoryType.BACKGROUND, MemoryType.FACT}
+    LOW_RISK_MEMORY_TYPES = {
+        MemoryType.PREFERENCE,
+        MemoryType.HABIT,
+        MemoryType.CONSTRAINT,
+    }
 
     def __init__(
         self,
@@ -50,7 +56,7 @@ class CandidateManager:
             existing.occurrence_count += 1
             existing.last_seen_at = _utcnow_iso()
             existing.updated_at = existing.last_seen_at
-            existing.confidence = min(existing.confidence + 0.05, 0.9)
+            existing.confidence = min(max(existing.confidence, confidence) + 0.05, 0.9)
             if source_type == SourceType.EXPLICIT:
                 existing.source_type = SourceType.EXPLICIT
                 existing.confidence = min(existing.confidence + 0.2, 0.95)
@@ -94,22 +100,47 @@ class CandidateManager:
         logger.debug(f"新候选记忆: {memory_type}.{key}")
         return candidate
 
-    def should_promote(self, candidate: MemoryCandidate) -> bool:
-        if self.explicit_bypass and candidate.source_type == SourceType.EXPLICIT:
-            return True
-        if candidate.occurrence_count >= self.occurrence_threshold:
-            return True
-        if candidate.confidence >= self.confidence_threshold:
-            return True
-        return False
+    def is_high_risk_candidate(self, candidate: MemoryCandidate) -> bool:
+        return candidate.memory_type in self.HIGH_RISK_MEMORY_TYPES
 
-    def promote_candidate(self, candidate_id: str) -> Optional[MemoryItem]:
+    def _set_candidate_status(
+        self, candidate: MemoryCandidate, status: str
+    ) -> MemoryCandidate:
+        candidate.status = status
+        candidate.updated_at = _utcnow_iso()
+        self._repo.update_candidate(candidate)
+        return candidate
+
+    def should_promote(self, candidate: MemoryCandidate) -> bool:
+        # Conservative auto-promotion:
+        # 1. high-risk types stay in candidate/needs_confirm by default
+        # 2. explicit items still need minimum confidence
+        # 3. non-explicit items need both repetition and confidence
+        if self.is_high_risk_candidate(candidate):
+            return False
+        if candidate.memory_type not in self.LOW_RISK_MEMORY_TYPES:
+            return False
+        if candidate.source_type == SourceType.EXPLICIT:
+            return (
+                self.explicit_bypass
+                and candidate.confidence >= self.confidence_threshold
+            )
+        return (
+            candidate.occurrence_count >= self.occurrence_threshold
+            and candidate.confidence >= self.confidence_threshold
+        )
+
+    def promote_candidate(
+        self, candidate_id: str, force: bool = False
+    ) -> Optional[MemoryItem]:
         candidate = self._repo.get_candidate(candidate_id)
         if not candidate:
             logger.warning(f"候选记忆不存在: {candidate_id}")
             return None
 
-        if not self.should_promote(candidate):
+        if not force and not self.should_promote(candidate):
+            if self.is_high_risk_candidate(candidate):
+                self._set_candidate_status(candidate, MemoryStatus.NEEDS_CONFIRM)
             logger.debug(f"候选记忆未达提升标准: {candidate_id}")
             return None
 
@@ -134,7 +165,7 @@ class CandidateManager:
         if not candidate:
             return False
 
-        self._repo.delete_candidate(candidate_id)
+        self._set_candidate_status(candidate, MemoryStatus.REJECTED)
         self._repo.add_event_log(EventLogEntry(
             user_id=candidate.user_id,
             memory_id=None,
@@ -170,13 +201,27 @@ class CandidateManager:
             source_content_snippet=source_content_snippet,
         )
 
+        if self.is_high_risk_candidate(candidate):
+            self._set_candidate_status(candidate, MemoryStatus.NEEDS_CONFIRM)
+            return None
+
         if self.should_promote(candidate):
             return self.promote_candidate(candidate.id)
 
+        if candidate.status != MemoryStatus.CANDIDATE:
+            self._set_candidate_status(candidate, MemoryStatus.CANDIDATE)
         return None
 
-    def list_candidates(self, user_id: str, limit: int = 50, offset: int = 0) -> List[MemoryCandidate]:
-        return self._repo.list_candidates(user_id, limit=limit, offset=offset)
+    def list_candidates(
+        self,
+        user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+    ) -> List[MemoryCandidate]:
+        return self._repo.list_candidates(
+            user_id, limit=limit, offset=offset, status=status
+        )
 
     def get_candidate(self, candidate_id: str) -> Optional[MemoryCandidate]:
         return self._repo.get_candidate(candidate_id)

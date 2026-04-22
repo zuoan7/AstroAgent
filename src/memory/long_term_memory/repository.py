@@ -434,12 +434,23 @@ class LongTermMemoryRepository:
         return MemoryCandidate.from_db_row(row)
 
     def find_candidate_by_type_key(
-        self, user_id: str, memory_type: str, key: str
+        self,
+        user_id: str,
+        memory_type: str,
+        key: str,
+        statuses: Optional[List[str]] = None,
     ) -> Optional[MemoryCandidate]:
+        active_statuses = statuses or ["candidate", "needs_confirm"]
+        placeholders = ", ".join("?" for _ in active_statuses)
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM memory_candidates WHERE user_id=? AND memory_type=? AND key=? AND status='candidate' LIMIT 1",
-                (user_id, memory_type, key),
+                f"""
+                SELECT * FROM memory_candidates
+                WHERE user_id=? AND memory_type=? AND key=?
+                  AND status IN ({placeholders})
+                LIMIT 1
+                """,
+                (user_id, memory_type, key, *active_statuses),
             ).fetchone()
         if not row:
             return None
@@ -490,13 +501,28 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def list_candidates(
-        self, user_id: str, limit: int = 50, offset: int = 0
+        self,
+        user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
     ) -> List[MemoryCandidate]:
+        if status:
+            sql = """
+                SELECT * FROM memory_candidates
+                WHERE user_id=? AND status=?
+                ORDER BY last_seen_at DESC LIMIT ? OFFSET ?
+            """
+            params = (user_id, status, limit, offset)
+        else:
+            sql = """
+                SELECT * FROM memory_candidates
+                WHERE user_id=? AND status IN ('candidate', 'needs_confirm')
+                ORDER BY last_seen_at DESC LIMIT ? OFFSET ?
+            """
+            params = (user_id, limit, offset)
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM memory_candidates WHERE user_id=? AND status='candidate' ORDER BY last_seen_at DESC LIMIT ? OFFSET ?",
-                (user_id, limit, offset),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [MemoryCandidate.from_db_row(row) for row in rows]
 
     def add_event_log(self, entry: EventLogEntry) -> int:
