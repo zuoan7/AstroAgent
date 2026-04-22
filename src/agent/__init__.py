@@ -5,6 +5,7 @@ from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 
 from src.agent.fallback_service import FallbackService
+from src.agent.output_parser import LenientReActSingleInputOutputParser
 from src.agent.request_router import RequestRouter
 from src.agent.skill_manager import SkillManager
 from src.agent.speech_service import SpeechService
@@ -122,7 +123,9 @@ class AstroAgent:
                     - 实时数据：直接给出数据，简洁明了
                     - 专业术语附注英文原文（如"视星等 apparent magnitude"）
 
-                    使用以下格式：
+                    使用以下格式。每次回复只能是以下两种之一：
+
+                    1. 需要调用工具时：
 
                     Question: {input}
                     Thought: 先判断问题类型，再选择合适的技能/工具
@@ -130,8 +133,16 @@ class AstroAgent:
                     Action Input: 工具参数，必须是有效的JSON格式（例如：{{"target": "mars"}}）
                     Observation: 工具返回结果
                     ... (Thought/Action/Action Input/Observation最多重复5次)
+
+                    2. 已经拿到足够信息、可以回答用户时：
+
                     Thought: 我现在知道最终答案了
                     Final Answer: 最终答案
+
+                    关键规则：
+                    - Thought 后面必须紧跟 Action 或 Final Answer
+                    - 如果不再调用工具，必须写 Final Answer:，不要直接写答案正文
+                    - Observation 已包含足够信息时，直接输出 Final Answer
 
                     开始！
 
@@ -144,7 +155,12 @@ class AstroAgent:
 
         tools = self.skill_manager.get_langchain_tools()
 
-        agent = create_react_agent(llm=llm or self.llm, tools=tools, prompt=prompt)
+        agent = create_react_agent(
+            llm=llm or self.llm,
+            tools=tools,
+            prompt=prompt,
+            output_parser=LenientReActSingleInputOutputParser(),
+        )
 
         agent_executor = AgentExecutor(
             agent=agent,

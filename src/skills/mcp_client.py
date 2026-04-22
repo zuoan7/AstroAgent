@@ -8,11 +8,15 @@ import time
 from typing import Any, Dict, Optional
 
 import httpx
+
 from src.core.logger import logger
 from src.core.errors import ErrorHandler, ErrorCode
 from src.core.config import settings
-from src.core.mcp_protocol import error_envelope, parse_tool_response, serialize_envelope
-
+from src.core.mcp_protocol import (
+    error_envelope,
+    parse_tool_response,
+    serialize_envelope,
+)
 
 MCP_RECONNECT_MAX_RETRIES = 3
 MCP_RECONNECT_DELAY = 2.0
@@ -22,12 +26,11 @@ class _AsyncBridge:
     """
     Safe bridge to run async MCP operations from synchronous context.
 
-    Creates a dedicated background event loop in a daemon thread, avoiding
-    the dangerous pattern of calling asyncio.run() inside an already-running
-    event loop (which causes RuntimeError / deadlock in FastAPI).
-
-    Uses asyncio.run_coroutine_threadsafe() to submit coroutines from
-    sync code to the background loop.
+    Creates a dedicated background event loop in a daemon thread, avoiding the
+    dangerous pattern of calling asyncio.run() inside an already-running event loop
+    (which causes RuntimeError / deadlock in FastAPI).
+    Uses asyncio.run_coroutine_threadsafe() to submit coroutines from sync code
+    to the background loop.
     """
 
     def __init__(self) -> None:
@@ -100,67 +103,64 @@ class MCPClient:
     def _get_init_lock(self) -> asyncio.Lock:
         if self._init_lock is None:
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 self._init_lock = asyncio.Lock()
             except RuntimeError:
                 self._init_lock = asyncio.Lock()
         return self._init_lock
 
     def call_tool(self, tool_name: str, **kwargs) -> str:
-        return self._async_bridge.run(
-            self._async_call_tool(tool_name, **kwargs)
-        )
+        return self._async_bridge.run(self._async_call_tool(tool_name, **kwargs))
 
     def call_tools_parallel(self, calls: list[dict]) -> list[str]:
         """
-        Batch MCP tool calls with a shared session.
+        Batch MCP tool calls using isolated sessions for each parallel request.
 
         Args:
             calls: list of {"tool_name": str, "kwargs": dict}
-
         Returns:
             Results list corresponding to calls order
         """
+
         async def _gather():
-            session_ok = await self._ensure_session()
-            if not session_ok:
-                return [
-                    serialize_envelope(
-                        error_envelope(
-                            tool_name=c["tool_name"],
-                            code=ErrorCode.MCP_SESSION_ERROR.value,
-                            message="MCP会话不可用且重连失败，请检查桥服务器是否运行",
-                            details={"tool_name": c["tool_name"], "parallel_call": True},
-                        )
-                    )
-                    for c in calls
-                ]
             tasks = [
-                self._async_call_tool(
+                self._async_call_tool_isolated(
                     call["tool_name"],
-                    _skip_session_check=True,
                     **call.get("kwargs", {}),
                 )
                 for call in calls
             ]
             return await asyncio.gather(*tasks, return_exceptions=True)
 
+        batch_timeout = max(90.0, 35.0 * len(calls))
+
         try:
-            results = self._async_bridge.run(_gather())
+            logger.info(
+                f"MCP批量调用开始（独立会话并行），calls={len(calls)}，timeout={batch_timeout}s"
+            )
+            results = self._async_bridge.run(_gather(), timeout=batch_timeout)
         except TimeoutError:
             logger.warning("MCP批量调用超时，回退为同步串行调用")
+            # 废弃主会话，避免沿用潜在坏状态
+            self._initialized = False
+            self._session_id = None
             return [
                 self.call_tool(c["tool_name"], **c.get("kwargs", {}))
                 for c in calls
             ]
+
         final = []
-        for r in results:
+        for i, r in enumerate(results):
             if isinstance(r, Exception):
-                error = ErrorHandler.handle(r, {"parallel_call": True})
+                tool_name = calls[i].get("tool_name", "parallel_call")
+                error = ErrorHandler.handle(
+                    r,
+                    {"parallel_call": True, "tool_name": tool_name},
+                )
                 final.append(
                     serialize_envelope(
                         error_envelope(
-                            tool_name=error.details.get("tool_name", "parallel_call"),
+                            tool_name=tool_name,
                             code=error.code.value,
                             message=error.message,
                             details=error.details,
@@ -221,7 +221,6 @@ class MCPClient:
                 return self._initialized and self._is_session_valid()
 
             self._initializing = True
-
             try:
                 return await self._do_init_session()
             finally:
@@ -240,7 +239,7 @@ class MCPClient:
                 health_resp = await client.get(
                     settings.MCP_SERVER_URL,
                     headers={"Accept": "text/event-stream"},
-                    timeout=5.0
+                    timeout=5.0,
                 )
                 logger.debug(f"MCP服务器健康检查: HTTP {health_resp.status_code}")
             except httpx.ConnectError:
@@ -257,10 +256,10 @@ class MCPClient:
                     "capabilities": {},
                     "clientInfo": {
                         "name": "AstroAgent-SkillRouter",
-                        "version": "1.0.0"
-                    }
+                        "version": "1.0.0",
+                    },
                 },
-                "id": 1
+                "id": 1,
             }
 
             response = await client.post(
@@ -268,8 +267,8 @@ class MCPClient:
                 json=init_request,
                 headers={
                     "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream"
-                }
+                    "Accept": "application/json, text/event-stream",
+                },
             )
 
             if response.status_code != 200:
@@ -288,19 +287,17 @@ class MCPClient:
 
             notif_request = {
                 "jsonrpc": "2.0",
-                "method": "notifications/initialized"
+                "method": "notifications/initialized",
             }
-
             notif_resp = await client.post(
                 settings.MCP_SERVER_URL,
                 json=notif_request,
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": session_id
-                }
+                    "Mcp-Session-Id": session_id,
+                },
             )
-
             if notif_resp.status_code not in (200, 202):
                 logger.warning(f"initialized通知返回非预期状态: {notif_resp.status_code}")
 
@@ -308,17 +305,16 @@ class MCPClient:
             list_request = {
                 "jsonrpc": "2.0",
                 "method": "tools/list",
-                "id": 2
+                "id": 2,
             }
-
             response = await client.post(
                 settings.MCP_SERVER_URL,
                 json=list_request,
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": session_id
-                }
+                    "Mcp-Session-Id": session_id,
+                },
             )
 
             tools_result = _parse_sse_response(response.text)
@@ -334,7 +330,6 @@ class MCPClient:
                 "mcp_session_init_ms",
                 (time.perf_counter() - init_started) * 1000.0,
             )
-
             logger.info(f"✅ MCP会话初始化成功，会话ID: {session_id}")
             return True
 
@@ -354,7 +349,6 @@ class MCPClient:
     async def _ensure_session(self) -> bool:
         if self._is_session_valid():
             return True
-
         logger.warning("MCP会话无效或未初始化，尝试建立连接...")
         return await self._reconnect()
 
@@ -370,6 +364,7 @@ class MCPClient:
 
             self._initialized = False
             self._http_client = None
+
             if attempt < MCP_RECONNECT_MAX_RETRIES:
                 await asyncio.sleep(MCP_RECONNECT_DELAY * attempt)
 
@@ -377,12 +372,19 @@ class MCPClient:
         self._reconnect_attempts += MCP_RECONNECT_MAX_RETRIES
         return False
 
-    async def _async_call_tool(self, tool_name: str, _skip_session_check: bool = False, **kwargs) -> str:
+    async def _async_call_tool(
+        self,
+        tool_name: str,
+        _skip_session_check: bool = False,
+        **kwargs,
+    ) -> str:
         tool_started = time.perf_counter()
+
         if _skip_session_check:
             session_ok = self._is_session_valid()
         else:
             session_ok = await self._ensure_session()
+
         if not session_ok:
             logger.error("❌ MCP会话不可用且重连失败")
             return serialize_envelope(
@@ -395,119 +397,12 @@ class MCPClient:
             )
 
         try:
-            processed_kwargs = {}
-            for key, value in kwargs.items():
-                if key in ['year', 'month', 'limit']:
-                    try:
-                        if isinstance(value, str) and value.isdigit():
-                            processed_kwargs[key] = int(value)
-                        else:
-                            processed_kwargs[key] = value
-                    except Exception:
-                        processed_kwargs[key] = value
-                else:
-                    processed_kwargs[key] = value
-
-            request = {
-                "jsonrpc": "2.0",
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": processed_kwargs
-                },
-                "id": int(time.time() * 1000)
-            }
-
-            logger.debug(f"调用工具 {tool_name}，处理后的参数: {processed_kwargs}")
-
-            response = await self._http_client.post(
-                settings.MCP_SERVER_URL,
-                json=request,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream",
-                    "Mcp-Session-Id": self._session_id
-                },
-                timeout=30.0
+            return await self._execute_tool_call(
+                http_client=self._http_client,
+                session_id=self._session_id,
+                tool_name=tool_name,
+                kwargs=kwargs,
             )
-
-            if response.status_code != 200:
-                if response.status_code in (404, 410, 503):
-                    self._initialized = False
-                    logger.warning(f"MCP会话可能已失效(HTTP {response.status_code})，标记需要重连")
-                return serialize_envelope(
-                    error_envelope(
-                        tool_name=tool_name,
-                        code=ErrorCode.MCP_SESSION_ERROR.value,
-                        message=f"MCP服务器返回HTTP错误: {response.status_code}",
-                        details={"tool_name": tool_name, "status_code": response.status_code},
-                    )
-                )
-
-            result = _parse_sse_response(response.text)
-            if not result:
-                logger.error(f"无法解析响应: {response.text[:200]}")
-                return serialize_envelope(
-                    error_envelope(
-                        tool_name=tool_name,
-                        code=ErrorCode.MCP_SESSION_ERROR.value,
-                        message="MCP响应解析失败",
-                        details={"tool_name": tool_name},
-                    )
-                )
-
-            logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:500]}")
-
-            if "error" in result:
-                error_msg = result["error"].get("message", "未知错误")
-                error_code = result["error"].get("code", "")
-                return serialize_envelope(
-                    error_envelope(
-                        tool_name=tool_name,
-                        code=ErrorCode.TOOL_CALL_FAILED.value,
-                        message=f"工具调用错误 [{error_code}]: {error_msg}",
-                        details={"tool_name": tool_name, "mcp_error_code": error_code},
-                    )
-                )
-
-            if "result" in result:
-                res = result["result"]
-
-                if isinstance(res, dict):
-                    if "content" in res:
-                        content = res["content"]
-                        if isinstance(content, list) and len(content) > 0:
-                            for item in content:
-                                if item.get("type") == "text":
-                                    text = item.get("text", "")
-                                    envelope = parse_tool_response(text)
-                                    if envelope is not None:
-                                        return serialize_envelope(envelope)
-                                    try:
-                                        parsed = json.loads(text)
-                                        if isinstance(parsed, dict) and parsed.get("error"):
-                                            return serialize_envelope(
-                                                error_envelope(
-                                                    tool_name=tool_name,
-                                                    code=str(parsed.get("code") or ErrorCode.TOOL_CALL_FAILED.value),
-                                                    message=parsed.get("message", text),
-                                                    details=parsed.get("details") or {"tool_name": tool_name},
-                                                )
-                                            )
-                                    except (json.JSONDecodeError, TypeError):
-                                        pass
-                                    return text
-
-                    return json.dumps(res, ensure_ascii=False)
-
-                if isinstance(res, str):
-                    return res
-
-                return str(res)
-
-            logger.warning(f"未知响应格式: {result}")
-            return str(result)
-
         except httpx.TimeoutException:
             logger.error(f"❌ MCP工具调用超时: {tool_name}")
             return serialize_envelope(
@@ -526,7 +421,10 @@ class MCPClient:
                     tool_name=tool_name,
                     code=ErrorCode.MCP_CONNECTION_ERROR.value,
                     message="无法连接到MCP服务器",
-                    details={"tool_name": tool_name, "server_url": settings.MCP_SERVER_URL},
+                    details={
+                        "tool_name": tool_name,
+                        "server_url": settings.MCP_SERVER_URL,
+                    },
                 )
             )
         except Exception as e:
@@ -547,10 +445,305 @@ class MCPClient:
             )
             self._add_metric("tool_call_count", 1.0)
 
+    async def _async_call_tool_isolated(self, tool_name: str, **kwargs) -> str:
+        """
+        Parallel-safe tool call:
+        each request uses its own AsyncClient and its own MCP session.
+        """
+        tool_started = time.perf_counter()
+        client: Optional[httpx.AsyncClient] = None
+        session_id: Optional[str] = None
+
+        try:
+            logger.info(f"[MCP][ISOLATED] 开始独立会话调用 tool={tool_name}")
+            client, session_id = await self._create_ephemeral_session()
+            return await self._execute_tool_call(
+                http_client=client,
+                session_id=session_id,
+                tool_name=tool_name,
+                kwargs=kwargs,
+            )
+        except httpx.TimeoutException:
+            logger.error(f"❌ MCP独立会话工具调用超时: {tool_name}")
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.MCP_TIMEOUT_ERROR.value,
+                    message=f"工具 '{tool_name}' 调用超时",
+                    details={"tool_name": tool_name, "isolated_session": True},
+                )
+            )
+        except httpx.ConnectError:
+            logger.error(f"❌ 无法连接到MCP服务器: {settings.MCP_SERVER_URL}")
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.MCP_CONNECTION_ERROR.value,
+                    message="无法连接到MCP服务器",
+                    details={
+                        "tool_name": tool_name,
+                        "server_url": settings.MCP_SERVER_URL,
+                        "isolated_session": True,
+                    },
+                )
+            )
+        except Exception as e:
+            logger.error(f"❌ 独立会话调用工具 {tool_name} 失败: {e}")
+            error = ErrorHandler.handle(
+                e,
+                {"tool_name": tool_name, "isolated_session": True},
+            )
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=error.code.value,
+                    message=error.message,
+                    details=error.details,
+                )
+            )
+        finally:
+            if client is not None and not client.is_closed:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
+            self._add_metric(
+                "tool_exec_ms",
+                (time.perf_counter() - tool_started) * 1000.0,
+            )
+            self._add_metric("tool_call_count", 1.0)
+
+    async def _create_ephemeral_session(self) -> tuple[httpx.AsyncClient, str]:
+        """
+        Create a short-lived MCP session for isolated parallel calls.
+        """
+        client = httpx.AsyncClient(timeout=30.0)
+
+        try:
+            logger.debug("独立会话：正在连接MCP服务器...")
+            try:
+                health_resp = await client.get(
+                    settings.MCP_SERVER_URL,
+                    headers={"Accept": "text/event-stream"},
+                    timeout=5.0,
+                )
+                logger.debug(f"独立会话健康检查: HTTP {health_resp.status_code}")
+            except httpx.ConnectError:
+                raise Exception(f"MCP服务器不可达: {settings.MCP_SERVER_URL}")
+            except httpx.TimeoutException:
+                raise Exception(f"MCP服务器连接超时: {settings.MCP_SERVER_URL}")
+
+            init_request = {
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "AstroAgent-SkillRouter",
+                        "version": "1.0.0",
+                    },
+                },
+                "id": 1,
+            }
+
+            response = await client.post(
+                settings.MCP_SERVER_URL,
+                json=init_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+
+            if response.status_code != 200:
+                raise Exception(f"独立会话初始化请求失败: HTTP {response.status_code}")
+
+            session_id = response.headers.get("mcp-session-id")
+            if not session_id:
+                raise Exception("独立会话初始化响应中未返回session ID")
+
+            init_result = _parse_sse_response(response.text)
+            if init_result:
+                server_info = init_result.get("result", {}).get("serverInfo", {})
+                logger.debug(f"独立会话初始化成功，服务器信息: {server_info}")
+
+            notif_request = {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+            }
+            notif_resp = await client.post(
+                settings.MCP_SERVER_URL,
+                json=notif_request,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    "Mcp-Session-Id": session_id,
+                },
+            )
+            if notif_resp.status_code not in (200, 202):
+                logger.warning(
+                    f"独立会话 initialized 通知返回非预期状态: {notif_resp.status_code}"
+                )
+
+            return client, session_id
+
+        except Exception:
+            if not client.is_closed:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
+            raise
+
+    async def _execute_tool_call(
+        self,
+        http_client: httpx.AsyncClient,
+        session_id: str,
+        tool_name: str,
+        kwargs: dict,
+    ) -> str:
+        processed_kwargs = {}
+        for key, value in kwargs.items():
+            if key in ["year", "month", "limit"]:
+                try:
+                    if isinstance(value, str) and value.isdigit():
+                        processed_kwargs[key] = int(value)
+                    else:
+                        processed_kwargs[key] = value
+                except Exception:
+                    processed_kwargs[key] = value
+            else:
+                processed_kwargs[key] = value
+
+        request_id = int(time.time() * 1000)
+        request = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": processed_kwargs,
+            },
+            "id": request_id,
+        }
+
+        logger.debug(
+            f"[MCP][CALL] tool={tool_name}, session={session_id}, "
+            f"request_id={request_id}, args={processed_kwargs}"
+        )
+
+        response = await http_client.post(
+            settings.MCP_SERVER_URL,
+            json=request,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "Mcp-Session-Id": session_id,
+            },
+            timeout=30.0,
+        )
+
+        if response.status_code != 200:
+            if response.status_code in (404, 410, 503):
+                if session_id == self._session_id:
+                    self._initialized = False
+                logger.warning(
+                    f"MCP会话可能已失效(HTTP {response.status_code})，"
+                    f"tool={tool_name}, session={session_id}"
+                )
+
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.MCP_SESSION_ERROR.value,
+                    message=f"MCP服务器返回HTTP错误: {response.status_code}",
+                    details={
+                        "tool_name": tool_name,
+                        "status_code": response.status_code,
+                        "session_id": session_id,
+                    },
+                )
+            )
+
+        result = _parse_sse_response(response.text)
+        if not result:
+            logger.error(f"无法解析响应: {response.text[:200]}")
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.MCP_SESSION_ERROR.value,
+                    message="MCP响应解析失败",
+                    details={"tool_name": tool_name, "session_id": session_id},
+                )
+            )
+
+        logger.debug(f"工具响应: {json.dumps(result, ensure_ascii=False)[:500]}")
+
+        if "error" in result:
+            error_msg = result["error"].get("message", "未知错误")
+            error_code = result["error"].get("code", "")
+            return serialize_envelope(
+                error_envelope(
+                    tool_name=tool_name,
+                    code=ErrorCode.TOOL_CALL_FAILED.value,
+                    message=f"工具调用错误 [{error_code}]: {error_msg}",
+                    details={
+                        "tool_name": tool_name,
+                        "mcp_error_code": error_code,
+                        "session_id": session_id,
+                    },
+                )
+            )
+
+        if "result" in result:
+            res = result["result"]
+
+            if isinstance(res, dict):
+                if "content" in res:
+                    content = res["content"]
+                    if isinstance(content, list) and len(content) > 0:
+                        for item in content:
+                            if item.get("type") == "text":
+                                text = item.get("text", "")
+
+                                envelope = parse_tool_response(text)
+                                if envelope is not None:
+                                    return serialize_envelope(envelope)
+
+                                try:
+                                    parsed = json.loads(text)
+                                    if isinstance(parsed, dict) and parsed.get("error"):
+                                        return serialize_envelope(
+                                            error_envelope(
+                                                tool_name=tool_name,
+                                                code=str(
+                                                    parsed.get("code")
+                                                    or ErrorCode.TOOL_CALL_FAILED.value
+                                                ),
+                                                message=parsed.get("message", text),
+                                                details=parsed.get("details")
+                                                or {"tool_name": tool_name},
+                                            )
+                                        )
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+
+                                return text
+
+                return json.dumps(res, ensure_ascii=False)
+
+            if isinstance(res, str):
+                return res
+
+            return str(res)
+
+        logger.warning(f"未知响应格式: {result}")
+        return str(result)
+
 
 def _parse_sse_response(response_text: str) -> Optional[dict]:
     try:
-        lines = response_text.strip().split('\n')
+        lines = response_text.strip().split("\n")
         for line in lines:
             if line.startswith("data: "):
                 json_str = line[6:]
