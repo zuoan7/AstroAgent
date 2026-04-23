@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import threading
@@ -6,6 +7,11 @@ import uuid
 from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
 
+from src.agent.governance import (
+    AgentExecutionPolicy,
+    GovernanceMetricsRegistry,
+    RequestObservation,
+)
 from src.agent.latency import LatencyTracker
 from src.agent.streaming_events import (
     FrontendJsonEventAdapter,
@@ -44,6 +50,9 @@ class BaseStreamingGenerator:
         skill_manager: Optional[Any] = None,
         rag_retriever: Optional[Any] = None,
         event_processors: Optional[list[StreamEventProcessor]] = None,
+        execution_policy: Optional[AgentExecutionPolicy] = None,
+        governance_metrics: Optional[GovernanceMetricsRegistry] = None,
+        agent_executor_factory: Optional[Any] = None,
     ):
         self._agent_executor = agent_executor
         self._memory = memory
@@ -60,6 +69,9 @@ class BaseStreamingGenerator:
         self._action_history: OrderedDict[str, list] = OrderedDict()
         self._max_same_action_count = 2
         self._event_processors = list(event_processors or [])
+        self._execution_policy = execution_policy or AgentExecutionPolicy.from_settings()
+        self._governance_metrics = governance_metrics
+        self._agent_executor_factory = agent_executor_factory
 
     def _cleanup_action_history(self, request_id: Optional[str] = None):
         if request_id and request_id in self._action_history:
@@ -545,6 +557,14 @@ class BaseStreamingGenerator:
             return session_id
         return f"mem_{self._user_id}"
 
+    def _ensure_agent_executor(self) -> Any:
+        if self._agent_executor is not None:
+            return self._agent_executor
+        if self._agent_executor_factory is None:
+            raise ValueError("react agent executor is not configured")
+        self._agent_executor = self._agent_executor_factory()
+        return self._agent_executor
+
     @staticmethod
     def _infer_content_type(text: str) -> str:
         stripped = (text or "").strip()
@@ -705,7 +725,7 @@ class BaseStreamingGenerator:
             ),
         )
 
-    async def _run_direct_path(
+    async def _run_orchestrated_path(
         self,
         query: str,
         decision: Any,
@@ -865,6 +885,9 @@ class BaseStreamingGenerator:
                     yield processed
 
             decision = None
+            execution_path = self._execution_policy.choose_path(None)
+            fallback_used = False
+            output_schema_parse_success = response_mode != "final_answer"
             if self._request_router and hasattr(self._request_router, "route"):
                 with latency.measure("route_decision_ms"):
                     candidate = self._request_router.route(query)
@@ -872,6 +895,13 @@ class BaseStreamingGenerator:
                     candidate, "to_meta"
                 ):
                     decision = candidate
+                    execution_path = self._execution_policy.choose_path(decision.route)
+                    latency.set_meta("agent_mode", self._execution_policy.mode)
+                    latency.set_meta("execution_path", execution_path)
+                    latency.set_meta(
+                        "feature_flags",
+                        self._execution_policy.to_dict(),
+                    )
                     async for processed in emit(
                         next_event("route_decision", content=decision.to_meta())
                     ):
@@ -890,13 +920,14 @@ class BaseStreamingGenerator:
             ):
                 yield processed
 
-            if decision and decision.route != "complex_agent":
-                direct_result = await self._run_direct_path(
+            if execution_path in ("direct", "planned") and decision:
+                direct_result = await self._run_orchestrated_path(
                     query,
                     decision,
                     use_long_term_memory=use_long_term_memory,
                     latency=latency,
                 )
+                output_schema_parse_success = True
                 direct_answer = direct_result.get("answer", "")
                 response_chunks.append(direct_answer)
                 for tool_run in direct_result.get("tools_used", []):
@@ -915,12 +946,15 @@ class BaseStreamingGenerator:
                 ):
                     yield processed
             else:
+                if execution_path == "planned":
+                    latency.set_meta("planned_path_ready", False)
                 with latency.measure("agent_prepare_ms"):
                     agent_input = self._prepare_input(
                         query, use_long_term_memory=use_long_term_memory
                     )
                 agent_started = time.perf_counter()
-                async for raw_event in self._agent_executor.astream_events(
+                agent_executor = self._ensure_agent_executor()
+                async for raw_event in agent_executor.astream_events(
                     agent_input,
                     version="v1",
                 ):
@@ -1096,6 +1130,7 @@ class BaseStreamingGenerator:
 
                     if not parse_result["should_continue"]:
                         if parse_result["final_answer_text"]:
+                            output_schema_parse_success = True
                             final_answer_text = parse_result["final_answer_text"]
                             if response_mode == "final_answer":
                                 response_chunks.append(final_answer_text)
@@ -1110,6 +1145,7 @@ class BaseStreamingGenerator:
                         continue
 
                     if parse_result["is_final_answer_chunk"]:
+                        output_schema_parse_success = True
                         if response_mode == "final_answer":
                             response_chunks.append(text)
                         async for processed in emit(
@@ -1138,6 +1174,7 @@ class BaseStreamingGenerator:
             logger.error(f"[{request_id}] ❌ 统一事件流生成失败：{e}")
             fallback = "抱歉，当前模型服务暂时不可用。请检查所选模型的 API Key、Base URL 配置，或稍后重试。"
             response_chunks = [fallback]
+            fallback_used = True
             async for processed in emit(
                 next_event(
                     "error",
@@ -1159,6 +1196,10 @@ class BaseStreamingGenerator:
                 latency, runtime_metrics_before, runtime_metrics_after
             )
             final_response = "".join(response_chunks)
+            if response_mode == "final_answer" and execution_path == "react":
+                output_schema_parse_success = bool(final_response.strip()) and (
+                    output_schema_parse_success or final_answer_extracted
+                )
             self._save_to_memory(
                 query,
                 final_response,
@@ -1255,6 +1296,18 @@ class BaseStreamingGenerator:
                 f"[{request_id}] ✅ 统一事件流完成，响应长度：{len(final_response)} 字符"
             )
         finally:
+            if self._governance_metrics:
+                snapshot = latency.stages_ms()
+                self._governance_metrics.record(
+                    RequestObservation(
+                        route=getattr(decision, "route", "unknown"),
+                        request_total_ms=snapshot.get("request_total_ms", 0.0),
+                        agent_mode=self._execution_policy.mode,
+                        execution_path=execution_path,
+                        fallback_used=fallback_used,
+                        output_schema_parse_success=output_schema_parse_success,
+                    )
+                )
             if not response_saved and response_chunks:
                 self._save_to_memory(
                     query,
@@ -1281,10 +1334,30 @@ class StreamingService(BaseStreamingGenerator):
         fallback_used = False
 
         try:
-            agent_input = self._prepare_input(query)
-            response = self._agent_executor.invoke(agent_input)
-            output = response.get("output", "")
-            intermediate_steps = response.get("intermediate_steps", [])
+            decision = None
+            if self._request_router and hasattr(self._request_router, "route"):
+                decision = self._request_router.route(query)
+
+            execution_path = self._execution_policy.choose_path(
+                getattr(decision, "route", None)
+            )
+            if decision and execution_path in ("direct", "planned"):
+                result = asyncio.run(
+                    self._run_orchestrated_path(
+                        query,
+                        decision,
+                        use_long_term_memory=True,
+                        latency=LatencyTracker(),
+                    )
+                )
+                output = result.get("answer", "")
+                intermediate_steps = []
+            else:
+                agent_input = self._prepare_input(query)
+                agent_executor = self._ensure_agent_executor()
+                response = agent_executor.invoke(agent_input)
+                output = response.get("output", "")
+                intermediate_steps = response.get("intermediate_steps", [])
 
             if self._fallback_service and self._fallback_service.should_use_fallback(
                 output

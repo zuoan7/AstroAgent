@@ -324,11 +324,37 @@ class MemoryConfig(BaseSettings):
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
 
+class AgentGovernanceConfig(BaseSettings):
+    AGENT_MODE: str = Field(
+        "hybrid",
+        description="Agent 执行模式：react|hybrid|planned",
+    )
+    ENABLE_STRUCTURED_SKILL_RESULT: bool = Field(
+        False,
+        description="是否启用结构化 SkillResult 契约",
+    )
+    ENABLE_PLANNER: bool = Field(
+        False,
+        description="是否启用 Planner 主链路",
+    )
+    ENABLE_REACT_FALLBACK: bool = Field(
+        True,
+        description="当主链路不可用时是否允许回退到 ReAct",
+    )
+    PHASE0_BENCHMARK_PATH: str = Field(
+        "config/benchmarks/agent_phase0_benchmark.json",
+        description="阶段0基准数据集路径（相对于项目根目录）",
+    )
+
+    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
+
+
 _SUB_CONFIG_FIELDS = {
     "api": APIConfig,
     "astronomy": AstronomyConfig,
     "model": ModelConfig,
     "memory": MemoryConfig,
+    "agent_governance": AgentGovernanceConfig,
 }
 
 _DELEGATION_MAP: Dict[str, str] = {}
@@ -342,6 +368,9 @@ class Settings(BaseSettings):
     astronomy: AstronomyConfig = Field(default_factory=AstronomyConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    agent_governance: AgentGovernanceConfig = Field(
+        default_factory=AgentGovernanceConfig
+    )
 
     model_config = {
         "env_file": ".env",

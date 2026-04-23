@@ -39,18 +39,23 @@ class _MemoryStub:
 
 
 @pytest.mark.parametrize(
-    ("query", "expected_route"),
+    ("query", "expected_route", "expected_task_type"),
     [
-        ("你好", "smalltalk"),
-        ("北京天气怎么样", "tool_task"),
-        ("赤经是什么", "simple_qa"),
-        ("请比较双筒和赤道仪观测方案并给出步骤", "complex_agent"),
+        ("你好", "direct_task", "smalltalk"),
+        ("北京天气怎么样", "direct_task", "single_tool_lookup"),
+        ("赤经是什么", "direct_task", "simple_qa"),
+        (
+            "请比较双筒和赤道仪观测方案并给出步骤",
+            "planned_task",
+            "observation_recommendation",
+        ),
     ],
 )
-def test_request_router_routes_expected_queries(query, expected_route):
+def test_request_router_routes_expected_queries(query, expected_route, expected_task_type):
     router = RequestRouter()
     decision = router.route(query)
     assert decision.route == expected_route
+    assert decision.task_type == expected_task_type
 
 
 def test_mcp_parallel_calls_are_truly_concurrent(monkeypatch):
@@ -91,7 +96,8 @@ async def test_streaming_service_smalltalk_uses_direct_route():
     )
 
     async def fake_run(decision, query, **kwargs):
-        assert decision.route == "smalltalk"
+        assert decision.route == "direct_task"
+        assert decision.task_type == "smalltalk"
         return {
             "answer": "你好，我可以帮你查询天象、观测条件、天体位置和天文知识。",
             "tools_used": [],
