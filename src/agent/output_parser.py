@@ -96,6 +96,8 @@ class LenientReActSingleInputOutputParser(ReActSingleInputOutputParser):
         if len(lines) > 1 and cls._is_meta_thought(lines[0]):
             candidate = "\n".join(lines[1:]).strip()
 
+        if candidate and cls._is_meta_thought(candidate):
+            return None
         if not candidate or cls._looks_like_tool_intent(candidate):
             return None
 
@@ -119,3 +121,16 @@ class LenientReActSingleInputOutputParser(ReActSingleInputOutputParser):
         if len(text) <= 80 and cls._INTENT_ONLY_RE.search(first_line):
             return True
         return False
+
+
+def extract_final_answer_text(text: str) -> str | None:
+    """Extract a user-facing final answer from raw ReAct output."""
+    if not text:
+        return None
+
+    final_match = re.search(r"Final Answer\s*:\s*(.*)", text, re.IGNORECASE | re.DOTALL)
+    if final_match:
+        answer = final_match.group(1).strip()
+        return answer or None
+
+    return LenientReActSingleInputOutputParser._extract_unlabeled_final_answer(text)

@@ -90,7 +90,7 @@ def apply_event_processors(
 class PlainTextStreamAdapter:
     def adapt(self, event: StreamEvent) -> Optional[str]:
         event.validate()
-        if event.type in {"raw_text_delta", "warning", "error"}:
+        if event.type in {"final_answer_delta", "warning", "error"}:
             return "" if event.content is None else str(event.content)
         return None
 

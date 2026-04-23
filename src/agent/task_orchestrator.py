@@ -2,19 +2,43 @@ from __future__ import annotations
 
 import asyncio
 import re
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from src.agent.executor import EventCallback, StepExecutor
+from src.agent.planner import Planner
+from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.param_parser import ParamParser
+from src.agent.policies.budget_policy import RequestBudgetTracker
+from src.agent.policies.fallback_policy import FallbackPolicy
 from src.agent.request_router import RouteDecision
+from src.agent.models.skill_result import SkillResult
+from src.agent.models.final_response import FinalResponse
+from src.agent.response_synthesizer import ResponseSynthesizer
+from src.core.config import settings
+from src.skills import registry
 
 
 class TaskOrchestrator:
-    """Direct execution path for low-latency online requests."""
+    """Direct and planned execution paths for low-latency online requests."""
 
-    def __init__(self, skill_manager: Any, rag_retriever: Any, llm: Any) -> None:
+    def __init__(
+        self,
+        skill_manager: Any,
+        rag_retriever: Any,
+        llm: Any,
+        response_synthesizer: Optional[ResponseSynthesizer] = None,
+        planner: Optional[Planner] = None,
+        executor: Optional[StepExecutor] = None,
+        fallback_policy: Optional[FallbackPolicy] = None,
+    ) -> None:
         self._skill_manager = skill_manager
         self._rag = rag_retriever
         self._llm = llm
+        self._synthesizer = response_synthesizer or ResponseSynthesizer(llm=llm)
+        self._planner = planner or Planner(llm=llm)
+        self._executor = executor or StepExecutor(skill_manager=skill_manager)
+        self._fallback_policy = fallback_policy or FallbackPolicy()
 
     async def run(
         self,
@@ -23,7 +47,11 @@ class TaskOrchestrator:
         *,
         chat_history: str,
         user_profile: str,
-    ) -> Dict[str, Any]:
+        execution_plan: Optional[ExecutionPlan] = None,
+        event_callback: Optional[EventCallback] = None,
+    ) -> FinalResponse:
+        budget_tracker = RequestBudgetTracker()
+        self._synthesizer._budget_tracker = budget_tracker
         if decision.route == "direct_task":
             return await self._run_direct_task(
                 decision,
@@ -38,6 +66,9 @@ class TaskOrchestrator:
                 query,
                 chat_history=chat_history,
                 user_profile=user_profile,
+                execution_plan=execution_plan,
+                event_callback=event_callback,
+                budget_tracker=budget_tracker,
             )
 
         raise ValueError(f"unsupported orchestrated route: {decision.route}")
@@ -49,16 +80,11 @@ class TaskOrchestrator:
         *,
         chat_history: str,
         user_profile: str,
-    ) -> Dict[str, Any]:
+    ) -> FinalResponse:
         if decision.task_type == "smalltalk":
-            return {
-                "answer": self._smalltalk_reply(query),
-                "route": decision.route,
-                "task_type": decision.task_type,
-                "sources": [],
-                "tools_used": [],
-                "memory_hits": [],
-            }
+            return self._synthesizer.synthesize_smalltalk(
+                self._smalltalk_reply(query)
+            )
 
         if decision.task_type == "single_tool_lookup":
             return await self._run_tool_task(decision, query)
@@ -77,63 +103,74 @@ class TaskOrchestrator:
         *,
         chat_history: str,
         user_profile: str,
-    ) -> Dict[str, Any]:
-        skills = decision.matched_skills or self._skills_for_task_type(decision.task_type)
-        if not skills:
-            raise ValueError(f"no planned-task skills resolved for {decision.task_type}")
-
-        tool_timeline: List[Dict[str, Any]] = []
-        sources: List[Dict[str, Any]] = []
-        collected_outputs: List[str] = []
-
-        for skill_name in skills:
-            params = self._build_skill_params(skill_name, query)
-            result = await asyncio.to_thread(
-                self._skill_manager.call_skill,
-                skill_name,
-                **params,
-            )
-            result_text = str(result)
-            collected_outputs.append(f"[{skill_name}]\n{result_text}")
-            tool_timeline.append(
-                {
-                    "run_id": skill_name,
-                    "tool": skill_name,
-                    "input": params,
-                    "output_summary": result_text[:240],
-                    "status": "success",
-                }
-            )
-            sources.append(
-                {
-                    "source_id": skill_name,
-                    "kind": "tool_output",
-                    "title": skill_name,
-                    "snippet": result_text[:240],
-                    "tool": skill_name,
-                }
-            )
-
-        answer = await asyncio.to_thread(
-            self._invoke_planned_synthesis,
+        execution_plan: Optional[ExecutionPlan] = None,
+        event_callback: Optional[EventCallback] = None,
+        budget_tracker: Optional[RequestBudgetTracker] = None,
+    ) -> FinalResponse:
+        plan = execution_plan or self.build_execution_plan(
             decision,
             query,
-            collected_outputs,
-            chat_history,
-            user_profile,
+            chat_history=chat_history,
+            user_profile=user_profile,
         )
-        return {
-            "answer": answer,
-            "route": decision.route,
-            "task_type": decision.task_type,
-            "sources": sources,
-            "tools_used": tool_timeline,
-            "plan": {
-                "task_type": decision.task_type,
-                "expected_output_schema": decision.expected_output_schema,
-                "skills": skills,
+        if not plan.steps:
+            raise ValueError(f"no planned-task steps resolved for {decision.task_type}")
+
+        outcome = await self._executor.execute(
+            plan,
+            query=query,
+            param_builder=self._build_skill_params,
+            event_callback=event_callback,
+            budget_tracker=budget_tracker,
+        )
+        fallback_decision = self._fallback_policy.decide_for_execution(
+            outcome=outcome,
+            plan=plan,
+        )
+
+        return self._synthesizer.synthesize(
+            query=query,
+            task_type=decision.task_type,
+            output_schema=decision.expected_output_schema,
+            skill_results=outcome.skill_results,
+            chat_history=chat_history,
+            user_profile=user_profile,
+            route=decision.route,
+            execution_plan=plan.to_dict(),
+            execution_trace=[step.to_dict() for step in outcome.step_results],
+            route_decision=decision.to_meta(),
+            fallback_path=[fallback_decision.to_dict()] if fallback_decision else [],
+            budget_usage=budget_tracker.snapshot() if budget_tracker else None,
+            versions={
+                "router_policy_version": str(
+                    getattr(settings, "ROUTER_POLICY_VERSION", "router_v1")
+                ),
+                "planner_version": str(getattr(settings, "PLANNER_VERSION", "planner_v2")),
+                "schema_version": str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
+                "synth_prompt_version": str(
+                    getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v2")
+                ),
+                "fallback_policy_version": self._fallback_policy.version,
+                "budget_policy_version": (
+                    budget_tracker.budget.policy_version if budget_tracker else "budget_v1"
+                ),
             },
-        }
+        )
+
+    def build_execution_plan(
+        self,
+        decision: RouteDecision,
+        query: str,
+        *,
+        chat_history: str,
+        user_profile: str,
+    ) -> ExecutionPlan:
+        return self._planner.plan(
+            query=query,
+            route_decision=decision,
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
 
     async def _run_simple_qa(
         self,
@@ -141,7 +178,7 @@ class TaskOrchestrator:
         *,
         chat_history: str,
         user_profile: str,
-    ) -> Dict[str, Any]:
+    ) -> FinalResponse:
         retrieval = self._rag.retrieve(query, fast_mode=True)
         context = retrieval.get("context", "")
         prompt = (
@@ -153,67 +190,35 @@ class TaskOrchestrator:
             f"问题：{query}\n\n回答："
         )
         answer = await asyncio.to_thread(self._invoke_llm, prompt)
-        return {
-            "answer": answer,
-            "route": "direct_task",
-            "task_type": "simple_qa",
-            "sources": [
-                {
-                    "source_id": "rag_fast_path",
-                    "kind": "rag_context",
-                    "title": "RAG Fast Path",
-                    "snippet": context[:240],
-                }
-            ]
-            if context
-            else [],
-            "tools_used": [
-                {
-                    "run_id": "rag_fast_path",
-                    "tool": "RAGRetrieve",
-                    "input": query,
-                    "output_summary": context[:240],
-                    "status": "success" if context else "empty",
-                }
-            ],
-            "retrieval": retrieval,
-        }
 
-    async def _run_tool_task(self, decision: RouteDecision, query: str) -> Dict[str, Any]:
+        response = self._synthesizer.synthesize_qa(
+            query=query,
+            answer=answer,
+            rag_context=context,
+            retrieval=retrieval,
+        )
+        return response
+
+    async def _run_tool_task(self, decision: RouteDecision, query: str) -> FinalResponse:
         skill_name = decision.matched_skills[0]
         params = self._build_skill_params(skill_name, query)
-        result = await asyncio.to_thread(
+        result: SkillResult = await asyncio.to_thread(
             self._skill_manager.call_skill,
             skill_name,
             **params,
         )
-        return {
-            "answer": result,
-            "route": "direct_task",
-            "task_type": decision.task_type,
-            "sources": [
-                {
-                    "source_id": skill_name,
-                    "kind": "tool_output",
-                    "title": skill_name,
-                    "snippet": str(result)[:240],
-                    "tool": skill_name,
-                }
-            ],
-            "tools_used": [
-                {
-                    "run_id": skill_name,
-                    "tool": skill_name,
-                    "input": params,
-                    "output_summary": str(result)[:240],
-                    "status": "success",
-                }
-            ],
-            "matched_skill": skill_name,
-            "params": params,
-        }
+
+        response = self._synthesizer.synthesize_direct(
+            query=query,
+            task_type=decision.task_type,
+            skill_results=[result],
+        )
+        return response
 
     def _invoke_llm(self, prompt: str) -> str:
+        if getattr(self._synthesizer, "_budget_tracker", None):
+            self._synthesizer._budget_tracker.register_context_chars(len(prompt))
+            self._synthesizer._budget_tracker.register_llm_call()
         result = self._llm.invoke(prompt)
         return getattr(result, "content", None) or str(result)
 
@@ -227,43 +232,93 @@ class TaskOrchestrator:
 
     def _build_skill_params(self, skill_name: str, query: str) -> Dict[str, Any]:
         parsed = ParamParser.parse(query)
-        if isinstance(parsed, dict) and parsed:
-            return parsed
+        if self._is_structured_skill_payload(parsed, query):
+            return self._finalize_skill_params(skill_name, parsed)
 
         if skill_name == "weather-lookup":
-            return {"city": query.strip()}
+            return self._finalize_skill_params(skill_name, {"city": query.strip()})
         if skill_name == "observation-planner":
-            return {
-                "location": self._extract_location(query) or query.strip(),
-                "date": self._extract_date(query),
-            }
+            return self._finalize_skill_params(
+                skill_name,
+                {
+                    "location": self._extract_location(query) or query.strip(),
+                    "date": self._extract_date(query),
+                },
+            )
         if skill_name == "deep-sky-observing-guide":
-            return {
-                "target": self._extract_target(query) or query.strip(),
-                "observer_location": self._extract_location(query),
-                "date": self._extract_date(query),
-                "equipment": self._extract_equipment(query),
-            }
+            return self._finalize_skill_params(
+                skill_name,
+                {
+                    "target": self._extract_target(query) or query.strip(),
+                    "observer_location": self._extract_location(query),
+                    "date": self._extract_date(query),
+                    "equipment": self._extract_equipment(query),
+                },
+            )
         if skill_name == "celestial-events-forecast":
-            return {
-                "event_type": self._extract_event_type(query),
-                "start_date": self._extract_date(query),
-                "end_date": None,
-            }
+            start_date, end_date = self._extract_event_range(query)
+            return self._finalize_skill_params(
+                skill_name,
+                {
+                    "event_type": self._extract_event_type(query),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            )
         if skill_name == "astrophotography-calculator":
-            return {
-                "target": self._extract_target(query) or query.strip(),
-                "camera": self._extract_camera(query) or "未指定相机",
-                "location": self._extract_location(query),
-                "date": self._extract_date(query),
-            }
+            return self._finalize_skill_params(
+                skill_name,
+                {
+                    "target": self._extract_target(query) or query.strip(),
+                    "camera": self._extract_camera(query) or "未指定相机",
+                    "location": self._extract_location(query),
+                    "date": self._extract_date(query),
+                },
+            )
         if skill_name == "celestial-position-calculator":
-            return {
-                "target": self._extract_target(query) or query.strip(),
-                "location": self._extract_location(query),
-                "datetime": self._extract_datetime(query),
-            }
-        return {"query": query.strip()}
+            return self._finalize_skill_params(
+                skill_name,
+                {
+                    "target": self._extract_target(query) or query.strip(),
+                    "location": self._extract_location(query),
+                    "datetime": self._extract_datetime(query),
+                },
+            )
+
+        spec = registry.get_skill_spec(skill_name)
+        fallback = (
+            {spec.param_names[0]: query.strip()}
+            if len(spec.param_names) == 1
+            else {}
+        )
+        return self._finalize_skill_params(skill_name, fallback)
+
+    def _is_structured_skill_payload(
+        self,
+        parsed: Dict[str, Any],
+        query: str,
+    ) -> bool:
+        if not isinstance(parsed, dict) or not parsed:
+            return False
+        if set(parsed.keys()) != {"query"}:
+            return True
+        return str(parsed.get("query", "")).strip() != query.strip()
+
+    def _finalize_skill_params(
+        self,
+        skill_name: str,
+        params: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        spec = registry.get_skill_spec(skill_name)
+        normalized = dict(spec.defaults or {})
+        candidate = dict(params or {})
+        if spec.special_handling:
+            candidate = spec.special_handling(candidate)
+        for name in spec.param_names:
+            value = candidate.get(name)
+            if value is not None:
+                normalized[name] = value
+        return normalized
 
     def _skills_for_task_type(self, task_type: str) -> List[str]:
         mapping = {
@@ -279,31 +334,6 @@ class TaskOrchestrator:
             ],
         }
         return list(mapping.get(task_type, []))
-
-    def _invoke_planned_synthesis(
-        self,
-        decision: RouteDecision,
-        query: str,
-        collected_outputs: List[str],
-        chat_history: str,
-        user_profile: str,
-    ) -> str:
-        prompt = (
-            "你是天文助手。请基于已经执行完成的计划步骤，为用户输出最终答案。\n"
-            "要求：\n"
-            "1. 先直接回答，再给出关键建议。\n"
-            "2. 明确说明哪些建议来自天气、天象、目标观测或摄影参数。\n"
-            "3. 不要虚构未提供的数据。\n\n"
-            f"任务类型：{decision.task_type}\n"
-            f"输出Schema：{decision.expected_output_schema}\n"
-            f"用户画像：\n{user_profile[:400]}\n\n"
-            f"最近对话：\n{chat_history[:600]}\n\n"
-            f"用户问题：{query}\n\n"
-            "已完成步骤结果：\n"
-            f"{chr(10).join(collected_outputs)[:5000]}\n\n"
-            "请给出整合后的中文回答："
-        )
-        return self._invoke_llm(prompt)
 
     def _extract_location(self, query: str) -> Optional[str]:
         for city in ("北京", "上海", "广州", "深圳", "苏州", "杭州", "成都", "南京", "武汉"):
@@ -325,6 +355,35 @@ class TaskOrchestrator:
             if token in query:
                 return token
         return None
+
+    def _extract_event_range(self, query: str) -> tuple[Optional[str], Optional[str]]:
+        month_match = re.search(r"(\d{4})年(\d{1,2})月", query)
+        if month_match:
+            year = int(month_match.group(1))
+            month = int(month_match.group(2))
+            start = datetime(year, month, 1)
+            if month == 12:
+                end = datetime(year + 1, 1, 1) - timedelta(days=1)
+            else:
+                end = datetime(year, month + 1, 1) - timedelta(days=1)
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+        if "本月" in query:
+            today = datetime.now()
+            start = today.replace(day=1)
+            if start.month == 12:
+                end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+        if any(token in query for token in ("未来一周", "未来7天", "本周天象", "这周天象", "一周天象")):
+            start = datetime.now()
+            end = start + timedelta(days=7)
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+        date_value = self._extract_date(query)
+        return date_value, None
 
     def _extract_datetime(self, query: str) -> Optional[str]:
         match = re.search(r"\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?", query)

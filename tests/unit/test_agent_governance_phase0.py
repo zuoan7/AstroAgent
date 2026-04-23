@@ -15,6 +15,7 @@ from src.agent.governance import (
     evaluate_router_benchmark,
     load_phase0_benchmark_cases,
 )
+from src.agent.models.final_response import FinalResponse
 from src.agent.request_router import RequestRouter
 from src.agent.streaming_service import StreamingService
 
@@ -116,11 +117,15 @@ async def test_streaming_service_records_governance_metrics():
     async def fake_run(decision, query, **kwargs):
         assert decision.route == "direct_task"
         assert decision.task_type == "smalltalk"
-        return {
-            "answer": "你好，我可以帮你查询天象。",
-            "tools_used": [],
-            "sources": [],
-        }
+        return FinalResponse(
+            answer="你好，我可以帮你查询天象。",
+            summary="你好，我可以帮你查询天象。",
+            tools_used=[],
+            sources=[],
+            confidence=0.98,
+            route="direct_task",
+            task_type="smalltalk",
+        )
 
     service._task_orchestrator.run = fake_run
 
@@ -154,11 +159,15 @@ async def test_streaming_service_runs_planned_task_without_react():
 
     async def fake_run(decision, query, **kwargs):
         assert decision.route == "planned_task"
-        return {
-            "answer": "已根据天气和天象生成今晚观测建议。",
-            "tools_used": [{"tool": "weather-lookup", "status": "success"}],
-            "sources": [{"source_id": "weather-lookup", "kind": "tool_output"}],
-        }
+        return FinalResponse(
+            answer="已根据天气和天象生成今晚观测建议。",
+            summary="已根据天气和天象生成今晚观测建议。",
+            tools_used=[{"tool": "weather-lookup", "status": "success"}],
+            sources=[{"source_id": "weather-lookup", "kind": "tool_output"}],
+            confidence=0.82,
+            route="planned_task",
+            task_type="observation_recommendation",
+        )
 
     service._task_orchestrator.run = fake_run
 
@@ -219,3 +228,90 @@ async def test_streaming_service_only_builds_react_on_fallback():
     final_answer = next(event for event in events if event["type"] == "final_answer")
     assert final_answer["final_answer"] == "fallback ok"
     assert created["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_response_stream_emits_clean_final_answer_for_react():
+    class _FallbackRouter:
+        def route(self, query):
+            return SimpleNamespace(
+                route="fallback_react",
+                task_type="open_domain_reasoning",
+                matched_skills=[],
+                expected_output_schema="react_answer_v1",
+                to_meta=lambda: {
+                    "route": "fallback_react",
+                    "task_type": "open_domain_reasoning",
+                    "matched_skills": [],
+                    "expected_output_schema": "react_answer_v1",
+                },
+            )
+
+    class _AgentExecutorStub:
+        async def astream_events(self, agent_input, version="v1"):
+            yield {
+                "event": "on_llm_stream",
+                "data": {"chunk": SimpleNamespace(content="Thought: 我现在知道最终答案了\n")},
+                "run_id": "react-1",
+            }
+            yield {
+                "event": "on_llm_stream",
+                "data": {"chunk": SimpleNamespace(content="Final Answer: 这是清洗后的最终答案")},
+                "run_id": "react-1",
+            }
+
+    service = StreamingService(
+        agent_executor=_AgentExecutorStub(),
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=_FallbackRouter(),
+        task_orchestrator=SimpleNamespace(),
+        execution_policy=AgentExecutionPolicy(mode="hybrid", enable_react_fallback=True),
+    )
+
+    chunks = []
+    async for chunk in service.generate_response_stream("开放式问题"):
+        chunks.append(chunk)
+
+    assert "".join(chunks) == "这是清洗后的最终答案"
+
+
+@pytest.mark.asyncio
+async def test_generate_response_stream_recovers_unlabeled_final_answer():
+    class _FallbackRouter:
+        def route(self, query):
+            return SimpleNamespace(
+                route="fallback_react",
+                task_type="open_domain_reasoning",
+                matched_skills=[],
+                expected_output_schema="react_answer_v1",
+                to_meta=lambda: {
+                    "route": "fallback_react",
+                    "task_type": "open_domain_reasoning",
+                    "matched_skills": [],
+                    "expected_output_schema": "react_answer_v1",
+                },
+            )
+
+    class _AgentExecutorStub:
+        async def astream_events(self, agent_input, version="v1"):
+            yield {
+                "event": "on_llm_stream",
+                "data": {"chunk": SimpleNamespace(content="Thought: 我现在知道最终答案了\n今晚适合先看木星，再看月球。")},
+                "run_id": "react-2",
+            }
+
+    service = StreamingService(
+        agent_executor=_AgentExecutorStub(),
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=_FallbackRouter(),
+        task_orchestrator=SimpleNamespace(),
+        execution_policy=AgentExecutionPolicy(mode="hybrid", enable_react_fallback=True),
+    )
+
+    chunks = []
+    async for chunk in service.generate_response_stream("开放式问题"):
+        chunks.append(chunk)
+
+    assert "".join(chunks) == "今晚适合先看木星，再看月球。"

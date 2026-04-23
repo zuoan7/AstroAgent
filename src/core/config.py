@@ -195,6 +195,13 @@ class ModelConfig(BaseSettings):
     DASHSCOPE_API_KEY: Optional[str] = Field(None, description="千问模型 API Key")
     DEFAULT_LLM_PROVIDER: str = Field("dashscope", description="默认主模型提供商")
     MODEL_NAME: str = Field("qwen-max", description="主模型名称")
+    SMALL_MODEL_PROVIDER: str = Field(
+        "dashscope", description="轻量模型提供商，用于路由/轻量总结等场景"
+    )
+    SMALL_MODEL_NAME: str = Field("qwen-plus", description="轻量模型名称")
+    SYNTHESIS_MODEL_TIER: str = Field(
+        "main", description="答案合成器使用的模型层级：main|small"
+    )
     OPENAI_COMPATIBLE_BASE_URL: str = Field(
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
         description="DashScope OpenAI兼容接口基础地址",
@@ -345,6 +352,33 @@ class AgentGovernanceConfig(BaseSettings):
         "config/benchmarks/agent_phase0_benchmark.json",
         description="阶段0基准数据集路径（相对于项目根目录）",
     )
+    AGENT_MAX_LLM_CALLS: int = Field(4, description="单请求允许的最大 LLM 调用次数")
+    AGENT_MAX_TOOL_CALLS: int = Field(6, description="单请求允许的最大工具调用次数")
+    AGENT_MAX_TOTAL_TIME_MS: int = Field(
+        60000, description="单请求最大执行时间（毫秒）"
+    )
+    AGENT_MAX_PARALLELISM: int = Field(2, description="单请求最大并行度")
+    AGENT_MAX_CONTEXT_CHARS: int = Field(
+        6000, description="单请求注入到模型的最大上下文字符数"
+    )
+    AGENT_AUDIT_ENABLED: bool = Field(True, description="是否开启请求审计日志")
+    AGENT_AUDIT_LOG_PATH: str = Field(
+        "logs/agent_audit/requests.jsonl",
+        description="请求审计日志路径（相对于项目根目录）",
+    )
+    ROUTER_POLICY_VERSION: str = Field("router_v1", description="路由策略版本")
+    PLANNER_VERSION: str = Field("planner_v2", description="Planner 版本")
+    SCHEMA_VERSION: str = Field("schema_v2", description="输出契约版本")
+    SYNTH_PROMPT_VERSION: str = Field(
+        "synth_prompt_v2", description="答案合成 Prompt 版本"
+    )
+    FALLBACK_POLICY_VERSION: str = Field(
+        "fallback_v2", description="Fallback 策略版本"
+    )
+    BUDGET_POLICY_VERSION: str = Field(
+        "budget_v1", description="预算策略版本"
+    )
+    MODEL_POLICY_VERSION: str = Field("model_policy_v1", description="模型策略版本")
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 

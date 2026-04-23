@@ -12,6 +12,10 @@ from src.agent.governance import (
     GovernanceMetricsRegistry,
     RequestObservation,
 )
+from src.agent.models.execution_plan import ExecutionPlan
+from src.agent.models.final_response import FinalResponse
+from src.agent.output_parser import extract_final_answer_text
+from src.agent.policies.budget_policy import BudgetExceededError
 from src.agent.latency import LatencyTracker
 from src.agent.streaming_events import (
     FrontendJsonEventAdapter,
@@ -52,6 +56,7 @@ class BaseStreamingGenerator:
         event_processors: Optional[list[StreamEventProcessor]] = None,
         execution_policy: Optional[AgentExecutionPolicy] = None,
         governance_metrics: Optional[GovernanceMetricsRegistry] = None,
+        audit_logger: Optional[Any] = None,
         agent_executor_factory: Optional[Any] = None,
     ):
         self._agent_executor = agent_executor
@@ -71,6 +76,7 @@ class BaseStreamingGenerator:
         self._event_processors = list(event_processors or [])
         self._execution_policy = execution_policy or AgentExecutionPolicy.from_settings()
         self._governance_metrics = governance_metrics
+        self._audit_logger = audit_logger
         self._agent_executor_factory = agent_executor_factory
 
     def _cleanup_action_history(self, request_id: Optional[str] = None):
@@ -613,24 +619,18 @@ class BaseStreamingGenerator:
             ):
                 result["is_thinking"] = True
                 result["thinking_text"] = text
-            elif re.search(r"Final Answer:\s*", combined_thinking, re.IGNORECASE):
+            elif extract_final_answer_text(combined_thinking):
                 result["final_answer_started"] = True
                 if not thinking_logged and combined_thinking:
                     result["thinking_logged"] = True
                     logger.info(f"[{request_id}] 🔍 Thinking: {combined_thinking}")
-                match = re.search(
-                    r"Final Answer:\s*(.*)",
-                    combined_thinking,
-                    re.IGNORECASE | re.DOTALL,
-                )
-                if match and not final_answer_extracted:
+                final_answer_text = extract_final_answer_text(combined_thinking)
+                if final_answer_text and not final_answer_extracted:
                     result["final_answer_extracted"] = True
-                    final_answer_text = match.group(1).strip()
-                    if final_answer_text:
-                        result["final_answer_text"] = final_answer_text
-                        logger.info(
-                            f"[{request_id}] Final Answer: {final_answer_text[:100]}..."
-                        )
+                    result["final_answer_text"] = final_answer_text
+                    logger.info(
+                        f"[{request_id}] Final Answer: {final_answer_text[:100]}..."
+                    )
                 result["thinking_buffer"] = []
                 result["should_continue"] = False
                 return result
@@ -732,7 +732,9 @@ class BaseStreamingGenerator:
         *,
         use_long_term_memory: bool,
         latency: LatencyTracker,
-    ) -> Dict[str, Any]:
+        execution_plan: Optional[ExecutionPlan] = None,
+        event_callback: Optional[Any] = None,
+    ) -> FinalResponse:
         if not self._task_orchestrator:
             raise ValueError("task orchestrator is not configured")
         with latency.measure("agent_prepare_ms"):
@@ -749,6 +751,8 @@ class BaseStreamingGenerator:
                 query,
                 chat_history=chat_history,
                 user_profile=user_profile,
+                execution_plan=execution_plan,
+                event_callback=event_callback,
             )
         return result
 
@@ -799,6 +803,8 @@ class BaseStreamingGenerator:
         evidence_items: List[Dict[str, Any]] = []
         reasoning_fragments: List[str] = []
         runtime_metrics_before = self._snapshot_runtime_metrics()
+        actual_plan: Optional[ExecutionPlan] = None
+        final_resp_obj: Optional[FinalResponse] = None
 
         def next_event(
             event_type: str,
@@ -907,40 +913,152 @@ class BaseStreamingGenerator:
                     ):
                         yield processed
 
-            plan_steps = self._update_plan_status(plan_steps, "tools", "running")
-            async for processed in emit(
-                next_event("plan_update", content={"steps": plan_steps})
+            if (
+                execution_path == "planned"
+                and decision
+                and self._task_orchestrator
+                and hasattr(self._task_orchestrator, "build_execution_plan")
             ):
-                yield processed
-            async for processed in emit(
-                next_event(
-                    "step_start",
-                    content={"step_id": "tools", "title": "调用工具"},
+                chat_history = self._format_chat_history()
+                user_profile = (
+                    self._format_user_profile()
+                    if use_long_term_memory
+                    else "本轮对话已禁用长期记忆"
                 )
-            ):
-                yield processed
+                actual_plan = self._task_orchestrator.build_execution_plan(
+                    decision,
+                    query,
+                    chat_history=chat_history,
+                    user_profile=user_profile,
+                )
+                actual_plan_steps = [
+                    {
+                        "id": "understand",
+                        "title": "解析任务",
+                        "description": f"理解用户问题并构建执行路径: {self._preview_text(query, 80)}",
+                        "status": "done",
+                    }
+                ]
+                if use_long_term_memory:
+                    actual_plan_steps.append(
+                        {
+                            "id": "memory",
+                            "title": "读取记忆",
+                            "description": "检索与当前问题相关的长期记忆与用户偏好",
+                            "status": "done",
+                        }
+                    )
+                actual_plan_steps.extend(actual_plan.to_frontend_steps())
+                actual_plan_steps.append(
+                    {
+                        "id": "answer",
+                        "title": "生成答案",
+                        "description": "汇总执行结果并生成最终回答",
+                        "status": "pending",
+                    }
+                )
+                plan_steps = actual_plan_steps
+                async for processed in emit(
+                    next_event("plan_update", content={"steps": plan_steps})
+                ):
+                    yield processed
+
+            if execution_path != "planned":
+                plan_steps = self._update_plan_status(plan_steps, "tools", "running")
+                async for processed in emit(
+                    next_event("plan_update", content={"steps": plan_steps})
+                ):
+                    yield processed
+                async for processed in emit(
+                    next_event(
+                        "step_start",
+                        content={"step_id": "tools", "title": "调用工具"},
+                    )
+                ):
+                    yield processed
 
             if execution_path in ("direct", "planned") and decision:
-                direct_result = await self._run_orchestrated_path(
+                final_resp: FinalResponse = await self._run_orchestrated_path(
                     query,
                     decision,
                     use_long_term_memory=use_long_term_memory,
                     latency=latency,
+                    execution_plan=actual_plan,
+                    event_callback=None,
                 )
+                final_resp_obj = final_resp
                 output_schema_parse_success = True
-                direct_answer = direct_result.get("answer", "")
+                direct_answer = final_resp.answer
                 response_chunks.append(direct_answer)
-                for tool_run in direct_result.get("tools_used", []):
-                    tool_timeline.append(tool_run)
-                for source in direct_result.get("sources", []):
-                    evidence_items.append(source)
-                    async for processed in emit(
-                        next_event("evidence_found", content=source)
-                    ):
-                        yield processed
-                if direct_result.get("retrieval", {}).get("stages_ms"):
-                    for key, value in direct_result["retrieval"]["stages_ms"].items():
-                        latency.record_ms(key, value)
+                if execution_path == "planned":
+                    for trace in final_resp.execution_trace:
+                        step_id = trace.get("step_id")
+                        step_title = trace.get("title") or step_id
+                        plan_steps = self._update_plan_status(plan_steps, step_id, "running")
+                        async for processed in emit(
+                            next_event("plan_update", content={"steps": plan_steps})
+                        ):
+                            yield processed
+                        async for processed in emit(
+                            next_event(
+                                "step_start",
+                                content={"step_id": step_id, "title": step_title},
+                            )
+                        ):
+                            yield processed
+
+                        tool_timeline.append(
+                            {
+                                "run_id": step_id,
+                                "tool": trace.get("skill"),
+                                "input": trace.get("input_params", {}),
+                                "output_summary": self._preview_text(
+                                    trace.get("summary", ""), 240
+                                ),
+                                "latency_ms": trace.get("latency_ms"),
+                                "status": trace.get("status"),
+                            }
+                        )
+                        for source in trace.get("sources", []):
+                            if source not in evidence_items:
+                                evidence_items.append(source)
+                                async for processed in emit(
+                                    next_event("evidence_found", content=source)
+                                ):
+                                    yield processed
+
+                        mapped_status = (
+                            "done" if trace.get("status") == "success" else "error"
+                        )
+                        plan_steps = self._update_plan_status(
+                            plan_steps, step_id, mapped_status
+                        )
+                        async for processed in emit(
+                            next_event(
+                                "step_end",
+                                content={
+                                    "step_id": step_id,
+                                    "title": step_title,
+                                    "status": trace.get("status"),
+                                    "latency_ms": trace.get("latency_ms"),
+                                    "error": trace.get("error"),
+                                },
+                            )
+                        ):
+                            yield processed
+                        async for processed in emit(
+                            next_event("plan_update", content={"steps": plan_steps})
+                        ):
+                            yield processed
+                else:
+                    tool_timeline.extend(final_resp.tools_used)
+                for source in final_resp.sources:
+                    if source not in evidence_items:
+                        evidence_items.append(source)
+                        async for processed in emit(
+                            next_event("evidence_found", content=source)
+                        ):
+                            yield processed
                 async for processed in emit(
                     next_event("final_answer_delta", content=direct_answer)
                 ):
@@ -1170,6 +1288,26 @@ class BaseStreamingGenerator:
                     (time.perf_counter() - agent_started) * 1000.0,
                 )
 
+        except BudgetExceededError as e:
+            logger.error(f"[{request_id}] ❌ 预算限制触发：{e}")
+            fallback = f"当前请求超出执行预算，已提前停止：{e}"
+            response_chunks = [fallback]
+            fallback_used = True
+            async for processed in emit(
+                next_event(
+                    "error",
+                    content=fallback,
+                    meta={"error_type": type(e).__name__, "fallback_strategy": "partial_answer"},
+                )
+            ):
+                yield processed
+            self._save_to_memory(
+                query,
+                fallback,
+                use_long_term_memory=use_long_term_memory,
+                latency=latency,
+            )
+            response_saved = True
         except Exception as e:
             logger.error(f"[{request_id}] ❌ 统一事件流生成失败：{e}")
             fallback = "抱歉，当前模型服务暂时不可用。请检查所选模型的 API Key、Base URL 配置，或稍后重试。"
@@ -1197,6 +1335,18 @@ class BaseStreamingGenerator:
             )
             final_response = "".join(response_chunks)
             if response_mode == "final_answer" and execution_path == "react":
+                if not final_response.strip():
+                    recovered_answer = extract_final_answer_text(
+                        "".join(thinking_buffer or reasoning_fragments)
+                    )
+                    if recovered_answer:
+                        final_response = recovered_answer
+                        response_chunks = [recovered_answer]
+                        output_schema_parse_success = True
+                        async for processed in emit(
+                            next_event("final_answer_delta", content=recovered_answer)
+                        ):
+                            yield processed
                 output_schema_parse_success = bool(final_response.strip()) and (
                     output_schema_parse_success or final_answer_extracted
                 )
@@ -1207,7 +1357,8 @@ class BaseStreamingGenerator:
                 latency=latency,
             )
             response_saved = True
-            plan_steps = self._update_plan_status(plan_steps, "tools", "done")
+            if execution_path != "planned":
+                plan_steps = self._update_plan_status(plan_steps, "tools", "done")
             plan_steps = self._update_plan_status(plan_steps, "answer", "done")
             total_duration_sec = round(time.time() - request_started_at, 3)
             tool_success_count = sum(
@@ -1227,13 +1378,14 @@ class BaseStreamingGenerator:
                     )
                 ):
                     yield processed
-            async for processed in emit(
-                next_event(
-                    "step_end",
-                    content={"step_id": "tools", "title": "调用工具", "status": "done"},
-                )
-            ):
-                yield processed
+            if execution_path != "planned":
+                async for processed in emit(
+                    next_event(
+                        "step_end",
+                        content={"step_id": "tools", "title": "调用工具", "status": "done"},
+                    )
+                ):
+                    yield processed
             async for processed in emit(
                 next_event(
                     "step_start",
@@ -1261,6 +1413,16 @@ class BaseStreamingGenerator:
                         "memory_hit_count": len(memory_hits),
                         "request_id": request_id,
                         "latency_metrics": latency.to_payload(),
+                        "fallback_path": (
+                            final_resp_obj.fallback_path if final_resp_obj else []
+                        ),
+                        "route_decision": (
+                            final_resp_obj.route_decision if final_resp_obj else None
+                        ),
+                        "budget_usage": (
+                            final_resp_obj.budget_usage if final_resp_obj else None
+                        ),
+                        "versions": final_resp_obj.versions if final_resp_obj else None,
                     },
                     meta={
                         "request_id": request_id,
@@ -1296,6 +1458,42 @@ class BaseStreamingGenerator:
                 f"[{request_id}] ✅ 统一事件流完成，响应长度：{len(final_response)} 字符"
             )
         finally:
+            if self._audit_logger and getattr(self._audit_logger, "enabled", False):
+                try:
+                    self._audit_logger.append(
+                        {
+                            "request_id": request_id,
+                            "query": query,
+                            "route_decision": (
+                                decision.to_meta()
+                                if decision and hasattr(decision, "to_meta")
+                                else None
+                            ),
+                            "plan": (
+                                actual_plan.to_dict()
+                                if actual_plan is not None
+                                else (
+                                    final_resp_obj.execution_plan
+                                    if final_resp_obj
+                                    else None
+                                )
+                            ),
+                            "step_results": (
+                                final_resp_obj.execution_trace if final_resp_obj else []
+                            ),
+                            "final_response": (
+                                final_resp_obj.to_dict()
+                                if final_resp_obj
+                                else {"answer": "".join(response_chunks)}
+                            ),
+                            "latency_profile": latency.to_payload(),
+                            "fallback_path": (
+                                final_resp_obj.fallback_path if final_resp_obj else []
+                            ),
+                        }
+                    )
+                except Exception as audit_error:
+                    logger.warning(f"[{request_id}] audit append failed: {audit_error}")
             if self._governance_metrics:
                 snapshot = latency.stages_ms()
                 self._governance_metrics.record(
@@ -1342,7 +1540,7 @@ class StreamingService(BaseStreamingGenerator):
                 getattr(decision, "route", None)
             )
             if decision and execution_path in ("direct", "planned"):
-                result = asyncio.run(
+                final_resp = asyncio.run(
                     self._run_orchestrated_path(
                         query,
                         decision,
@@ -1350,7 +1548,7 @@ class StreamingService(BaseStreamingGenerator):
                         latency=LatencyTracker(),
                     )
                 )
-                output = result.get("answer", "")
+                output = final_resp.answer
                 intermediate_steps = []
             else:
                 agent_input = self._prepare_input(query)
@@ -1439,13 +1637,13 @@ class StreamingService(BaseStreamingGenerator):
             self._save_to_memory(query, default_response)
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
-        """返回与历史行为兼容的原始纯文本流。"""
+        """返回清洗后的纯文本答案流。"""
         adapter = PlainTextStreamAdapter()
         async for chunk in self._stream_with_adapter(
             query,
             adapter,
             stop_on_repeated_action=True,
-            response_mode="raw_text",
+            response_mode="final_answer",
         ):
             yield chunk
 

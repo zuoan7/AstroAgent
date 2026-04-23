@@ -124,7 +124,7 @@ class MCPClient:
 
         async def _gather():
             tasks = [
-                self._async_call_tool_isolated(
+                self._dispatch_parallel_tool_call(
                     call["tool_name"],
                     **call.get("kwargs", {}),
                 )
@@ -170,6 +170,16 @@ class MCPClient:
             else:
                 final.append(r)
         return final
+
+    async def _dispatch_parallel_tool_call(self, tool_name: str, **kwargs) -> str:
+        """
+        Dedicated entrypoint for batch tool dispatch.
+
+        Keeping this indirection makes the parallel path easier to test and lets
+        future routing changes avoid coupling tests to a concrete private
+        implementation detail.
+        """
+        return await self._async_call_tool_isolated(tool_name, **kwargs)
 
     async def async_call_tool(self, tool_name: str, **kwargs) -> str:
         return await self._async_call_tool(tool_name, **kwargs)
