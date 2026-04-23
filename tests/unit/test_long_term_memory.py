@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 
 import pytest
 
@@ -541,6 +542,7 @@ class TestCandidateManager:
             category="response_style",
             key="response_style",
             value="简短",
+            confidence=0.55,
         )
         assert not mgr.should_promote(c)
         c = mgr.add_or_update_candidate(
@@ -549,13 +551,14 @@ class TestCandidateManager:
             category="response_style",
             key="response_style",
             value="简短",
+            confidence=0.8,
         )
         assert mgr.should_promote(c)
         item = mgr.promote_candidate(c.id)
         assert item is not None
         assert item.value == "简短"
 
-    def test_explicit_bypass(self, repo):
+    def test_explicit_bypass_requires_confidence(self, repo):
         mgr = CandidateManager(repo, explicit_bypass=True)
         c = mgr.add_or_update_candidate(
             user_id="u1",
@@ -564,8 +567,38 @@ class TestCandidateManager:
             key="response_style",
             value="简短",
             source_type=SourceType.EXPLICIT,
+            confidence=0.5,
         )
-        assert mgr.should_promote(c)
+        assert not mgr.should_promote(c)
+
+    def test_non_explicit_single_occurrence_not_promoted(self, repo):
+        mgr = CandidateManager(repo, occurrence_threshold=2, confidence_threshold=0.6)
+        c = mgr.add_or_update_candidate(
+            user_id="u1",
+            memory_type=MemoryType.HABIT,
+            category="frequent_topics",
+            key="frequent_topics",
+            value=["火星"],
+            confidence=0.8,
+            source_type=SourceType.AUTO,
+        )
+        assert not mgr.should_promote(c)
+
+    def test_high_risk_candidate_needs_confirm(self, repo):
+        mgr = CandidateManager(repo)
+        mgr.process_extraction_as_candidate(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="skill_level",
+            key="skill_level",
+            value="入门",
+            confidence=0.9,
+            source_type=SourceType.EXPLICIT,
+            is_explicit=True,
+        )
+        needs_confirm = mgr.list_candidates("u1", status=MemoryStatus.NEEDS_CONFIRM)
+        assert len(needs_confirm) == 1
+        assert needs_confirm[0].status == MemoryStatus.NEEDS_CONFIRM
 
 
 class TestEventLogger:
@@ -715,6 +748,45 @@ class TestLongTermMemoryService:
             user_id="u1",
         )
         assert len(results) >= 1
+
+    def test_extract_and_store_async_returns_without_waiting(self, service, monkeypatch):
+        extracted = [
+            ExtractionResult(
+                should_extract=True,
+                memory_type=MemoryType.PREFERENCE,
+                category="response_style",
+                key="response_style",
+                value="简短",
+                confidence=0.8,
+                is_explicit=True,
+                raw_content="我喜欢简短回答",
+            )
+        ]
+
+        monkeypatch.setattr(service.extractor, "should_attempt_extraction", lambda _: True)
+
+        def _slow_extract(user_message, assistant_message, conversation_id=None):
+            time.sleep(0.25)
+            return extracted
+
+        monkeypatch.setattr(
+            service.extractor, "extract_from_conversation", _slow_extract
+        )
+
+        started = time.perf_counter()
+        future = service.extract_and_store_async(
+            user_message="我喜欢简短回答",
+            assistant_message="好的",
+            user_id="u1",
+        )
+        elapsed = time.perf_counter() - started
+
+        assert future is not None
+        assert elapsed < 0.15
+        result = future.result(timeout=2)
+        assert len(result) == 1
+        stored = service.query_memories(MemoryQuery(user_id="u1"))
+        assert len(stored) == 1
 
     def test_render_profile_prompt(self, service):
         service.add_memory(
@@ -888,8 +960,28 @@ class TestLongTermMemoryService:
 
 
 class TestLongTermMemoryServiceRefactor:
-    def test_service_candidate_promotes_and_rebuilds_profile_projection(self, tmp_db):
+    def test_service_candidate_promotes_and_rebuilds_profile_projection(
+        self, tmp_db, monkeypatch
+    ):
         service = LongTermMemoryService(db_path=tmp_db)
+        monkeypatch.setattr(service.extractor, "should_attempt_extraction", lambda _: True)
+        monkeypatch.setattr(
+            service.extractor,
+            "extract_from_conversation",
+            lambda *args, **kwargs: [
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.HABIT,
+                    category="frequent_topics",
+                    key="frequent_topics",
+                    value=["火星"],
+                    confidence=0.8,
+                    source_type=SourceType.AUTO,
+                    is_explicit=False,
+                    raw_content="我经常看火星",
+                )
+            ],
+        )
 
         first = service.extract_and_store("我经常看火星", "好的", "u1")
         assert first == []
@@ -908,6 +1000,62 @@ class TestLongTermMemoryServiceRefactor:
         rebuilt = service.get_profile("u1")
         assert rebuilt is not None
         assert "火星" in rebuilt["habits"]["frequent_topics"]
+
+    def test_service_list_candidates_supports_status_filter(self, tmp_db):
+        service = LongTermMemoryService(db_path=tmp_db)
+        service.candidates.process_extraction_as_candidate(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="skill_level",
+            key="skill_level",
+            value="入门",
+            confidence=0.9,
+            source_type=SourceType.EXPLICIT,
+            is_explicit=True,
+        )
+
+        all_candidates = service.list_candidates("u1")
+        needs_confirm = service.list_candidates("u1", status=MemoryStatus.NEEDS_CONFIRM)
+
+        assert len(all_candidates) == 1
+        assert len(needs_confirm) == 1
+        assert needs_confirm[0].memory_type == MemoryType.BACKGROUND
+
+    def test_delete_memory_rebuilds_profile_after_promotion(
+        self, tmp_db, monkeypatch
+    ):
+        service = LongTermMemoryService(db_path=tmp_db)
+        monkeypatch.setattr(service.extractor, "should_attempt_extraction", lambda _: True)
+        monkeypatch.setattr(
+            service.extractor,
+            "extract_from_conversation",
+            lambda *args, **kwargs: [
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.HABIT,
+                    category="frequent_topics",
+                    key="frequent_topics",
+                    value=["火星"],
+                    confidence=0.8,
+                    source_type=SourceType.AUTO,
+                    is_explicit=False,
+                    raw_content="我经常看火星",
+                )
+            ],
+        )
+        first = service.extract_and_store("我经常看火星", "好的", "u1")
+        assert first == []
+        second = service.extract_and_store("我经常看火星", "已记录", "u1")
+        assert len(second) >= 1
+
+        profile = service.get_profile("u1")
+        assert "火星" in profile["habits"]["frequent_topics"]
+
+        memory_id = second[0].id
+        assert service.delete_memory(memory_id, "u1")
+        rebuilt = service.get_profile("u1")
+        assert rebuilt is not None
+        assert rebuilt["habits"].get("frequent_topics", []) == []
 
     def test_service_delete_memory_tombstones_and_hides_from_queries(self, tmp_db):
         service = LongTermMemoryService(db_path=tmp_db)

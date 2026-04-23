@@ -195,6 +195,13 @@ class ModelConfig(BaseSettings):
     DASHSCOPE_API_KEY: Optional[str] = Field(None, description="千问模型 API Key")
     DEFAULT_LLM_PROVIDER: str = Field("dashscope", description="默认主模型提供商")
     MODEL_NAME: str = Field("qwen-max", description="主模型名称")
+    SMALL_MODEL_PROVIDER: str = Field(
+        "dashscope", description="轻量模型提供商，用于路由/轻量总结等场景"
+    )
+    SMALL_MODEL_NAME: str = Field("qwen-plus", description="轻量模型名称")
+    SYNTHESIS_MODEL_TIER: str = Field(
+        "main", description="答案合成器使用的模型层级：main|small"
+    )
     OPENAI_COMPATIBLE_BASE_URL: str = Field(
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
         description="DashScope OpenAI兼容接口基础地址",
@@ -324,11 +331,64 @@ class MemoryConfig(BaseSettings):
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
 
+class AgentGovernanceConfig(BaseSettings):
+    AGENT_MODE: str = Field(
+        "hybrid",
+        description="Agent 执行模式：react|hybrid|planned",
+    )
+    ENABLE_STRUCTURED_SKILL_RESULT: bool = Field(
+        False,
+        description="是否启用结构化 SkillResult 契约",
+    )
+    ENABLE_PLANNER: bool = Field(
+        False,
+        description="是否启用 Planner 主链路",
+    )
+    ENABLE_REACT_FALLBACK: bool = Field(
+        True,
+        description="当主链路不可用时是否允许回退到 ReAct",
+    )
+    PHASE0_BENCHMARK_PATH: str = Field(
+        "config/benchmarks/agent_phase0_benchmark.json",
+        description="阶段0基准数据集路径（相对于项目根目录）",
+    )
+    AGENT_MAX_LLM_CALLS: int = Field(4, description="单请求允许的最大 LLM 调用次数")
+    AGENT_MAX_TOOL_CALLS: int = Field(6, description="单请求允许的最大工具调用次数")
+    AGENT_MAX_TOTAL_TIME_MS: int = Field(
+        60000, description="单请求最大执行时间（毫秒）"
+    )
+    AGENT_MAX_PARALLELISM: int = Field(2, description="单请求最大并行度")
+    AGENT_MAX_CONTEXT_CHARS: int = Field(
+        6000, description="单请求注入到模型的最大上下文字符数"
+    )
+    AGENT_AUDIT_ENABLED: bool = Field(True, description="是否开启请求审计日志")
+    AGENT_AUDIT_LOG_PATH: str = Field(
+        "logs/agent_audit/requests.jsonl",
+        description="请求审计日志路径（相对于项目根目录）",
+    )
+    ROUTER_POLICY_VERSION: str = Field("router_v1", description="路由策略版本")
+    PLANNER_VERSION: str = Field("planner_v2", description="Planner 版本")
+    SCHEMA_VERSION: str = Field("schema_v2", description="输出契约版本")
+    SYNTH_PROMPT_VERSION: str = Field(
+        "synth_prompt_v2", description="答案合成 Prompt 版本"
+    )
+    FALLBACK_POLICY_VERSION: str = Field(
+        "fallback_v2", description="Fallback 策略版本"
+    )
+    BUDGET_POLICY_VERSION: str = Field(
+        "budget_v1", description="预算策略版本"
+    )
+    MODEL_POLICY_VERSION: str = Field("model_policy_v1", description="模型策略版本")
+
+    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
+
+
 _SUB_CONFIG_FIELDS = {
     "api": APIConfig,
     "astronomy": AstronomyConfig,
     "model": ModelConfig,
     "memory": MemoryConfig,
+    "agent_governance": AgentGovernanceConfig,
 }
 
 _DELEGATION_MAP: Dict[str, str] = {}
@@ -342,6 +402,9 @@ class Settings(BaseSettings):
     astronomy: AstronomyConfig = Field(default_factory=AstronomyConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    agent_governance: AgentGovernanceConfig = Field(
+        default_factory=AgentGovernanceConfig
+    )
 
     model_config = {
         "env_file": ".env",

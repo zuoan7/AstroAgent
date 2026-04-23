@@ -1,7 +1,8 @@
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
-from src.core.config import settings
 from src.core.logger import logger
+from src.memory.config import get_long_term_memory_config
 from src.memory.long_term_memory.backup import BackupManager
 from src.memory.long_term_memory.candidate import CandidateManager
 from src.memory.long_term_memory.deletion import LongTermMemoryDeletionService
@@ -41,20 +42,10 @@ class LongTermMemoryService:
     def __init__(
         self, db_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None
     ):
-        self.config = {
-            "db_path": db_path or settings.LONG_TERM_MEMORY_PATH,
-            "default_confidence": 0.5,
-            "min_confidence_to_store": 0.3,
-            "dedup_similarity_threshold": 0.85,
-            "candidate_occurrence_threshold": 2,
-            "candidate_confidence_threshold": 0.6,
-            "candidate_explicit_bypass": True,
-            "max_prompt_tokens": 800,
-            "max_memories_in_prompt": 15,
-            "auto_backup_interval_hours": 24,
-        }
-        if config:
-            self.config.update(config)
+        self.config = get_long_term_memory_config(
+            db_path=db_path,
+            overrides=config,
+        ).__dict__
 
         self.repository = LongTermMemoryRepository(self.config["db_path"])
         self.repository.initialize()
@@ -81,6 +72,10 @@ class LongTermMemoryService:
         self.backups = BackupManager(
             self.repository,
             auto_backup_interval_hours=self.config["auto_backup_interval_hours"],
+        )
+        self._extract_executor = ThreadPoolExecutor(
+            max_workers=max(1, int(self.config["async_extract_workers"])),
+            thread_name_prefix="ltm-extract",
         )
 
     def add_memory(
@@ -202,6 +197,32 @@ class LongTermMemoryService:
         return self.store_extractions(
             user_id, extracted, conversation_id=conversation_id
         )
+
+    def extract_and_store_async(
+        self,
+        user_message: str,
+        assistant_message: str,
+        user_id: str,
+        conversation_id: Optional[str] = None,
+    ) -> Optional[Future]:
+        # Main flow only performs lightweight gating. Real extraction/storage runs
+        # in a background worker and failures are logged without affecting replies.
+        if not self.extractor.should_attempt_extraction(user_message):
+            return None
+
+        def _run() -> List[MemoryItem]:
+            try:
+                extracted = self.extractor.extract_from_conversation(
+                    user_message, assistant_message, conversation_id
+                )
+                return self.store_extractions(
+                    user_id, extracted, conversation_id=conversation_id
+                )
+            except Exception:
+                logger.exception("长期记忆异步抽取失败: user_id=%s", user_id)
+                return []
+
+        return self._extract_executor.submit(_run)
 
     def store_extractions(
         self,
@@ -378,7 +399,7 @@ class LongTermMemoryService:
         return self.repository.count_memories(query)
 
     def promote_candidate(self, candidate_id: str) -> Optional[MemoryItem]:
-        item = self.candidates.promote_candidate(candidate_id)
+        item = self.candidates.promote_candidate(candidate_id, force=True)
         if item:
             self._save_version(item, "candidate_promoted")
             self.projection.rebuild(item.user_id)
@@ -536,9 +557,15 @@ class LongTermMemoryService:
         return self.event_logger.get_memory_trace(user_id, memory_id)
 
     def list_candidates(
-        self, user_id: str, limit: int = 50, offset: int = 0
+        self,
+        user_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
     ) -> List[MemoryCandidate]:
-        return self.candidates.list_candidates(user_id, limit=limit, offset=offset)
+        return self.candidates.list_candidates(
+            user_id, limit=limit, offset=offset, status=status
+        )
 
     def reject_candidate(self, candidate_id: str, reason: str = "") -> bool:
         return self.candidates.reject_candidate(candidate_id, reason)

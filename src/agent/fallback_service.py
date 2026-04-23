@@ -1,5 +1,6 @@
 import json
 from typing import Any, Optional
+from src.agent.policies.fallback_policy import FallbackDecision, FallbackPolicy
 from src.core.logger import logger
 from src.core.errors import ErrorCode, ErrorHandler
 from src.core.mcp_protocol import is_tool_error, parse_tool_response
@@ -36,6 +37,7 @@ _LOW_CONFIDENCE_PHRASES = [
 class FallbackService:
     def __init__(self, skill_manager: Any):
         self._skill_manager = skill_manager
+        self._policy = FallbackPolicy()
 
     def should_use_fallback(self, output: Any) -> bool:
         if not output:
@@ -85,6 +87,13 @@ class FallbackService:
             logger.error(f"联网搜索降级也失败: {e}")
             error = ErrorHandler.handle(e, {"fallback_query": query})
             return error.to_json()
+
+    def classify_web_fallback(self, reason: str) -> FallbackDecision:
+        return FallbackDecision(
+            strategy="web_fallback",
+            reason=reason,
+            metadata={"policy_version": self._policy.version},
+        )
 
     def format_fallback_response(self, query: str, search_result: str) -> str:
         try:

@@ -68,6 +68,42 @@ def test_event_store_append_is_idempotent(memory_db):
     assert events[0].payload["content"] == "hello"
 
 
+def test_event_store_can_read_incremental_events(memory_db):
+    store = EventStore(memory_db)
+    first = store.append(
+        MemoryEvent(
+            tenant_id="tenant",
+            session_id="session",
+            event_type=MemoryEventType.MESSAGE_CREATED.value,
+            payload={"content": "first"},
+        )
+    )
+    store.append(
+        MemoryEvent(
+            tenant_id="tenant",
+            session_id="session",
+            event_type=MemoryEventType.MESSAGE_CREATED.value,
+            payload={"content": "second"},
+        )
+    )
+    store.append(
+        MemoryEvent(
+            tenant_id="tenant",
+            session_id="session",
+            event_type=MemoryEventType.TOOL_CALL_FINISHED.value,
+            payload={"tool_name": "demo"},
+        )
+    )
+
+    events = store.list_by_session("session", after_event_id=first.event_id, limit=10)
+
+    assert len(events) == 2
+    assert [event.event_type for event in events] == [
+        MemoryEventType.MESSAGE_CREATED.value,
+        MemoryEventType.TOOL_CALL_FINISHED.value,
+    ]
+
+
 def test_artifact_store_round_trips_raw_tool_output(memory_db):
     store = ArtifactStore(memory_db)
 
@@ -199,6 +235,98 @@ def test_compression_creates_summary_snapshot_from_events(memory_db):
     assert "SummarySnapshot" in snapshot.summary_text
     latest = service.summary_snapshot_manager.get_latest("session")
     assert latest and latest.snapshot_id == snapshot.snapshot_id
+
+
+def test_rebase_summary_snapshot_only_uses_new_events(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
+    service.append_message(
+        AppendMessageRequest(
+            tenant_id="tenant",
+            session_id="session",
+            role="user",
+            content="first",
+        )
+    )
+    base = service.create_summary_snapshot("session", tenant_id="tenant")
+    service.append_message(
+        AppendMessageRequest(
+            tenant_id="tenant",
+            session_id="session",
+            role="assistant",
+            content="second",
+        )
+    )
+
+    rebased = service.rebase_summary_snapshot("session", tenant_id="tenant")
+
+    assert rebased.snapshot_id != base.snapshot_id
+    assert rebased.source_count == 1
+    assert rebased.covered_from_event_id != base.covered_from_event_id
+    assert "新增事件" in rebased.summary_text
+
+
+def test_create_summary_snapshot_uses_recent_batch_without_latest_snapshot(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
+    contents = ["first", "second", "third"]
+    for content in contents:
+        service.append_message(
+            AppendMessageRequest(
+                tenant_id="tenant",
+                session_id="session",
+                role="user",
+                content=content,
+            )
+        )
+
+    snapshot = service.create_summary_snapshot(
+        "session",
+        tenant_id="tenant",
+        snapshot_batch_size=2,
+    )
+
+    assert snapshot.source_count == 2
+    assert "first" not in snapshot.summary_text
+    assert "second" in snapshot.summary_text
+    assert "third" in snapshot.summary_text
+
+
+def test_create_summary_snapshot_uses_uncovered_batch_after_latest_snapshot(memory_db):
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
+    for content in ["m1", "m2"]:
+        service.append_message(
+            AppendMessageRequest(
+                tenant_id="tenant",
+                session_id="session",
+                role="user",
+                content=content,
+            )
+        )
+    first_snapshot = service.create_summary_snapshot(
+        "session",
+        tenant_id="tenant",
+        snapshot_batch_size=10,
+    )
+    for content in ["m3", "m4", "m5"]:
+        service.append_message(
+            AppendMessageRequest(
+                tenant_id="tenant",
+                session_id="session",
+                role="assistant",
+                content=content,
+            )
+        )
+
+    next_snapshot = service.create_summary_snapshot(
+        "session",
+        tenant_id="tenant",
+        snapshot_batch_size=2,
+    )
+
+    assert next_snapshot.snapshot_id != first_snapshot.snapshot_id
+    assert next_snapshot.source_count == 2
+    assert "m3" in next_snapshot.summary_text
+    assert "m4" in next_snapshot.summary_text
+    assert "m5" not in next_snapshot.summary_text
 
 
 def test_retrieval_planner_includes_task_state_and_relevant_tool_evidence(memory_db):

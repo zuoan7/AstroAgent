@@ -5,8 +5,19 @@ from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 
 from src.agent.fallback_service import FallbackService
+from src.agent.executor import StepExecutor
+from src.agent.governance import (
+    AgentExecutionPolicy,
+    GovernanceMetricsRegistry,
+    evaluate_router_benchmark,
+    load_phase0_benchmark_cases,
+)
+from src.agent.audit import RequestAuditLogger
 from src.agent.output_parser import LenientReActSingleInputOutputParser
+from src.agent.planner import Planner
+from src.agent.policies import FallbackPolicy, ModelPolicy
 from src.agent.request_router import RequestRouter
+from src.agent.response_synthesizer import ResponseSynthesizer
 from src.agent.skill_manager import SkillManager
 from src.agent.speech_service import SpeechService
 from src.agent.streaming_service import StreamingService
@@ -48,6 +59,10 @@ class AstroAgent:
         self.skill_manager = SkillManager(rag_retriever=self.rag)
         self.request_router = RequestRouter()
         self.fallback_service = FallbackService(skill_manager=self.skill_manager)
+        self.execution_policy = AgentExecutionPolicy.from_settings()
+        self.governance_metrics = GovernanceMetricsRegistry()
+        self.model_policy = ModelPolicy()
+        self.audit_logger = RequestAuditLogger()
         self.vision_service = VisionService()
         self.speech_service = SpeechService()
         runtime = self.create_session_runtime(
@@ -176,6 +191,11 @@ class AstroAgent:
         logger.info("✅ React Agent构建完成（最大迭代5次，超时60秒）")
         return agent_executor
 
+    def _get_or_create_agent_executor(self, llm=None):
+        if self._agent_executor is None:
+            self._agent_executor = self._build_agent(llm=llm or self.llm)
+        return self._agent_executor
+
     def _load_prompt_template(self) -> str:
         from src.core.config import resolve_path
 
@@ -194,11 +214,28 @@ class AstroAgent:
         model_name: Optional[str] = None,
     ):
         selection = model_selection_payload(model_provider, model_name)
-        llm = self._init_llm(selection["model_provider"], selection["model_name"])
+        main_llm = self._init_llm(selection["model_provider"], selection["model_name"])
+        synth_selection = self.model_policy.select("synthesizer")
+        planner_selection = self.model_policy.select("planner")
+        synth_llm = self._init_llm(
+            synth_selection.provider,
+            synth_selection.model_name,
+        )
+        planner_llm = self._init_llm(
+            planner_selection.provider,
+            planner_selection.model_name,
+        )
+        response_synthesizer = ResponseSynthesizer(llm=synth_llm)
+        planner = Planner(llm=planner_llm)
+        executor = StepExecutor(skill_manager=self.skill_manager)
         task_orchestrator = TaskOrchestrator(
             skill_manager=self.skill_manager,
             rag_retriever=self.rag,
-            llm=llm,
+            llm=main_llm,
+            response_synthesizer=response_synthesizer,
+            planner=planner,
+            executor=executor,
+            fallback_policy=FallbackPolicy(),
         )
         streaming_service = StreamingService(
             agent_executor=None,
@@ -210,14 +247,16 @@ class AstroAgent:
             task_orchestrator=task_orchestrator,
             skill_manager=self.skill_manager,
             rag_retriever=self.rag,
+            execution_policy=self.execution_policy,
+            governance_metrics=self.governance_metrics,
+            audit_logger=self.audit_logger,
+            agent_executor_factory=lambda: self._get_or_create_agent_executor(llm=main_llm),
         )
-        agent_executor = self._build_agent(llm=llm)
-        streaming_service._agent_executor = agent_executor
         return {
-            "llm": llm,
+            "llm": main_llm,
             "task_orchestrator": task_orchestrator,
             "streaming_service": streaming_service,
-            "agent_executor": agent_executor,
+            "agent_executor": None,
             **selection,
         }
 
@@ -259,6 +298,13 @@ class AstroAgent:
         except Exception as e:
             logger.error(f"❌ 清空记忆失败：{str(e)}")
             traceback.print_exc()
+
+    def get_governance_metrics_snapshot(self):
+        return self.governance_metrics.snapshot()
+
+    def evaluate_phase0_router_benchmark(self, path: Optional[str] = None):
+        cases = load_phase0_benchmark_cases(path)
+        return evaluate_router_benchmark(self.request_router, cases)
 
     def __del__(self):
         try:

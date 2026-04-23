@@ -29,7 +29,7 @@ def test_weather_lookup(skill_manager):
     for city, description in test_cases:
         print(f"\n📋 {description}")
         result = skill_manager.call_skill("weather-lookup", city=city)
-        print(result)
+        print(result.to_legacy_str())
 
 
 def test_observation_planner(skill_manager):
@@ -53,7 +53,7 @@ def test_observation_planner(skill_manager):
             location=test_case["location"],
             duration=test_case["duration"]
         )
-        print(result)
+        print(result.to_legacy_str())
 
 
 def test_celestial_events_forecast(skill_manager):
@@ -77,7 +77,7 @@ def test_celestial_events_forecast(skill_manager):
             end_date=test_case["end_date"],
             event_type=test_case["event_type"]
         )
-        print(result)
+        print(result.to_legacy_str())
 
 
 def test_deep_sky_observing_guide(skill_manager):
@@ -102,7 +102,7 @@ def test_deep_sky_observing_guide(skill_manager):
             date=test_case["date"],
             equipment=test_case["equipment"]
         )
-        print(result)
+        print(result.to_legacy_str())
 
 
 def test_neo_tracker(skill_manager):
@@ -127,7 +127,7 @@ def test_neo_tracker(skill_manager):
             max_distance=test_case["max_distance"],
             observable_only=test_case["observable_only"]
         )
-        print(result)
+        print(result.to_legacy_str())
 
 
 def test_astrophotography_calculator(skill_manager):
@@ -154,7 +154,7 @@ def test_astrophotography_calculator(skill_manager):
             location=test_case["location"],
             date=test_case["date"]
         )
-        print(result)
+        print(result.to_legacy_str())
 
 
 def test_celestial_position_calculator(skill_manager):
@@ -179,7 +179,7 @@ def test_celestial_position_calculator(skill_manager):
             location=test_case["location"],
             output_format=test_case["output_format"]
         )
-        print(result)
+        print(result.to_legacy_str())
 
 
 def main():

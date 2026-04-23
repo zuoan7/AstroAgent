@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 import re
 
 from src.agent.skill_manager import SkillManager
+from src.agent.models.skill_result import SkillResult
 from src.skills.registry import SkillSpec
 from src.skills.router import AstronomySkillRouter
 from src.skills import registry
@@ -37,10 +38,13 @@ def test_skill_sets_are_consistent():
 
 
 def test_weather_lookup_param_compatibility():
+    mock_skill_result = SkillResult(
+        skill_name="weather-lookup", success=True, data={}, summary="ok"
+    )
     with patch("src.agent.skill_manager.AstronomySkillRouter") as mock_router_cls, \
          patch("src.agent.skill_manager.Tool", FakeTool):
         mock_router = MagicMock()
-        mock_router.call.return_value = "ok"
+        mock_router.call.return_value = mock_skill_result
         mock_router_cls.return_value = mock_router
 
         manager = SkillManager()
@@ -68,14 +72,17 @@ def test_weather_lookup_param_compatibility():
     }
 
 
-def test_simple_skill_returns_raw_without_truncation():
+def test_simple_skill_returns_skill_result():
     router = AstronomySkillRouter()
     raw = "x" * 2400
 
     with patch.object(router, "call_mcp_tool", return_value=raw) as mock_call:
         result = router.call("weather-lookup", city="北京")
 
-    assert result == raw
+    assert isinstance(result, SkillResult)
+    assert result.success is True
+    assert result.skill_name == "weather-lookup"
+    assert result.to_legacy_str() == raw
     mock_call.assert_called_once_with("get_weather", city="北京")
     router.shutdown()
 
@@ -102,7 +109,10 @@ def test_registry_only_change_can_register_simple_skill(monkeypatch):
     assert "fake-skill" in router.list_skills()
 
     with patch.object(router, "call_mcp_tool", return_value="fake-result") as mock_call:
-        assert router.call("fake-skill", query="demo") == "fake-result"
+        result = router.call("fake-skill", query="demo")
+        assert isinstance(result, SkillResult)
+        assert result.success is True
+        assert result.to_legacy_str() == "fake-result"
         mock_call.assert_called_once_with("fake_tool", query="demo")
 
     with patch("src.agent.skill_manager.AstronomySkillRouter") as mock_router_cls, \
