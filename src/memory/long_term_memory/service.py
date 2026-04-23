@@ -1,8 +1,8 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
-from src.core.config import settings
 from src.core.logger import logger
+from src.memory.config import get_long_term_memory_config
 from src.memory.long_term_memory.backup import BackupManager
 from src.memory.long_term_memory.candidate import CandidateManager
 from src.memory.long_term_memory.deletion import LongTermMemoryDeletionService
@@ -42,21 +42,10 @@ class LongTermMemoryService:
     def __init__(
         self, db_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None
     ):
-        self.config = {
-            "db_path": db_path or settings.LONG_TERM_MEMORY_PATH,
-            "default_confidence": 0.5,
-            "min_confidence_to_store": 0.3,
-            "dedup_similarity_threshold": 0.85,
-            "candidate_occurrence_threshold": 2,
-            "candidate_confidence_threshold": 0.6,
-            "candidate_explicit_bypass": True,
-            "max_prompt_tokens": 800,
-            "max_memories_in_prompt": 15,
-            "auto_backup_interval_hours": 24,
-            "async_extract_workers": 1,
-        }
-        if config:
-            self.config.update(config)
+        self.config = get_long_term_memory_config(
+            db_path=db_path,
+            overrides=config,
+        ).__dict__
 
         self.repository = LongTermMemoryRepository(self.config["db_path"])
         self.repository.initialize()

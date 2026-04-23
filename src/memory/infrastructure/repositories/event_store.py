@@ -1,4 +1,4 @@
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 
 from src.memory.domain.events import MemoryEvent
 from src.memory.infrastructure.database import SQLiteRepository
@@ -81,10 +81,14 @@ class EventStore(SQLiteRepository):
         self,
         session_id: str,
         event_type: Optional[str] = None,
+        event_types: Optional[Sequence[str]] = None,
+        source_type: Optional[str] = None,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
+        after_event_id: Optional[str] = None,
         include_deleted: bool = False,
         limit: int = 500,
+        descending: bool = False,
     ) -> list[MemoryEvent]:
         self.initialize()
         conditions = ["session_id = ?"]
@@ -92,26 +96,42 @@ class EventStore(SQLiteRepository):
         if event_type:
             conditions.append("event_type = ?")
             params.append(event_type)
+        if event_types:
+            placeholders = ", ".join("?" for _ in event_types)
+            conditions.append(f"event_type IN ({placeholders})")
+            params.extend(event_types)
+        if source_type:
+            conditions.append("source_type = ?")
+            params.append(source_type)
         if start_time is not None:
             conditions.append("created_at >= ?")
             params.append(start_time)
         if end_time is not None:
             conditions.append("created_at <= ?")
             params.append(end_time)
+        if after_event_id:
+            conditions.append(
+                "id > COALESCE((SELECT id FROM memory_event WHERE event_id = ?), 0)"
+            )
+            params.append(after_event_id)
         if not include_deleted:
             conditions.append("is_deleted = 0")
         params.append(limit)
+        order = "DESC" if descending else "ASC"
         sql = f"""
             SELECT event_id, tenant_id, session_id, turn_id, event_type, source_type, source_id,
                    payload_json, schema_version, created_at, created_by, is_deleted
             FROM memory_event
             WHERE {' AND '.join(conditions)}
-            ORDER BY created_at, id
+            ORDER BY created_at {order}, id {order}
             LIMIT ?
         """
         with self._connect() as conn:
             rows = conn.execute(sql, tuple(params)).fetchall()
-        return [self._from_row(row) for row in rows]
+        events = [self._from_row(row) for row in rows]
+        if descending:
+            events.reverse()
+        return events
 
     def list_by_source(
         self,

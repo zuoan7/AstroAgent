@@ -157,18 +157,3 @@ class SalientFact:
             source=data.get("source", ""),
         )
 
-
-@dataclass
-class SessionMemoryState:
-    session_id: str
-    summary: str = ""
-    trimmed_count: int = 0
-    updated_at: float = field(default_factory=time.time)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "session_id": self.session_id,
-            "summary": self.summary,
-            "trimmed_count": self.trimmed_count,
-            "updated_at": self.updated_at,
-        }

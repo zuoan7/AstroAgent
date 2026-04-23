@@ -9,6 +9,7 @@ from src.memory.long_term_memory.models import (
     MemoryType,
     _utcnow_iso,
 )
+from src.memory.long_term_memory.profile_projection import ProfileProjection
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
 from src.memory.long_term_memory.retrieval import (
     ASTRONOMY_KEYWORDS,
@@ -33,6 +34,7 @@ class PromptInjector:
         fact_weight: float = 0.9,
     ):
         self._repo = repository
+        self._projection = ProfileProjection(repository)
         self.max_prompt_tokens = max_prompt_tokens
         self.max_memories = max_memories
         self.relevance_threshold = relevance_threshold
@@ -174,9 +176,14 @@ class PromptInjector:
         return "【近期记忆事件】\n" + "\n".join(lines)
 
     def format_profile_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> str:
-        profile = self._repo.load_profile(user_id)
-        if not profile:
-            return "暂无用户偏好信息"
+        profile = self._projection.build(user_id)
+        if not any(
+            profile.get(key)
+            for key in ["preferences", "habits", "constraints", "background", "facts"]
+        ):
+            profile = self._repo.load_profile(user_id)
+            if not profile:
+                return "暂无用户偏好信息"
         parts = []
         formatted_profile = self._format_profile(profile)
         if formatted_profile:
