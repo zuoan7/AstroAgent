@@ -279,17 +279,31 @@ class AstroAgent:
     def add_astronomy_knowledge(self, knowledge: List[str]):
         if not knowledge:
             logger.warning("⚠️  无有效知识可添加")
-            return
+            return {
+                "added_count": 0,
+                "updated_count": 0,
+                "unchanged_count": 0,
+                "stored_count": 0,
+                "bm25_doc_count": 0,
+            }
 
         try:
             from langchain.schema import Document
 
             documents = [Document(page_content=k) for k in knowledge]
-            self.rag.add_documents(documents)
+            result = self.rag.add_documents(documents, source="manual")
             logger.info(f"✅ 成功添加 {len(knowledge)} 条知识到RAG系统")
+            return result
         except Exception as e:
             logger.error(f"❌ 添加知识失败：{str(e)}")
             traceback.print_exc()
+            return {
+                "added_count": 0,
+                "updated_count": 0,
+                "unchanged_count": 0,
+                "stored_count": 0,
+                "bm25_doc_count": 0,
+            }
 
     def clear_memory(self):
         try:

@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 构建 BM25 索引脚本
-从 Chroma 向量库中提取文档并构建 BM25 索引
+优先从本地 BM25 语料文件构建，缺失时再从 Chroma 一次性迁移
 """
 import os
 
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
-from src.rag.bm25_retriever import BM25Retriever
+from src.rag.bm25_retriever import BM25Retriever, build_bm25_index_from_chroma
 from src.core.config import settings
 from src.core.logger import logger
 
@@ -19,7 +19,7 @@ def build_bm25_index(
     output_path: str = None
 ):
     """
-    从 Chroma 向量库构建 BM25 索引
+    构建 BM25 索引
 
     Args:
         vector_db_path: Chroma 向量库路径
@@ -30,13 +30,28 @@ def build_bm25_index(
         vector_db_path = settings.VECTOR_DB_PATH
 
     if output_path is None:
-        output_path = os.path.join(vector_db_path, "bm25_index.pkl")
+        output_path = BM25Retriever.default_index_path(vector_db_path)
+    corpus_path = BM25Retriever.default_corpus_path(vector_db_path)
 
     logger.info("=" * 60)
     logger.info("开始构建 BM25 索引...")
     logger.info("=" * 60)
 
     try:
+        if os.path.exists(corpus_path):
+            documents, metadata = BM25Retriever.load_corpus(corpus_path)
+            if documents:
+                logger.info(f"从本地 BM25 语料文件获取到 {len(documents)} 个文档")
+                retriever = BM25Retriever(index_path=output_path, corpus_path=corpus_path)
+                retriever.build_index(documents, metadata)
+                logger.info("=" * 60)
+                logger.info(f"✅ BM25 索引构建成功: {len(documents)} 个文档")
+                logger.info(f"📁 索引保存位置: {output_path}")
+                logger.info("=" * 60)
+                return
+
+            logger.warning("⚠️  BM25 语料文件存在但为空，将回退到 Chroma 迁移")
+
         # 连接 Chroma
         embeddings = DashScopeEmbeddings(
             model=settings.EMBEDDING_MODEL_NAME,
@@ -49,32 +64,14 @@ def build_bm25_index(
             persist_directory=vector_db_path,
         )
 
-        # 获取所有文档
-        results = chroma_db.get()
-
-        documents = []
-        metadata = []
-
-        docs = results.get("documents", [])
-        metas = results.get("metadatas", [])
-
-        for i, doc in enumerate(docs):
-            if doc:  # 跳过空文档
-                documents.append(doc)
-                metadata.append(metas[i] if metas and i < len(metas) else {})
-
-        if not documents:
-            logger.warning("⚠️  Chroma 中没有文档")
-            return
-
-        logger.info(f"从 Chroma 获取到 {len(documents)} 个文档")
-
-        # 构建 BM25 索引
-        retriever = BM25Retriever(index_path=output_path)
-        retriever.build_index(documents, metadata)
+        build_bm25_index_from_chroma(
+            chroma_db,
+            output_path=output_path,
+            corpus_path=corpus_path,
+        )
 
         logger.info("=" * 60)
-        logger.info(f"✅ BM25 索引构建成功: {len(documents)} 个文档")
+        logger.info("✅ BM25 索引构建成功")
         logger.info(f"📁 索引保存位置: {output_path}")
         logger.info("=" * 60)
 

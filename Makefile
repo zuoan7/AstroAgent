@@ -63,7 +63,7 @@ docker-build: ## Build Docker image
 	docker build -t astroagent:latest .
 
 docker-run: ## Run in Docker container
-	docker run -p 8000:8000 -p 8001:8001 -p 5173:5173 astroagent:latest
+	docker run -p 8002:8002 -p 8001:8001 -p 5173:5173 astroagent:latest
 
 pre-commit-install: ## Install pre-commit hooks
 	pre-commit install

@@ -21,6 +21,7 @@ import os
 import tempfile
 import time
 from typing import Any, Dict, List, Set
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -41,6 +42,7 @@ from src.rag.result_filter import (
     TimelinessScorer,
 )
 from src.rag.cache import MultiLevelCache
+from src.rag.bm25_retriever import BM25Retriever
 from src.rag.knowledge_updater import KnowledgeUpdateManager
 from src.rag.metrics import MetricsCollector, RetrievalMetrics, UserFeedback
 from src.rag.rrf_fusion import RankedDocument, reciprocal_rank_fusion
@@ -403,6 +405,65 @@ class TestKnowledgeUpdateManager:
             updater = KnowledgeUpdateManager(vector_db_path=tmpdir)
             stats = updater.get_update_stats()
             assert "total_records" in stats
+
+    def test_ingest_documents_writes_vector_store_and_bm25(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            updater = KnowledgeUpdateManager(vector_db_path=tmpdir)
+            vector_store = MagicMock()
+
+            result = updater.ingest_documents(
+                [
+                    {
+                        "content": "木星是太阳系最大的行星",
+                        "record_id": "jupiter_001",
+                        "metadata": {"source": "manual"},
+                    }
+                ],
+                source="manual",
+                vector_store=vector_store,
+            )
+
+            assert result["added_count"] == 1
+            assert result["stored_count"] == 1
+            vector_store.add_texts.assert_called_once()
+            assert os.path.exists(os.path.join(tmpdir, "bm25_corpus.jsonl"))
+            assert os.path.exists(os.path.join(tmpdir, "bm25_index.pkl"))
+
+    def test_ingest_documents_replaces_updated_record_in_bm25_corpus(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            updater = KnowledgeUpdateManager(vector_db_path=tmpdir)
+            vector_store = MagicMock()
+
+            updater.ingest_documents(
+                [
+                    {
+                        "content": "原始木星信息",
+                        "record_id": "jupiter_001",
+                        "metadata": {"source": "manual"},
+                    }
+                ],
+                source="manual",
+                vector_store=vector_store,
+            )
+            result = updater.ingest_documents(
+                [
+                    {
+                        "content": "更新后的木星信息",
+                        "record_id": "jupiter_001",
+                        "metadata": {"source": "manual"},
+                    }
+                ],
+                source="manual",
+                vector_store=vector_store,
+            )
+
+            docs, metas = BM25Retriever.load_corpus(
+                os.path.join(tmpdir, "bm25_corpus.jsonl")
+            )
+            assert result["updated_count"] == 1
+            assert len(docs) == 1
+            assert docs[0] == "更新后的木星信息"
+            assert metas[0]["record_id"] == "jupiter_001"
 
 
 # ===== 检索质量监控测试 =====

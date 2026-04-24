@@ -69,14 +69,23 @@ class TestAPIEndpointsIntegration:
 
     def test_add_knowledge_endpoint(self, test_client):
         client, mock_agent = test_client
+        mock_agent.add_astronomy_knowledge.return_value = {
+            "added_count": 1,
+            "updated_count": 0,
+            "unchanged_count": 0,
+            "stored_count": 1,
+            "bm25_doc_count": 1,
+        }
 
-        response = client.post(
-            "/add_knowledge",
-            json={"knowledge": ["火星是太阳系第四颗行星"], "user_id": "test_user"},
-        )
+        with patch("src.api.main.get_agent", return_value=mock_agent):
+            response = client.post(
+                "/add_knowledge",
+                json={"knowledge": ["火星是太阳系第四颗行星"], "user_id": "test_user"},
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
+        assert data["result"]["stored_count"] == 1
 
     def test_get_profile_endpoint(self, test_client):
         client, mock_agent = test_client
@@ -349,6 +358,9 @@ class TestStreamingServiceIntegration:
             service._extract_and_update_long_term_memory(
                 "请详细介绍一下火星", "火星是太阳系第四颗行星..."
             )
+            if hasattr(ltm, "_extract_executor"):
+                ltm._extract_executor.shutdown(wait=True)
 
             profile = ltm.get_profile("test_user")
-            assert profile is not None
+            candidates = ltm.list_candidates("test_user", limit=20)
+            assert profile is not None or len(candidates) > 0

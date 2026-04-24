@@ -133,7 +133,7 @@ Domain / Data Layer
 └── Config / Prompt / Skill Definitions
 
 Infrastructure Layer
-├── FastAPI 服务（8000）
+├── FastAPI 服务（8002）
 ├── FastMCP 服务（8001）
 └── Vue3 Frontend（5173）
 ```
@@ -264,7 +264,7 @@ AstroAgent/
 - Python `>= 3.10`
 - Node.js `>= 18`
 - 推荐使用虚拟环境
-- 需要可访问的端口：`8000`、`8001`、`5173`
+- 需要可访问的端口：`8002`、`8001`、`5173`
 
 ### 主要依赖来源
 
@@ -292,7 +292,7 @@ AstroAgent/
 | `VISION_MODEL_NAME` | 否 | 视觉模型，默认 `qwen-vl-plus` |
 | `SPEECH_MODEL_NAME` | 否 | 语音模型，默认 `paraformer-realtime-v2` |
 | `API_HOST` | 否 | API 监听地址，默认 `0.0.0.0` |
-| `API_PORT` | 否 | API 端口，默认 `8000` |
+| `API_PORT` | 否 | API 端口，默认 `8002` |
 | `MCP_PORT` | 否 | MCP 端口，默认 `8001` |
 | `MCP_SERVER_URL` | 否 | MCP 客户端连接地址，默认 `http://localhost:8001/mcp` |
 | `LONG_TERM_MEMORY_PATH` | 否 | 长期记忆 SQLite 路径 |
@@ -424,9 +424,9 @@ make start-all
 
 ### 服务访问地址
 
-- FastAPI: `http://localhost:8000`
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+- FastAPI: `http://localhost:8002`
+- Swagger UI: `http://localhost:8002/docs`
+- ReDoc: `http://localhost:8002/redoc`
 - MCP Endpoint: `http://localhost:8001/mcp/`
 - Vue3 Frontend: `http://localhost:5173`
 
@@ -437,7 +437,7 @@ make start-all
 适用于天文知识、观测建议、事件预测等场景：
 
 ```bash
-curl -N -X POST "http://localhost:8000/query" \
+curl -N -X POST "http://localhost:8002/query" \
   -H "Content-Type: application/json" \
   -d "{\"query\":\"今晚北京适合观测什么？\",\"user_id\":\"demo-user\"}"
 ```
@@ -445,7 +445,7 @@ curl -N -X POST "http://localhost:8000/query" \
 ### 图片问答
 
 ```bash
-curl -N -X POST "http://localhost:8000/query_with_image" \
+curl -N -X POST "http://localhost:8002/query_with_image" \
   -F "query=这张图片里的天体是什么？" \
   -F "user_id=demo-user" \
   -F "image=@./example.jpg"
@@ -454,7 +454,7 @@ curl -N -X POST "http://localhost:8000/query_with_image" \
 ### 语音问答
 
 ```bash
-curl -N -X POST "http://localhost:8000/query_with_audio" \
+curl -N -X POST "http://localhost:8002/query_with_audio" \
   -F "query=请回答音频里的问题" \
   -F "user_id=demo-user" \
   -F "audio=@./question.wav"
@@ -463,7 +463,7 @@ curl -N -X POST "http://localhost:8000/query_with_audio" \
 ### 添加知识到 RAG
 
 ```bash
-curl -X POST "http://localhost:8000/add_knowledge" \
+curl -X POST "http://localhost:8002/add_knowledge" \
   -H "Content-Type: application/json" \
   -d "{\"knowledge\":[\"火星是太阳系第四颗行星\"],\"user_id\":\"demo-user\"}"
 ```
@@ -471,7 +471,7 @@ curl -X POST "http://localhost:8000/add_knowledge" \
 ### 清理会话记忆
 
 ```bash
-curl -X POST "http://localhost:8000/clear_memory?user_id=demo-user"
+curl -X POST "http://localhost:8002/clear_memory?user_id=demo-user"
 ```
 
 ### Vue3 前端
@@ -562,8 +562,8 @@ data: {"type":"text","content":"今晚上海可以观测到木星..."}
 
 FastAPI 已内置 OpenAPI 文档：
 
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+- Swagger UI: `http://localhost:8002/docs`
+- ReDoc: `http://localhost:8002/redoc`
 
 ## 测试与质量保障
 

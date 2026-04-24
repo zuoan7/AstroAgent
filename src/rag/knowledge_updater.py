@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.core.config import settings
 from src.core.logger import logger
+from src.rag.bm25_retriever import BM25Retriever
 
 
 @dataclass
@@ -37,6 +38,8 @@ class KnowledgeUpdateManager:
     def __init__(self, vector_db_path: Optional[str] = None):
         self.vector_db_path = vector_db_path or settings.VECTOR_DB_PATH
         self.registry_path = os.path.join(self.vector_db_path, "update_registry.json")
+        self.bm25_index_path = BM25Retriever.default_index_path(self.vector_db_path)
+        self.bm25_corpus_path = BM25Retriever.default_corpus_path(self.vector_db_path)
         self.registry: Dict[str, UpdateRecord] = {}
         self._load_registry()
 
@@ -123,6 +126,166 @@ class KnowledgeUpdateManager:
             f"更新={len(result['updated'])}, 未变={len(result['unchanged'])}"
         )
         return result
+
+    @staticmethod
+    def _normalize_document(
+        doc: Dict[str, Any],
+        *,
+        source: str,
+    ) -> Dict[str, Any]:
+        content = doc.get("content", "") or doc.get("page_content", "")
+        if not isinstance(content, str):
+            content = str(content)
+        content = content.strip()
+
+        metadata = dict(doc.get("metadata", {}) or {})
+        if doc.get("record_id") and not metadata.get("record_id"):
+            metadata["record_id"] = doc.get("record_id")
+        if doc.get("source") and not metadata.get("source"):
+            metadata["source"] = doc.get("source")
+        metadata.setdefault("source", source)
+        return {
+            "content": content,
+            "metadata": metadata,
+            "record_id": metadata.get("record_id", ""),
+        }
+
+    @staticmethod
+    def _vector_id(source: str, record_id: str, content_hash: str) -> str:
+        raw = f"{source}::{record_id or content_hash}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+    def _load_bm25_corpus_records(self) -> Dict[str, Dict[str, Any]]:
+        records: Dict[str, Dict[str, Any]] = {}
+        documents, metadata = BM25Retriever.load_corpus(self.bm25_corpus_path)
+        for index, content in enumerate(documents):
+            meta = metadata[index] if index < len(metadata) else {}
+            vector_id = meta.get("vector_id")
+            if not vector_id:
+                content_hash = self._compute_hash(content)
+                vector_id = self._vector_id(
+                    meta.get("source", "unknown"),
+                    meta.get("record_id", ""),
+                    content_hash,
+                )
+                meta = {**meta, "vector_id": vector_id, "content_hash": content_hash}
+            records[vector_id] = {"content": content, "metadata": meta}
+        return records
+
+    def _save_bm25_corpus_records(self, records: Dict[str, Dict[str, Any]]) -> int:
+        ordered = sorted(
+            records.values(),
+            key=lambda item: (
+                str(item.get("metadata", {}).get("source", "")),
+                str(item.get("metadata", {}).get("record_id", "")),
+                str(item.get("metadata", {}).get("vector_id", "")),
+            ),
+        )
+        documents = [item["content"] for item in ordered]
+        metadata = [item.get("metadata", {}) for item in ordered]
+        BM25Retriever.save_corpus(documents, metadata, self.bm25_corpus_path)
+        retriever = BM25Retriever(
+            index_path=self.bm25_index_path,
+            corpus_path=self.bm25_corpus_path,
+        )
+        retriever.build_index(documents, metadata)
+        return len(documents)
+
+    def ingest_documents(
+        self,
+        documents: List[Dict[str, Any]],
+        *,
+        source: str = "unknown",
+        vector_store: Any = None,
+    ) -> Dict[str, Any]:
+        normalized = []
+        for doc in documents:
+            item = self._normalize_document(doc, source=source)
+            if item["content"]:
+                normalized.append(item)
+        if not normalized:
+            return {
+                "added_count": 0,
+                "updated_count": 0,
+                "unchanged_count": 0,
+                "stored_count": 0,
+                "bm25_doc_count": 0,
+            }
+
+        changes = self.check_updates(normalized, source=source)
+        changed_docs = list(changes["added"]) + list(changes["updated"])
+        if not changed_docs:
+            return {
+                "added_count": 0,
+                "updated_count": 0,
+                "unchanged_count": len(changes["unchanged"]),
+                "stored_count": 0,
+                "bm25_doc_count": len(self._load_bm25_corpus_records()),
+            }
+
+        if vector_store is None:
+            raise ValueError("vector_store is required for document ingestion")
+
+        vector_payloads = []
+        now = time.time()
+        for doc in changed_docs:
+            content = doc["content"]
+            metadata = dict(doc.get("metadata", {}) or {})
+            record_id = doc.get("record_id", "") or metadata.get("record_id", "")
+            content_hash = self._compute_hash(content)
+            vector_id = self._vector_id(source, record_id, content_hash)
+            metadata.update(
+                {
+                    "source": metadata.get("source", source),
+                    "record_id": record_id,
+                    "content_hash": content_hash,
+                    "vector_id": vector_id,
+                    "updated_at_ts": now,
+                }
+            )
+            vector_payloads.append(
+                {
+                    "id": vector_id,
+                    "content": content,
+                    "metadata": metadata,
+                }
+            )
+
+        ids = [item["id"] for item in vector_payloads]
+        try:
+            vector_store.delete(ids=ids)
+        except Exception:
+            pass
+
+        vector_store.add_texts(
+            [item["content"] for item in vector_payloads],
+            [item["metadata"] for item in vector_payloads],
+            ids=ids,
+        )
+
+        corpus_records = self._load_bm25_corpus_records()
+        for item in vector_payloads:
+            corpus_records[item["id"]] = {
+                "content": item["content"],
+                "metadata": item["metadata"],
+            }
+        bm25_doc_count = self._save_bm25_corpus_records(corpus_records)
+
+        logger.info(
+            "✅ 知识入库完成: added=%s, updated=%s, unchanged=%s, stored=%s, bm25_docs=%s",
+            len(changes["added"]),
+            len(changes["updated"]),
+            len(changes["unchanged"]),
+            len(vector_payloads),
+            bm25_doc_count,
+        )
+        return {
+            "added_count": len(changes["added"]),
+            "updated_count": len(changes["updated"]),
+            "unchanged_count": len(changes["unchanged"]),
+            "stored_count": len(vector_payloads),
+            "bm25_doc_count": bm25_doc_count,
+        }
 
     def fetch_nasa_apod(self, api_key: Optional[str] = None) -> List[Dict[str, Any]]:
         """获取 NASA APOD（每日天文图片）数据"""

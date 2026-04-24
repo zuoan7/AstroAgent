@@ -99,7 +99,7 @@ stop_services() {
 
     echo ""
     info "检查并释放残留端口..."
-    for port in 8001 8000 5173; do
+    for port in 8001 8002 5173; do
         if check_port "$port"; then
             warn "端口 $port 仍被占用，强制释放..."
             kill_port "$port"
@@ -154,11 +154,11 @@ start_services() {
         fi
     fi
 
-    # ---------- 2. API Backend (port 8000) ----------
-    if check_port 8000; then
-        warn "端口 8000 已被占用，跳过 API Backend 启动"
+    # ---------- 2. API Backend (port 8002) ----------
+    if check_port 8002; then
+        warn "端口 8002 已被占用，跳过 API Backend 启动"
     else
-        info "启动 API Backend (port 8000) ..."
+        info "启动 API Backend (port 8002) ..."
         nohup env PYTHONPATH="$PROJECT_DIR" python3 -m src.api.main \
             > "$LOG_DIR/api.log" 2>&1 &
         echo $! > "$PID_DIR/api.pid"
@@ -211,7 +211,7 @@ start_services() {
     echo "========================================="
     echo ""
     echo "  MCP Server   : http://localhost:8001/mcp/"
-    echo "  API Backend  : http://localhost:8000"
+    echo "  API Backend  : http://localhost:8002"
     echo "  Vue3 Frontend: http://localhost:5173"
     echo ""
     echo "  日志目录      : $LOG_DIR/"
@@ -245,7 +245,7 @@ create_tunnel() {
         echo "示例: $0 tunnel user@example.com 9000"
         echo ""
         echo "这将创建以下隧道映射："
-        echo "  本地 9000 -> 远程 8000 (API Backend)"
+        echo "  本地 9000 -> 远程 8002 (API Backend)"
         echo "  本地 9001 -> 远程 8001 (MCP Server)"
         echo "  本地 9002 -> 远程 5173 (Vue3 Frontend)"
         exit 1
@@ -262,7 +262,7 @@ create_tunnel() {
     info "服务器: $server_host"
     echo ""
     echo "端口映射："
-    echo "  本地 $api_port       -> 远程 8000 (API Backend)"
+    echo "  本地 $api_port       -> 远程 8002 (API Backend)"
     echo "  本地 $mcp_port       -> 远程 8001 (MCP Server)"
     echo "  本地 $frontend_port  -> 远程 5173 (Vue3 Frontend)"
     echo ""
@@ -273,7 +273,7 @@ create_tunnel() {
     info "正在建立隧道连接 (Ctrl+C 断开)..."
     echo ""
 
-    ssh -N -L ${api_port}:localhost:8000 \
+    ssh -N -L ${api_port}:localhost:8002 \
            -L ${mcp_port}:localhost:8001 \
            -L ${frontend_port}:localhost:5173 \
            -o ServerAliveInterval=60 \

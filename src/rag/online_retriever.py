@@ -121,7 +121,8 @@ class OnlineRetriever:
     def _init_bm25(self) -> None:
         try:
             self.bm25_retriever = BM25Retriever(
-                index_path=self.vector_db_path + "/bm25_index.pkl",
+                index_path=BM25Retriever.default_index_path(self.vector_db_path),
+                corpus_path=BM25Retriever.default_corpus_path(self.vector_db_path),
                 top_k=self.retrieval_candidates,
             )
             if self.bm25_retriever.bm25 is None:
@@ -201,6 +202,12 @@ class OnlineRetriever:
         except Exception as e:
             logger.warning(f"⚠️  知识更新管理器初始化失败: {e}")
             self.knowledge_updater = None
+
+    def _refresh_keyword_retrievers(self) -> None:
+        self._init_bm25()
+        self._init_entity_retriever()
+        if self.cache:
+            self.cache.clear()
 
     # ===== Level 1: 多路混合检索 =====
 
@@ -654,8 +661,8 @@ class OnlineRetriever:
             stats["metrics_summary"] = self.metrics.get_metrics_summary()
         return stats
 
-    def update_knowledge(self, source: str = "online") -> Dict[str, int]:
-        if not self.knowledge_updater:
+    def update_knowledge(self, source: str = "online") -> Dict[str, Any]:
+        if not self.knowledge_updater or not self.db:
             return {}
         new_docs = []
         if source in ("online", "nasa_apod"):
@@ -663,8 +670,57 @@ class OnlineRetriever:
         if source in ("online", "nasa_neo"):
             new_docs.extend(self.knowledge_updater.fetch_nasa_neo())
         if new_docs and self.knowledge_updater:
-            return self.knowledge_updater.check_updates(new_docs, source=source)
+            result = self.knowledge_updater.ingest_documents(
+                new_docs,
+                source=source,
+                vector_store=self.db,
+            )
+            self._refresh_keyword_retrievers()
+            return result
         return {}
+
+    def add_documents(self, documents: List[Any], source: str = "manual") -> Dict[str, Any]:
+        if not self.enabled or not self.db or not self.knowledge_updater:
+            return {
+                "added_count": 0,
+                "updated_count": 0,
+                "unchanged_count": 0,
+                "stored_count": 0,
+                "bm25_doc_count": 0,
+            }
+
+        normalized_docs = []
+        for doc in documents:
+            if isinstance(doc, dict):
+                normalized_docs.append(doc)
+                continue
+
+            page_content = getattr(doc, "page_content", None)
+            metadata = getattr(doc, "metadata", None)
+            if page_content is not None:
+                normalized_docs.append(
+                    {
+                        "content": page_content,
+                        "metadata": metadata or {},
+                    }
+                )
+
+        if not normalized_docs:
+            return {
+                "added_count": 0,
+                "updated_count": 0,
+                "unchanged_count": 0,
+                "stored_count": 0,
+                "bm25_doc_count": 0,
+            }
+
+        result = self.knowledge_updater.ingest_documents(
+            normalized_docs,
+            source=source,
+            vector_store=self.db,
+        )
+        self._refresh_keyword_retrievers()
+        return result
 
     def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
         with self._metrics_lock:

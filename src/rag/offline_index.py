@@ -25,6 +25,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.core.config import settings
 from src.core.logger import logger
+from src.rag.bm25_retriever import BM25Retriever
 
 
 def _safe_read_text(path: str) -> str:
@@ -105,6 +106,8 @@ class OfflineIndexer:
     def __init__(self, cfg: OfflineIndexConfig):
         self.cfg = cfg
         self.hash_file = os.path.join(cfg.vector_db_path, "document_hashes.txt")
+        self.bm25_index_path = BM25Retriever.default_index_path(cfg.vector_db_path)
+        self.bm25_corpus_path = BM25Retriever.default_corpus_path(cfg.vector_db_path)
         self.document_hashes: set[str] = set()
 
         self.embeddings = DashScopeEmbeddings(
@@ -122,6 +125,50 @@ class OfflineIndexer:
             collection_name=cfg.collection_name,
             persist_directory=cfg.vector_db_path,
         )
+
+    def _load_existing_bm25_corpus(self) -> tuple[list[str], list[dict[str, Any]]]:
+        if os.path.exists(self.bm25_corpus_path):
+            return BM25Retriever.load_corpus(self.bm25_corpus_path)
+
+        try:
+            results = self.db.get()
+            documents = []
+            metadata = []
+            docs = results.get("documents", [])
+            metas = results.get("metadatas", [])
+            for index, doc in enumerate(docs):
+                if not doc:
+                    continue
+                documents.append(doc)
+                metadata.append(metas[index] if metas and index < len(metas) else {})
+            if documents:
+                logger.warning("⚠️  BM25 语料文件缺失，已从 Chroma 迁移现有文档")
+            return documents, metadata
+        except Exception as e:
+            logger.warning(f"⚠️  读取现有 BM25 语料失败: {e}")
+            return [], []
+
+    def _sync_bm25_index(
+        self,
+        new_chunks: list[str],
+        new_metas: list[dict[str, Any]],
+    ) -> None:
+        corpus_exists = os.path.exists(self.bm25_corpus_path)
+        documents, metadata = self._load_existing_bm25_corpus()
+        if corpus_exists:
+            documents.extend(new_chunks)
+            metadata.extend(new_metas)
+
+        if not documents:
+            logger.info("⏭️  无 BM25 文档需要同步")
+            return
+
+        retriever = BM25Retriever(
+            index_path=self.bm25_index_path,
+            corpus_path=self.bm25_corpus_path,
+        )
+        retriever.build_index(documents, metadata)
+        logger.info(f"✅ BM25 语料与索引已同步: {len(documents)} 个片段")
 
     def _load_hashes(self) -> None:
         if not os.path.exists(self.hash_file):
@@ -257,6 +304,7 @@ class OfflineIndexer:
             self.db.add_texts(batch_texts, batch_metas)
             logger.info(f"✅ 写入 batch {i//bs + 1}（{len(batch_texts)}）")
 
+        self._sync_bm25_index(new_chunks, new_metas)
         self._save_hashes()
         logger.info("=== 离线索引完成 ===")
 
@@ -280,4 +328,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

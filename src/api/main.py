@@ -557,8 +557,14 @@ async def query_with_audio_endpoint(
 @app.post("/add_knowledge")
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def add_knowledge_endpoint(request: Request, body: KnowledgeRequest):
-    get_agent().add_astronomy_knowledge(body.knowledge)
-    return {"status": "success", "message": "知识添加成功"}
+    effective_user_id = normalize_user_id(body.user_id)
+    result = get_agent().add_astronomy_knowledge(body.knowledge)
+    return {
+        "status": "success",
+        "message": "知识添加成功",
+        "user_id": effective_user_id,
+        "result": result,
+    }
 
 
 @app.get("/profile")

@@ -48,7 +48,7 @@ def mock_settings():
         instance.MEMORY_IMPORTANCE_HIGH_ROLES = {"user", "system"}
         instance.MEMORY_TOOL_RESULT_MAX_LENGTH = 500
         instance.API_HOST = "0.0.0.0"
-        instance.API_PORT = 8000
+        instance.API_PORT = 8002
         instance.MCP_PORT = 8001
         instance.NASA_API_KEY = "test-nasa-key"
         instance.NASA_BASE_URL = "https://api.nasa.gov"
@@ -473,7 +473,7 @@ def skill_manager():
         mock_settings.MCP_SERVER_URL = "http://localhost:8001/mcp"
         mock_settings.MCP_PORT = 8001
         mock_settings.API_HOST = "0.0.0.0"
-        mock_settings.API_PORT = 8000
+        mock_settings.API_PORT = 8002
         mock_settings.MAX_UPLOAD_SIZE = 10 * 1024 * 1024
         mock_settings.ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
         mock_settings.ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3"}
