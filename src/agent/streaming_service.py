@@ -41,6 +41,14 @@ TOOL_OUTPUT_LOG_PREVIEW_CHARS = 200
 FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS = 500
 
 
+def _update_status(steps: List[Dict[str, Any]], step_id: str, status: str) -> None:
+    """原地更新 plan_steps 列表中指定 step 的 status（共用 helper）。"""
+    for s in steps:
+        if s["id"] == step_id:
+            s["status"] = status
+            return
+
+
 class BaseStreamingGenerator:
     def __init__(
         self,
@@ -58,6 +66,7 @@ class BaseStreamingGenerator:
         governance_metrics: Optional[GovernanceMetricsRegistry] = None,
         audit_logger: Optional[Any] = None,
         agent_executor_factory: Optional[Any] = None,
+        execution_engine: Optional[Any] = None,
     ):
         self._agent_executor = agent_executor
         self._memory = memory
@@ -78,6 +87,9 @@ class BaseStreamingGenerator:
         self._governance_metrics = governance_metrics
         self._audit_logger = audit_logger
         self._agent_executor_factory = agent_executor_factory
+        # Phase 8: ExecutionEngine 统一执行入口（ENABLE_UNIFIED_EXECUTION_ENGINE=True 时主路径使用）
+        # 若调用方未传入，延迟到首次使用时从 task_orchestrator 推断或保持 None（回退旧路径）
+        self._execution_engine = execution_engine
 
     def _cleanup_action_history(self, request_id: Optional[str] = None):
         if request_id and request_id in self._action_history:
@@ -648,6 +660,84 @@ class BaseStreamingGenerator:
     def clear_event_processors(self):
         self._event_processors.clear()
 
+    async def _emit_trace_events(
+        self,
+        trace_entry: Any,
+        *,
+        plan_steps: List[Dict[str, Any]],
+        evidence_items: List[Dict[str, Any]],
+        tool_timeline: List[Dict[str, Any]],
+        next_event_fn: Any,
+        emit_fn: Any,
+    ):
+        """将一条 ExecutionTraceEntry（或等价 dict）映射为旧前端事件序列。
+
+        产出事件顺序：plan_update(running) -> step_start -> evidence_found* -> step_end -> plan_update(status)
+        保持与旧 planned 路径内联逻辑完全等价，以保证前端兼容性。
+
+        收敛计划：Phase 8 可将此方法迁入独立适配器类，StreamingService 只做调用。
+        """
+        from src.agent.models.execution_trace_entry import ExecutionTraceEntry
+
+        if isinstance(trace_entry, dict):
+            entry = ExecutionTraceEntry.from_dict(trace_entry)
+        else:
+            entry = trace_entry
+
+        step_id = entry.step_id
+        step_title = entry.title or step_id
+
+        # plan_update: running
+        _update_status(plan_steps, step_id, "running")
+        async for processed in emit_fn(
+            next_event_fn("plan_update", content={"steps": list(plan_steps)})
+        ):
+            yield processed
+
+        async for processed in emit_fn(
+            next_event_fn("step_start", content={"step_id": step_id, "title": step_title})
+        ):
+            yield processed
+
+        tool_timeline.append({
+            "run_id": step_id,
+            "tool": entry.skill,
+            "input": entry.input_params,
+            "output_summary": self._preview_text(entry.summary, 240),
+            "latency_ms": entry.latency_ms,
+            "status": entry.status,
+        })
+
+        for source in entry.sources:
+            if source not in evidence_items:
+                evidence_items.append(source)
+                async for processed in emit_fn(
+                    next_event_fn("evidence_found", content=source)
+                ):
+                    yield processed
+
+        mapped_status = "done" if entry.status == "success" else "error"
+        _update_status(plan_steps, step_id, mapped_status)
+
+        async for processed in emit_fn(
+            next_event_fn(
+                "step_end",
+                content={
+                    "step_id": step_id,
+                    "title": step_title,
+                    "status": entry.status,
+                    "latency_ms": entry.latency_ms,
+                    "error": entry.error,
+                },
+            )
+        ):
+            yield processed
+
+        async for processed in emit_fn(
+            next_event_fn("plan_update", content={"steps": list(plan_steps)})
+        ):
+            yield processed
+
     def _build_stream_event(
         self,
         event_type: str,
@@ -735,8 +825,8 @@ class BaseStreamingGenerator:
         execution_plan: Optional[ExecutionPlan] = None,
         event_callback: Optional[Any] = None,
     ) -> FinalResponse:
-        if not self._task_orchestrator:
-            raise ValueError("task orchestrator is not configured")
+        from src.core.config import settings
+
         with latency.measure("agent_prepare_ms"):
             chat_history = self._format_chat_history()
             self._current_query = query
@@ -745,15 +835,54 @@ class BaseStreamingGenerator:
                 if use_long_term_memory
                 else "本轮对话已禁用长期记忆"
             )
-        with latency.measure("agent_total_ms"):
-            result = await self._task_orchestrator.run(
-                decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
-                execution_plan=execution_plan,
-                event_callback=event_callback,
-            )
+
+        # Phase 8: ENABLE_UNIFIED_EXECUTION_ENGINE=True 时，优先走 ExecutionEngine 新主路径。
+        # 兼容层：flag=False 或 execution_engine 未配置时，回退到旧 TaskOrchestrator 路径。
+        # 收敛计划：下一轮可删除 flag 分支，直接移除旧 TaskOrchestrator 调用。
+        use_new_engine = (
+            getattr(settings, "ENABLE_UNIFIED_EXECUTION_ENGINE", False)
+            and self._execution_engine is not None
+        )
+
+        if use_new_engine:
+            from src.agent.models.execution_decision import ExecutionDecision
+
+            route = getattr(decision, "route", "")
+            if route == "direct_task":
+                exec_mode = "direct"
+            elif route == "planned_task":
+                exec_mode = "planned"
+            else:
+                exec_mode = "react"
+            exec_decision = ExecutionDecision(mode=exec_mode, reason="auto", legacy_execution_path=route)
+
+            with latency.measure("agent_total_ms"):
+                result = await self._execution_engine.run(
+                    exec_decision,
+                    decision,
+                    query,
+                    chat_history=chat_history,
+                    user_profile=user_profile,
+                    execution_plan=execution_plan,
+                    event_callback=event_callback,
+                )
+            latency.set_meta("execution_engine", "unified")
+            latency.set_meta("exec_mode", exec_mode)
+        else:
+            # 旧路径兼容层（ENABLE_UNIFIED_EXECUTION_ENGINE=False 时或 engine 未注入时）
+            if not self._task_orchestrator:
+                raise ValueError("task orchestrator is not configured")
+            with latency.measure("agent_total_ms"):
+                result = await self._task_orchestrator.run(
+                    decision,
+                    query,
+                    chat_history=chat_history,
+                    user_profile=user_profile,
+                    execution_plan=execution_plan,
+                    event_callback=event_callback,
+                )
+            latency.set_meta("execution_engine", "legacy_orchestrator")
+
         return result
 
     async def _stream_with_adapter(
@@ -992,62 +1121,13 @@ class BaseStreamingGenerator:
                 response_chunks.append(direct_answer)
                 if execution_path == "planned":
                     for trace in final_resp.execution_trace:
-                        step_id = trace.get("step_id")
-                        step_title = trace.get("title") or step_id
-                        plan_steps = self._update_plan_status(plan_steps, step_id, "running")
-                        async for processed in emit(
-                            next_event("plan_update", content={"steps": plan_steps})
-                        ):
-                            yield processed
-                        async for processed in emit(
-                            next_event(
-                                "step_start",
-                                content={"step_id": step_id, "title": step_title},
-                            )
-                        ):
-                            yield processed
-
-                        tool_timeline.append(
-                            {
-                                "run_id": step_id,
-                                "tool": trace.get("skill"),
-                                "input": trace.get("input_params", {}),
-                                "output_summary": self._preview_text(
-                                    trace.get("summary", ""), 240
-                                ),
-                                "latency_ms": trace.get("latency_ms"),
-                                "status": trace.get("status"),
-                            }
-                        )
-                        for source in trace.get("sources", []):
-                            if source not in evidence_items:
-                                evidence_items.append(source)
-                                async for processed in emit(
-                                    next_event("evidence_found", content=source)
-                                ):
-                                    yield processed
-
-                        mapped_status = (
-                            "done" if trace.get("status") == "success" else "error"
-                        )
-                        plan_steps = self._update_plan_status(
-                            plan_steps, step_id, mapped_status
-                        )
-                        async for processed in emit(
-                            next_event(
-                                "step_end",
-                                content={
-                                    "step_id": step_id,
-                                    "title": step_title,
-                                    "status": trace.get("status"),
-                                    "latency_ms": trace.get("latency_ms"),
-                                    "error": trace.get("error"),
-                                },
-                            )
-                        ):
-                            yield processed
-                        async for processed in emit(
-                            next_event("plan_update", content={"steps": plan_steps})
+                        async for processed in self._emit_trace_events(
+                            trace,
+                            plan_steps=plan_steps,
+                            evidence_items=evidence_items,
+                            tool_timeline=tool_timeline,
+                            next_event_fn=next_event,
+                            emit_fn=emit,
                         ):
                             yield processed
                 else:

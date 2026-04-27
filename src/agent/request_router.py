@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from src.skills.registry import get_skill_specs
+from src.agent.models.task_profile import TaskProfile
 
 
 SMALLTALK_PATTERNS = (
@@ -104,6 +105,12 @@ class RequestRouter:
         self._skill_specs = get_skill_specs()
 
     def route(self, query: str) -> RouteDecision:
+        """[当前主路径入口] 将查询路由为 RouteDecision，驱动 TaskOrchestrator 执行。
+
+        当前状态：StreamingService 的主流程直接调用本方法。
+        收敛计划：待 UnifiedExecutionEngine 实现后，主路径切换为调用 profile()，
+                  本方法降为 legacy 兼容别名（内部调用 profile() 并转换为 RouteDecision）。
+        """
         text = (query or "").strip()
         lowered = text.lower()
 
@@ -250,6 +257,21 @@ class RequestRouter:
         if any(word in text for word in ("位置", "坐标", "升起", "落下")):
             inferred.append("celestial-position-calculator")
         return inferred
+
+    def profile(self, query: str) -> TaskProfile:
+        """返回任务画像 TaskProfile（Phase 1 引入）。
+
+        当前状态：主路径未调用本方法，profile() 仅供测试和旁路观测使用。
+        收敛计划：待 UnifiedExecutionEngine 实现后，升级为主路由入口，替代 route()。
+        """
+        decision = self.route(query)
+        return TaskProfile.from_legacy_route(
+            route=decision.route,
+            task_type=decision.task_type,
+            confidence=decision.confidence,
+            matched_skills=decision.matched_skills,
+            expected_output_schema=decision.expected_output_schema,
+        )
 
     def _match_skills(self, text: str, lowered: str) -> List[str]:
         matched: List[str] = []

@@ -20,7 +20,14 @@ from src.skills import registry
 
 
 class TaskOrchestrator:
-    """Direct and planned execution paths for low-latency online requests."""
+    """Direct and planned execution paths for low-latency online requests.
+
+    .. deprecated::
+        Phase 8 起，主路径已迁移至 ExecutionEngine（ENABLE_UNIFIED_EXECUTION_ENGINE=True）。
+        本类保留为兼容层（flag=False 或 ExecutionEngine 未注入时的回退路径）。
+        收敛计划：下一轮（Phase 9）可将 _run_direct_task / _run_planned_task 降级为转调
+        DirectExecutor / PlannedExecutor，最终仅保留参数构建辅助方法（_build_skill_params 等）。
+    """
 
     def __init__(
         self,

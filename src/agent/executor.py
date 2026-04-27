@@ -45,6 +45,11 @@ class StepExecutionResult:
             "sources": list(self.sources),
         }
 
+    def to_trace_entry(self) -> "ExecutionTraceEntry":  # noqa: F821
+        """转换为统一 trace 模型（Phase 7 引入）。"""
+        from src.agent.models.execution_trace_entry import ExecutionTraceEntry
+        return ExecutionTraceEntry.from_step_result(self)
+
 
 @dataclass
 class ExecutionOutcome:

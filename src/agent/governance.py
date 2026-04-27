@@ -4,9 +4,14 @@ import json
 import math
 import threading
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 
 from src.core.config import resolve_path, settings
+
+if TYPE_CHECKING:
+    from src.agent.models.task_profile import TaskProfile
+    from src.agent.models.execution_context import ExecutionContext
+    from src.agent.models.execution_decision import ExecutionDecision
 
 
 VALID_AGENT_MODES = {"react", "hybrid", "planned"}
@@ -53,6 +58,92 @@ class AgentExecutionPolicy:
         if self.enable_react_fallback:
             return "react"
         return "direct"
+
+    def decide(
+        self,
+        profile: "TaskProfile",
+        context: "Optional[ExecutionContext]" = None,
+    ) -> "ExecutionDecision":
+        """基于 TaskProfile 推断 ExecutionDecision。
+
+        规则（优先级从高到低）：
+        1. mode==react（全局覆盖）-> react
+        2. complexity==low + tool_need==none -> direct
+        3. tool_need==single + openness!=high -> direct
+        4. tool_need==multi 或 complexity==high（且 openness!=high）-> planned
+        5. openness==high -> react
+        6. 兜底：委托给 choose_path(legacy_route)
+
+        受 ENABLE_EXECUTION_DECISION 保护，未开启时委托 choose_path。
+
+        当前状态：flag 默认 False，decide() 不接入主路径，结果仅供观测/测试。
+        收敛计划：待 UnifiedExecutionEngine 实现后，升级为主路径入口，
+                  替代 choose_path(route) 调用；choose_path() 降为兼容别名。
+        """
+        from src.agent.models.execution_decision import ExecutionDecision
+
+        if not bool(getattr(settings, "ENABLE_EXECUTION_DECISION", False)):
+            # Feature flag 关闭时，结果仍可观测但不接入主路径
+            path = self.choose_path(profile.legacy_route)
+            return ExecutionDecision(
+                mode=path,
+                reason="feature_flag_disabled_delegate_to_choose_path",
+                fallback_modes=[],
+                legacy_execution_path=path,
+            )
+
+        if self.mode == "react":
+            return ExecutionDecision(
+                mode="react",
+                reason="global_mode_override_react",
+                fallback_modes=[],
+                legacy_execution_path="react",
+            )
+
+        complexity = profile.complexity
+        openness = profile.openness
+        tool_need = profile.tool_need
+
+        if complexity == "low" and tool_need == "none":
+            return ExecutionDecision(
+                mode="direct",
+                reason="low_complexity_no_tools",
+                fallback_modes=["react"] if self.enable_react_fallback else [],
+                legacy_execution_path="direct",
+            )
+
+        if tool_need == "single" and openness != "high":
+            return ExecutionDecision(
+                mode="direct",
+                reason="single_tool_low_openness",
+                fallback_modes=["react"] if self.enable_react_fallback else [],
+                legacy_execution_path="direct",
+            )
+
+        if tool_need == "multi" or (complexity == "high" and openness != "high"):
+            return ExecutionDecision(
+                mode="planned",
+                reason="multi_tool_or_high_complexity",
+                fallback_modes=["react"] if self.enable_react_fallback else [],
+                legacy_execution_path="planned",
+            )
+
+        if openness == "high":
+            return ExecutionDecision(
+                mode="react",
+                reason="high_openness_react",
+                fallback_modes=[],
+                legacy_execution_path="react",
+            )
+
+        # 兜底：委托 choose_path
+        path = self.choose_path(profile.legacy_route)
+        return ExecutionDecision(
+            mode=path,
+            reason="fallback_to_choose_path",
+            fallback_modes=[],
+            legacy_execution_path=path,
+        )
 
 
 @dataclass(frozen=True)

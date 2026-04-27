@@ -380,6 +380,26 @@ class AgentGovernanceConfig(BaseSettings):
     )
     MODEL_POLICY_VERSION: str = Field("model_policy_v1", description="模型策略版本")
 
+    # ── 重构阶段 feature flags（Phase 8 已全部开启，旧路径保留为 flag=False 兼容层）──
+    # Phase 1: TaskProfile 任务画像，收敛目标：替代 task_type 字段
+    ENABLE_TASK_PROFILE: bool = Field(False, description="[重构flag] 启用 TaskProfile 任务画像")
+    # Phase 2: ExecutionContext 统一执行上下文，收敛目标：替代散落的 chat_history/user_profile 参数
+    ENABLE_EXECUTION_CONTEXT: bool = Field(False, description="[重构flag] 启用 ExecutionContext 统一上下文")
+    # Phase 2: ExecutionDecision 路由决策对象，收敛目标：替代 RouteDecision
+    ENABLE_EXECUTION_DECISION: bool = Field(False, description="[重构flag] 启用 ExecutionDecision 路由决策对象")
+    # Phase 4/8: UnifiedExecutionEngine 统一执行引擎，Phase 8 起默认开启
+    # 收敛计划：下一轮可删除 flag，直接移除旧 TaskOrchestrator 分支
+    ENABLE_UNIFIED_EXECUTION_ENGINE: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionEngine（Phase 8 默认开启）")
+    # Phase 5/8: WorkflowGraph DAG 执行图，Phase 8 起默认开启
+    # 收敛计划：下一轮可删除 flag，移除 StepExecutor 分支
+    ENABLE_WORKFLOW_GRAPH: bool = Field(True, description="[重构flag] 启用 WorkflowGraph DAG 执行图（Phase 8 默认开启）")
+    # Phase 7/8: UnifiedExecutionTrace 统一执行追踪，Phase 8 起默认开启
+    # 收敛计划：下一轮升级 FinalResponse.execution_trace 为 List[ExecutionTraceEntry]
+    ENABLE_UNIFIED_EXECUTION_TRACE: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionTrace（Phase 8 默认开启）")
+    # Phase 7/8: UnifiedExecutionEvents 统一事件模型，Phase 8 起默认开启
+    # 收敛计划：下一轮将 ExecutionEvent.to_frontend_type() 映射迁入 FrontendJsonEventAdapter
+    ENABLE_UNIFIED_EXECUTION_EVENTS: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionEvents（Phase 8 默认开启）")
+
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
 
