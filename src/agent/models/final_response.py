@@ -17,6 +17,7 @@ class FinalResponse:
     memory_hits: List[Dict[str, Any]] = field(default_factory=list)
     execution_plan: Optional[Dict[str, Any]] = None
     execution_trace: List[Dict[str, Any]] = field(default_factory=list)
+    execution_events: List[Dict[str, Any]] = field(default_factory=list)
     route_decision: Optional[Dict[str, Any]] = None
     latency_profile: Optional[Dict[str, Any]] = None
     fallback_path: List[Dict[str, Any]] = field(default_factory=list)
@@ -42,6 +43,8 @@ class FinalResponse:
             result["execution_plan"] = self.execution_plan
         if self.execution_trace:
             result["execution_trace"] = self.execution_trace
+        if self.execution_events:
+            result["execution_events"] = self.execution_events
         if self.route_decision:
             result["route_decision"] = self.route_decision
         if self.latency_profile:
@@ -66,6 +69,7 @@ class FinalResponse:
             "memory_hits": self.memory_hits,
             "execution_plan": self.execution_plan,
             "execution_trace": self.execution_trace,
+            "execution_events": self.execution_events,
             "route_decision": self.route_decision,
             "latency_profile": self.latency_profile,
             "fallback_path": self.fallback_path,

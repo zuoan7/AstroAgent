@@ -2,8 +2,8 @@
 
 目标：
 1. WorkflowExecutor 能执行线性 WorkflowGraph，产出正确 ExecutionOutcome
-2. PlannedExecutor 在 ENABLE_WORKFLOW_GRAPH=True 时走 graph 路径
-3. PlannedExecutor 在 ENABLE_WORKFLOW_GRAPH=False 时走旧 StepExecutor 路径
+2. PlannedExecutor 优先走原生 graph 路径
+3. ENABLE_WORKFLOW_GRAPH=False 时回退到 legacy plan->graph 转换，但执行器仍是 WorkflowExecutor
 4. 可选节点失败不中断执行；必选节点失败立即 halt
 """
 from __future__ import annotations
@@ -256,6 +256,7 @@ class TestPlannedExecutorGraphFlag:
         )
         mock_planner = MagicMock()
         mock_planner.plan.return_value = plan
+        mock_planner.plan_graph.return_value = WorkflowGraph.from_execution_plan(plan)
 
         synth = _mock_synthesizer()
         mgr = _skill_manager(skill_results)
@@ -296,6 +297,23 @@ class TestPlannedExecutorGraphFlag:
         from src.agent.models.final_response import FinalResponse
         assert isinstance(result, FinalResponse)
 
+    def test_plan_graph_is_preferred_when_available(self):
+        skill_results = {
+            "weather-lookup": _ok_skill_result("weather-lookup"),
+            "observation-planner": _ok_skill_result("observation-planner"),
+        }
+        pe, synth = self._make_planned_executor(skill_results)
+        rd = _route_decision()
+
+        result = asyncio.get_event_loop().run_until_complete(
+            pe.run(rd, "北京今晚")
+        )
+
+        pe._planner.plan_graph.assert_called_once()
+        pe._planner.plan.assert_not_called()
+        from src.agent.models.final_response import FinalResponse
+        assert isinstance(result, FinalResponse)
+
     def test_flag_true_full_execution(self):
         """flag=True 时端到端执行，skill 被实际调用。"""
         skill_results = {
@@ -319,16 +337,13 @@ class TestPlannedExecutorGraphFlag:
         assert len(skill_results_arg) == 2
 
     def test_flag_false_legacy_path_stable(self):
-        """ENABLE_WORKFLOW_GRAPH=False 时旧路径正常产出 FinalResponse。"""
+        """ENABLE_WORKFLOW_GRAPH=False 时回退到 legacy plan->graph 转换。"""
         skill_results = {
             "weather-lookup": _ok_skill_result("weather-lookup"),
             "observation-planner": _ok_skill_result("observation-planner"),
         }
         mgr = _skill_manager(skill_results)
         pe, synth = self._make_planned_executor(skill_results)
-        # 用真实 StepExecutor
-        from src.agent.executor import StepExecutor
-        pe._executor = StepExecutor(skill_manager=mgr)
 
         with patch("src.agent.execution.planned_executor.settings") as mock_settings:
             mock_settings.ENABLE_WORKFLOW_GRAPH = False
@@ -338,5 +353,25 @@ class TestPlannedExecutorGraphFlag:
             )
 
         synth.synthesize.assert_called_once()
+        pe._planner.plan.assert_called_once()
+        pe._planner.plan_graph.assert_not_called()
+        from src.agent.models.final_response import FinalResponse
+        assert isinstance(result, FinalResponse)
+
+    def test_plan_graph_failure_falls_back_to_plan(self):
+        skill_results = {
+            "weather-lookup": _ok_skill_result("weather-lookup"),
+            "observation-planner": _ok_skill_result("observation-planner"),
+        }
+        pe, synth = self._make_planned_executor(skill_results)
+        pe._planner.plan_graph.side_effect = RuntimeError("graph planning failed")
+        rd = _route_decision()
+
+        result = asyncio.get_event_loop().run_until_complete(
+            pe.run(rd, "北京今晚")
+        )
+
+        pe._planner.plan_graph.assert_called_once()
+        pe._planner.plan.assert_called_once()
         from src.agent.models.final_response import FinalResponse
         assert isinstance(result, FinalResponse)

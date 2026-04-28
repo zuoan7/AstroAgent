@@ -61,7 +61,11 @@ class ExecutionOutcome:
 
 
 class StepExecutor:
-    """Stage 3 executor for formal plan execution."""
+    """Deprecated linear ExecutionPlan executor.
+
+    主 planned 路径已迁移到 WorkflowExecutor；本类仍保留给 TaskOrchestrator
+    与历史测试/回退路径使用。
+    """
 
     def __init__(self, skill_manager: Any) -> None:
         self._skill_manager = skill_manager

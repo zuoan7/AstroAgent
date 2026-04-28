@@ -12,6 +12,7 @@ from src.agent.governance import (
     GovernanceMetricsRegistry,
     RequestObservation,
 )
+from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.models.final_response import FinalResponse
 from src.agent.output_parser import extract_final_answer_text
@@ -87,8 +88,7 @@ class BaseStreamingGenerator:
         self._governance_metrics = governance_metrics
         self._audit_logger = audit_logger
         self._agent_executor_factory = agent_executor_factory
-        # Phase 8: ExecutionEngine 统一执行入口（ENABLE_UNIFIED_EXECUTION_ENGINE=True 时主路径使用）
-        # 若调用方未传入，延迟到首次使用时从 task_orchestrator 推断或保持 None（回退旧路径）
+        # ExecutionEngine 为默认主执行入口；未注入时才回退到旧 TaskOrchestrator。
         self._execution_engine = execution_engine
 
     def _cleanup_action_history(self, request_id: Optional[str] = None):
@@ -583,6 +583,259 @@ class BaseStreamingGenerator:
         self._agent_executor = self._agent_executor_factory()
         return self._agent_executor
 
+    def _use_unified_execution_engine(self) -> bool:
+        from src.core.config import settings
+
+        return (
+            getattr(settings, "ENABLE_UNIFIED_EXECUTION_ENGINE", False)
+            and getattr(self, "_execution_engine", None) is not None
+        )
+
+    def _build_request_context(
+        self,
+        query: str,
+        *,
+        use_long_term_memory: bool,
+        request_id: Optional[str] = None,
+    ) -> Any:
+        from src.agent.models.request_context import RequestContext
+
+        self._current_query = query
+        return RequestContext(
+            query=query,
+            chat_history=self._format_chat_history(),
+            user_profile=(
+                self._format_user_profile()
+                if use_long_term_memory
+                else "本轮对话已禁用长期记忆"
+            ),
+            request_id=request_id or uuid.uuid4().hex[:8],
+            use_long_term_memory=use_long_term_memory,
+        )
+
+    def _resolve_execution_decision(
+        self,
+        query: str,
+        legacy_decision: Optional[Any],
+        *,
+        use_long_term_memory: bool,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> tuple[Any, Optional[Any], Optional[Any]]:
+        """优先走 TaskProfile/ExecutionContext -> ExecutionDecision，保留 legacy 回退。"""
+        from src.agent.models.execution_context import ExecutionContext
+        from src.agent.models.execution_decision import ExecutionDecision
+        from src.agent.models.request_context import RequestContext
+        from src.agent.models.task_profile import TaskProfile
+
+        policy = getattr(self, "_execution_policy", AgentExecutionPolicy.from_settings())
+
+        router = getattr(self, "_request_router", None)
+
+        if router and hasattr(router, "profile"):
+            profile = router.profile(query)
+        elif legacy_decision and isinstance(getattr(legacy_decision, "route", None), str):
+            profile = TaskProfile.from_legacy_route(
+                route=legacy_decision.route,
+                task_type=getattr(legacy_decision, "task_type", "open_domain_reasoning"),
+                confidence=getattr(legacy_decision, "confidence", 0.0),
+                matched_skills=getattr(legacy_decision, "matched_skills", []),
+                reason=getattr(legacy_decision, "reason", ""),
+                expected_output_schema=getattr(
+                    legacy_decision, "expected_output_schema", "generic_answer_v1"
+                ),
+            )
+        else:
+            path = policy.choose_path(None)
+            return (
+                ExecutionDecision(
+                    mode=path,
+                    reason="legacy_wrapper_no_route",
+                    fallback_modes=[],
+                    legacy_execution_path=path,
+                ),
+                None,
+                None,
+            )
+
+        context = ExecutionContext(
+            profile=profile,
+            request=RequestContext(
+                query=query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+                use_long_term_memory=use_long_term_memory,
+            ),
+        )
+        return policy.decide(profile, context), profile, context
+
+    def _to_execution_event(self, event: Any, *, source: str = "") -> ExecutionEvent:
+        if isinstance(event, ExecutionEvent):
+            return event
+        if isinstance(event, dict):
+            return ExecutionEvent(
+                type=str(event.get("type", "")),
+                payload=dict(event.get("payload", {}) or {}),
+                source=source or str(event.get("source", "") or ""),
+            )
+        raise TypeError(f"unsupported execution event payload: {type(event)!r}")
+
+    async def _emit_execution_event(
+        self,
+        event: Any,
+        *,
+        next_event_fn: Any,
+        emit_fn: Any,
+        source: str = "",
+    ) -> AsyncGenerator[StreamEvent, None]:
+        execution_event = self._to_execution_event(event, source=source)
+        frontend_type = execution_event.to_frontend_type()
+        if not frontend_type:
+            return
+        async for processed in emit_fn(
+            next_event_fn(frontend_type, content=execution_event.payload)
+        ):
+            yield processed
+
+    def _iter_response_execution_events(
+        self,
+        response: FinalResponse,
+    ) -> List[ExecutionEvent]:
+        events = []
+        for event in getattr(response, "execution_events", []) or []:
+            events.append(self._to_execution_event(event))
+        return events
+
+    async def _emit_response_execution_events(
+        self,
+        response: FinalResponse,
+        *,
+        plan_steps: List[Dict[str, Any]],
+        evidence_items: List[Dict[str, Any]],
+        tool_timeline: List[Dict[str, Any]],
+        next_event_fn: Any,
+        emit_fn: Any,
+        include_answer_ready: bool = False,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        for event in self._iter_response_execution_events(response):
+            if event.type in {"task_profile", "execution_decision", "fallback_triggered"}:
+                continue
+            if event.type == "route_decided":
+                continue
+            if event.type in {"answer_ready", "final_answer"} and not include_answer_ready:
+                continue
+            if event.type in {"plan_built", "plan_created"}:
+                plan_payload = event.payload.get("steps")
+                if isinstance(plan_payload, list):
+                    async for processed in self._emit_execution_event(
+                        ExecutionEvent(
+                            type="plan_built",
+                            payload={"steps": plan_payload},
+                            source=event.source,
+                        ),
+                        next_event_fn=next_event_fn,
+                        emit_fn=emit_fn,
+                    ):
+                        yield processed
+                continue
+            if event.type == "step_started":
+                step_id = str(event.payload.get("step_id", ""))
+                if step_id:
+                    _update_status(plan_steps, step_id, "running")
+                async for processed in self._emit_execution_event(
+                    event,
+                    next_event_fn=next_event_fn,
+                    emit_fn=emit_fn,
+                ):
+                    yield processed
+                continue
+            if event.type == "step_finished":
+                step_id = str(event.payload.get("step_id", ""))
+                status = str(event.payload.get("status", ""))
+                if step_id:
+                    _update_status(
+                        plan_steps,
+                        step_id,
+                        "done" if status == "success" else "error",
+                    )
+                async for processed in self._emit_execution_event(
+                    event,
+                    next_event_fn=next_event_fn,
+                    emit_fn=emit_fn,
+                ):
+                    yield processed
+                continue
+            if event.type in {"tool_called", "tool_result", "tool_returned"}:
+                payload = dict(event.payload)
+                tool_name = payload.get("tool")
+                if event.type == "tool_called":
+                    tool_timeline.append(
+                        {
+                            "run_id": payload.get("run_id"),
+                            "tool": tool_name,
+                            "input": payload.get("input", ""),
+                            "status": "running",
+                        }
+                    )
+                else:
+                    tool_timeline.append(
+                        {
+                            "run_id": payload.get("run_id"),
+                            "tool": tool_name,
+                            "output_summary": payload.get("output_summary", ""),
+                            "duration_sec": payload.get("duration_sec"),
+                            "status": payload.get("status"),
+                        }
+                    )
+                async for processed in self._emit_execution_event(
+                    event,
+                    next_event_fn=next_event_fn,
+                    emit_fn=emit_fn,
+                ):
+                    yield processed
+                continue
+            async for processed in self._emit_execution_event(
+                event,
+                next_event_fn=next_event_fn,
+                emit_fn=emit_fn,
+            ):
+                yield processed
+
+    def _build_frontend_plan_steps(
+        self,
+        *,
+        query: str,
+        use_long_term_memory: bool,
+        execution_plan: ExecutionPlan,
+    ) -> List[Dict[str, Any]]:
+        steps = [
+            {
+                "id": "understand",
+                "title": "解析任务",
+                "description": f"理解用户问题并构建执行路径: {self._preview_text(query, 80)}",
+                "status": "done",
+            }
+        ]
+        if use_long_term_memory:
+            steps.append(
+                {
+                    "id": "memory",
+                    "title": "读取记忆",
+                    "description": "检索与当前问题相关的长期记忆与用户偏好",
+                    "status": "done",
+                }
+            )
+        steps.extend(execution_plan.to_frontend_steps())
+        steps.append(
+            {
+                "id": "answer",
+                "title": "生成答案",
+                "description": "汇总执行结果并生成最终回答",
+                "status": "pending",
+            }
+        )
+        return steps
+
     @staticmethod
     def _infer_content_type(text: str) -> str:
         stripped = (text or "").strip()
@@ -689,13 +942,23 @@ class BaseStreamingGenerator:
 
         # plan_update: running
         _update_status(plan_steps, step_id, "running")
-        async for processed in emit_fn(
-            next_event_fn("plan_update", content={"steps": list(plan_steps)})
+        async for processed in self._emit_execution_event(
+            ExecutionEvent(
+                type="plan_built",
+                payload={"steps": list(plan_steps)},
+                source="planned",
+            ),
+            next_event_fn=next_event_fn,
+            emit_fn=emit_fn,
         ):
             yield processed
 
-        async for processed in emit_fn(
-            next_event_fn("step_start", content={"step_id": step_id, "title": step_title})
+        trace_events = entry.to_execution_events(source="planned")
+
+        async for processed in self._emit_execution_event(
+            trace_events[0],
+            next_event_fn=next_event_fn,
+            emit_fn=emit_fn,
         ):
             yield processed
 
@@ -719,22 +982,21 @@ class BaseStreamingGenerator:
         mapped_status = "done" if entry.status == "success" else "error"
         _update_status(plan_steps, step_id, mapped_status)
 
-        async for processed in emit_fn(
-            next_event_fn(
-                "step_end",
-                content={
-                    "step_id": step_id,
-                    "title": step_title,
-                    "status": entry.status,
-                    "latency_ms": entry.latency_ms,
-                    "error": entry.error,
-                },
-            )
+        async for processed in self._emit_execution_event(
+            trace_events[-1],
+            next_event_fn=next_event_fn,
+            emit_fn=emit_fn,
         ):
             yield processed
 
-        async for processed in emit_fn(
-            next_event_fn("plan_update", content={"steps": list(plan_steps)})
+        async for processed in self._emit_execution_event(
+            ExecutionEvent(
+                type="plan_built",
+                payload={"steps": list(plan_steps)},
+                source="planned",
+            ),
+            next_event_fn=next_event_fn,
+            emit_fn=emit_fn,
         ):
             yield processed
 
@@ -825,8 +1087,6 @@ class BaseStreamingGenerator:
         execution_plan: Optional[ExecutionPlan] = None,
         event_callback: Optional[Any] = None,
     ) -> FinalResponse:
-        from src.core.config import settings
-
         with latency.measure("agent_prepare_ms"):
             chat_history = self._format_chat_history()
             self._current_query = query
@@ -836,25 +1096,18 @@ class BaseStreamingGenerator:
                 else "本轮对话已禁用长期记忆"
             )
 
-        # Phase 8: ENABLE_UNIFIED_EXECUTION_ENGINE=True 时，优先走 ExecutionEngine 新主路径。
-        # 兼容层：flag=False 或 execution_engine 未配置时，回退到旧 TaskOrchestrator 路径。
-        # 收敛计划：下一轮可删除 flag 分支，直接移除旧 TaskOrchestrator 调用。
-        use_new_engine = (
-            getattr(settings, "ENABLE_UNIFIED_EXECUTION_ENGINE", False)
-            and self._execution_engine is not None
-        )
+        # 默认主路径：ExecutionEngine。
+        # 兼容层：flag=False 或 execution_engine 未配置时，回退到旧 TaskOrchestrator。
+        use_new_engine = self._use_unified_execution_engine()
 
         if use_new_engine:
-            from src.agent.models.execution_decision import ExecutionDecision
-
-            route = getattr(decision, "route", "")
-            if route == "direct_task":
-                exec_mode = "direct"
-            elif route == "planned_task":
-                exec_mode = "planned"
-            else:
-                exec_mode = "react"
-            exec_decision = ExecutionDecision(mode=exec_mode, reason="auto", legacy_execution_path=route)
+            exec_decision, _, exec_context = self._resolve_execution_decision(
+                query,
+                decision,
+                use_long_term_memory=use_long_term_memory,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
 
             with latency.measure("agent_total_ms"):
                 result = await self._execution_engine.run(
@@ -865,9 +1118,10 @@ class BaseStreamingGenerator:
                     user_profile=user_profile,
                     execution_plan=execution_plan,
                     event_callback=event_callback,
+                    context=exec_context,
                 )
             latency.set_meta("execution_engine", "unified")
-            latency.set_meta("exec_mode", exec_mode)
+            latency.set_meta("exec_mode", exec_decision.mode)
         else:
             # 旧路径兼容层（ENABLE_UNIFIED_EXECUTION_ENGINE=False 时或 engine 未注入时）
             if not self._task_orchestrator:
@@ -959,6 +1213,12 @@ class BaseStreamingGenerator:
                 yield processed
 
         try:
+            request_context = self._build_request_context(
+                query,
+                use_long_term_memory=use_long_term_memory,
+                request_id=request_id,
+            )
+
             async for processed in emit(
                 next_event("plan_update", content={"steps": plan_steps})
             ):
@@ -1020,7 +1280,14 @@ class BaseStreamingGenerator:
                     yield processed
 
             decision = None
-            execution_path = self._execution_policy.choose_path(None)
+            execution_decision, profile, _exec_context = self._resolve_execution_decision(
+                query,
+                None,
+                use_long_term_memory=use_long_term_memory,
+                chat_history=request_context.chat_history,
+                user_profile=request_context.user_profile,
+            )
+            execution_path = execution_decision.mode
             fallback_used = False
             output_schema_parse_success = response_mode != "final_answer"
             if self._request_router and hasattr(self._request_router, "route"):
@@ -1030,67 +1297,76 @@ class BaseStreamingGenerator:
                     candidate, "to_meta"
                 ):
                     decision = candidate
-                    execution_path = self._execution_policy.choose_path(decision.route)
-                    latency.set_meta("agent_mode", self._execution_policy.mode)
-                    latency.set_meta("execution_path", execution_path)
-                    latency.set_meta(
-                        "feature_flags",
-                        self._execution_policy.to_dict(),
-                    )
-                    async for processed in emit(
-                        next_event("route_decision", content=decision.to_meta())
-                    ):
-                        yield processed
+                    if profile is None:
+                        execution_decision, profile, _exec_context = (
+                            self._resolve_execution_decision(
+                                query,
+                                decision,
+                                use_long_term_memory=use_long_term_memory,
+                                chat_history=request_context.chat_history,
+                                user_profile=request_context.user_profile,
+                            )
+                        )
+            elif profile is not None and hasattr(profile, "to_legacy_route_decision"):
+                decision = profile.to_legacy_route_decision()
 
-            if (
-                execution_path == "planned"
-                and decision
-                and self._task_orchestrator
-                and hasattr(self._task_orchestrator, "build_execution_plan")
-            ):
-                chat_history = self._format_chat_history()
-                user_profile = (
-                    self._format_user_profile()
-                    if use_long_term_memory
-                    else "本轮对话已禁用长期记忆"
+            if decision is not None:
+                execution_path = execution_decision.mode
+                latency.set_meta("agent_mode", self._execution_policy.mode)
+                latency.set_meta("execution_path", execution_path)
+                latency.set_meta(
+                    "execution_decision",
+                    execution_decision.to_dict(),
                 )
-                actual_plan = self._task_orchestrator.build_execution_plan(
-                    decision,
-                    query,
-                    chat_history=chat_history,
-                    user_profile=user_profile,
+                latency.set_meta(
+                    "feature_flags",
+                    self._execution_policy.to_dict(),
                 )
-                actual_plan_steps = [
-                    {
-                        "id": "understand",
-                        "title": "解析任务",
-                        "description": f"理解用户问题并构建执行路径: {self._preview_text(query, 80)}",
-                        "status": "done",
-                    }
-                ]
-                if use_long_term_memory:
-                    actual_plan_steps.append(
-                        {
-                            "id": "memory",
-                            "title": "读取记忆",
-                            "description": "检索与当前问题相关的长期记忆与用户偏好",
-                            "status": "done",
-                        }
-                    )
-                actual_plan_steps.extend(actual_plan.to_frontend_steps())
-                actual_plan_steps.append(
-                    {
-                        "id": "answer",
-                        "title": "生成答案",
-                        "description": "汇总执行结果并生成最终回答",
-                        "status": "pending",
-                    }
-                )
-                plan_steps = actual_plan_steps
-                async for processed in emit(
-                    next_event("plan_update", content={"steps": plan_steps})
+                async for processed in self._emit_execution_event(
+                    ExecutionEvent(
+                        type="route_decided",
+                        payload=decision.to_meta(),
+                        source="router",
+                    ),
+                    next_event_fn=next_event,
+                    emit_fn=emit,
                 ):
                     yield processed
+
+            if execution_path == "planned" and decision:
+                if self._use_unified_execution_engine():
+                    actual_plan = self._execution_engine.preview_plan(
+                        execution_decision,
+                        decision,
+                        query,
+                        chat_history=request_context.chat_history,
+                        user_profile=request_context.user_profile,
+                    )
+                elif self._task_orchestrator and hasattr(
+                    self._task_orchestrator, "build_execution_plan"
+                ):
+                    actual_plan = self._task_orchestrator.build_execution_plan(
+                        decision,
+                        query,
+                        chat_history=request_context.chat_history,
+                        user_profile=request_context.user_profile,
+                    )
+                if actual_plan is not None:
+                    plan_steps = self._build_frontend_plan_steps(
+                        query=query,
+                        use_long_term_memory=use_long_term_memory,
+                        execution_plan=actual_plan,
+                    )
+                    async for processed in self._emit_execution_event(
+                        ExecutionEvent(
+                            type="plan_built",
+                            payload={"steps": plan_steps},
+                            source="planned",
+                        ),
+                        next_event_fn=next_event,
+                        emit_fn=emit,
+                    ):
+                        yield processed
 
             if execution_path != "planned":
                 plan_steps = self._update_plan_status(plan_steps, "tools", "running")
@@ -1119,7 +1395,17 @@ class BaseStreamingGenerator:
                 output_schema_parse_success = True
                 direct_answer = final_resp.answer
                 response_chunks.append(direct_answer)
-                if execution_path == "planned":
+                if final_resp.execution_events:
+                    async for processed in self._emit_response_execution_events(
+                        final_resp,
+                        plan_steps=plan_steps,
+                        evidence_items=evidence_items,
+                        tool_timeline=tool_timeline,
+                        next_event_fn=next_event,
+                        emit_fn=emit,
+                    ):
+                        yield processed
+                elif execution_path == "planned":
                     for trace in final_resp.execution_trace:
                         async for processed in self._emit_trace_events(
                             trace,
@@ -1146,25 +1432,49 @@ class BaseStreamingGenerator:
             else:
                 if execution_path == "planned":
                     latency.set_meta("planned_path_ready", False)
-                with latency.measure("agent_prepare_ms"):
-                    agent_input = self._prepare_input(
-                        query, use_long_term_memory=use_long_term_memory
-                    )
+                agent_input = {
+                    "input": request_context.query,
+                    "chat_history": request_context.chat_history,
+                    "user_profile": request_context.user_profile,
+                }
                 agent_started = time.perf_counter()
-                agent_executor = self._ensure_agent_executor()
-                async for raw_event in agent_executor.astream_events(
-                    agent_input,
-                    version="v1",
+                if (
+                    execution_path == "react"
+                    and decision
+                    and self._use_unified_execution_engine()
                 ):
+                    _, _, exec_context = self._resolve_execution_decision(
+                        query,
+                        decision,
+                        use_long_term_memory=use_long_term_memory,
+                        chat_history=agent_input.get("chat_history", ""),
+                        user_profile=agent_input.get("user_profile", ""),
+                    )
+                    raw_events = self._execution_engine.astream_events(
+                        execution_decision,
+                        decision,
+                        query,
+                        chat_history=agent_input.get("chat_history", ""),
+                        user_profile=agent_input.get("user_profile", ""),
+                        version="v1",
+                        context=exec_context,
+                    )
+                else:
+                    raw_events = self._ensure_agent_executor().astream_events(
+                        agent_input,
+                        version="v1",
+                    )
+
+                async for raw_event in raw_events:
                     event_type = raw_event.get("event")
                     data = raw_event.get("data", {}) or {}
                     run_id = raw_event.get("run_id")
 
                     if event_type == "on_tool_start":
-                        async for processed in emit(
-                            next_event(
-                                "tool_start",
-                                content={
+                        async for processed in self._emit_execution_event(
+                            ExecutionEvent(
+                                type="tool_called",
+                                payload={
                                     "tool": (
                                         data.get("name")
                                         or data.get("tool")
@@ -1177,13 +1487,19 @@ class BaseStreamingGenerator:
                                     ),
                                     "status": "running",
                                 },
+                                source="react",
+                            ),
+                            next_event_fn=lambda event_type, **kwargs: next_event(
+                                event_type,
                                 meta={
                                     "run_id": run_id,
                                     "tool": data.get("name")
                                     or data.get("tool")
                                     or "unknown_tool",
                                 },
-                            )
+                                **kwargs,
+                            ),
+                            emit_fn=emit,
                         ):
                             yield processed
                         tool_name = (
@@ -1219,10 +1535,10 @@ class BaseStreamingGenerator:
                     if event_type == "on_tool_end":
                         tool_result = self._handle_tool_end(request_id, run_id, data)
                         tool_meta = tool_result.get("meta", {}) or {}
-                        async for processed in emit(
-                            next_event(
-                                "tool_end",
-                                content={
+                        async for processed in self._emit_execution_event(
+                            ExecutionEvent(
+                                type="tool_returned",
+                                payload={
                                     "tool": tool_meta.get("name"),
                                     "output": tool_result.get("tool_output_str", ""),
                                     "output_summary": self._preview_text(
@@ -1236,13 +1552,19 @@ class BaseStreamingGenerator:
                                         else "error"
                                     ),
                                 },
+                                source="react",
+                            ),
+                            next_event_fn=lambda event_type, **kwargs: next_event(
+                                event_type,
                                 meta={
                                     "run_id": run_id,
                                     "tool": tool_meta.get("name"),
                                     "duration_sec": tool_result.get("duration"),
                                     "extracted_url": tool_result.get("extracted_url"),
                                 },
-                            )
+                                **kwargs,
+                            ),
+                            emit_fn=emit,
                         ):
                             yield processed
                         tool_timeline.append(
@@ -1616,10 +1938,17 @@ class StreamingService(BaseStreamingGenerator):
             if self._request_router and hasattr(self._request_router, "route"):
                 decision = self._request_router.route(query)
 
-            execution_path = self._execution_policy.choose_path(
-                getattr(decision, "route", None)
+            execution_decision, _, _ = self._resolve_execution_decision(
+                query,
+                decision,
+                use_long_term_memory=True,
             )
-            if decision and execution_path in ("direct", "planned"):
+            execution_path = execution_decision.mode
+            use_unified_engine = self._use_unified_execution_engine()
+            if decision and (
+                execution_path in ("direct", "planned")
+                or (execution_path == "react" and use_unified_engine)
+            ):
                 final_resp = asyncio.run(
                     self._run_orchestrated_path(
                         query,

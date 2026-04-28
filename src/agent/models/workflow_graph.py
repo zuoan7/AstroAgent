@@ -3,8 +3,8 @@
 将 ExecutionPlan 的线性步骤列表升级为显式 DAG 结构，
 支持 depends_on 依赖声明、并行组推导与拓扑排序。
 
-当前状态：纯数据模型层，PlannedExecutor 默认执行路径不变（仍用 ExecutionPlan）。
-收敛计划：Phase 6 引入 GraphExecutor，待验证通过后替换 PlannedExecutor 内部执行逻辑。
+当前状态：Planner.plan_graph() 与 PlannedExecutor 已优先使用 WorkflowGraph；
+          ExecutionPlan 保留为兼容表示与旧序列化格式。
 """
 from __future__ import annotations
 
@@ -171,6 +171,25 @@ class WorkflowGraph:
 
     # ── 工厂方法：从 ExecutionPlan 线性转换 ──────────────────────────
 
+    @staticmethod
+    def node_from_plan_step(
+        step: Any,
+        *,
+        depends_on: Optional[List[str]] = None,
+    ) -> WorkflowNode:
+        """将单个 PlanStep 映射为 WorkflowNode，保留关键语义字段。"""
+        return WorkflowNode(
+            id=step.id,
+            title=step.title,
+            kind=step.kind,
+            skill=step.skill,
+            inputs=dict(step.params or {}),
+            depends_on=list(depends_on or []),
+            timeout_ms=step.timeout_ms,
+            optional=not step.required,
+            output_key=step.id,
+        )
+
     @classmethod
     def from_execution_plan(cls, plan: "ExecutionPlan") -> "WorkflowGraph":  # type: ignore[name-defined]
         """将 ExecutionPlan 线性步骤列表转为 WorkflowGraph。
@@ -201,16 +220,9 @@ class WorkflowGraph:
         for segment in segments:
             seg_ids: List[str] = []
             for step in segment:
-                node = WorkflowNode(
-                    id=step.id,
-                    title=step.title,
-                    kind=step.kind,
-                    skill=step.skill,
-                    inputs=dict(step.params or {}),
-                    depends_on=list(prev_segment_ids),
-                    timeout_ms=step.timeout_ms,
-                    optional=not step.required,
-                    output_key=step.id,
+                node = cls.node_from_plan_step(
+                    step,
+                    depends_on=prev_segment_ids,
                 )
                 nodes.append(node)
                 seg_ids.append(step.id)
@@ -227,7 +239,9 @@ class WorkflowGraph:
             metadata={
                 "task_type": plan.task_type,
                 "planner_type": plan.planner_type,
+                "rationale": plan.rationale,
                 "planner_version": plan.planner_version,
                 "schema_version": plan.schema_version,
+                "budget_policy_version": plan.budget_policy_version,
             },
         )

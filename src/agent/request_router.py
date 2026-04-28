@@ -70,6 +70,11 @@ TASK_TYPE_TO_OUTPUT_SCHEMA = {
 
 @dataclass
 class RouteDecision:
+    """Legacy router output.
+
+    Router 内部主输出已收口为 TaskProfile；本模型保留给旧调用链
+    （StreamingService 兼容事件、TaskOrchestrator、历史测试/外部调用）继续消费。
+    """
     route: str
     task_type: str
     confidence: float
@@ -86,6 +91,18 @@ class RouteDecision:
             "matched_skills": list(self.matched_skills),
             "expected_output_schema": self.expected_output_schema,
         }
+
+    @classmethod
+    def from_task_profile(cls, profile: TaskProfile) -> "RouteDecision":
+        """兼容层：将 Router 内部 TaskProfile 输出转换为旧 RouteDecision。"""
+        return cls(
+            route=profile.legacy_route,
+            task_type=profile.task_type,
+            confidence=profile.confidence,
+            reason=profile.reason,
+            matched_skills=list(profile.matched_skills),
+            expected_output_schema=profile.expected_output_schema,
+        )
 
     @property
     def is_direct_task(self) -> bool:
@@ -105,27 +122,30 @@ class RequestRouter:
         self._skill_specs = get_skill_specs()
 
     def route(self, query: str) -> RouteDecision:
-        """[当前主路径入口] 将查询路由为 RouteDecision，驱动 TaskOrchestrator 执行。
+        """Deprecated compatibility entry.
 
-        当前状态：StreamingService 的主流程直接调用本方法。
-        收敛计划：待 UnifiedExecutionEngine 实现后，主路径切换为调用 profile()，
-                  本方法降为 legacy 兼容别名（内部调用 profile() 并转换为 RouteDecision）。
+        新主链路应优先调用 profile() 获取 TaskProfile；route() 仅保留给
+        仍依赖 RouteDecision 的外部调用方。
         """
+        return RouteDecision.from_task_profile(self.profile(query))
+
+    def profile(self, query: str) -> TaskProfile:
+        """Router 内部主分类入口，返回 TaskProfile。"""
         text = (query or "").strip()
         lowered = text.lower()
 
         if self._is_smalltalk(text):
-            return self._decision(
-                route="direct_task",
+            return self._profile(
                 task_type="smalltalk",
+                legacy_route="direct_task",
                 confidence=0.98,
                 reason="matched_smalltalk_pattern",
             )
 
         if self._is_open_ended(text):
-            return self._decision(
-                route="fallback_react",
+            return self._profile(
                 task_type="open_domain_reasoning",
+                legacy_route="fallback_react",
                 confidence=0.58,
                 reason="matched_open_ended_hint",
             )
@@ -133,17 +153,17 @@ class RequestRouter:
         matched_skills = self._match_skills(text, lowered)
         if matched_skills:
             if len(matched_skills) == 1 and not self._is_complex(text):
-                return self._decision(
-                    route="direct_task",
+                return self._profile(
                     task_type="single_tool_lookup",
+                    legacy_route="direct_task",
                     confidence=0.9,
                     reason="matched_single_skill",
                     matched_skills=matched_skills,
                 )
 
-            return self._decision(
-                route="planned_task",
+            return self._profile(
                 task_type=self._infer_task_type(text, matched_skills),
+                legacy_route="planned_task",
                 confidence=0.82 if len(matched_skills) > 1 else 0.74,
                 reason=(
                     "matched_multiple_skills"
@@ -154,40 +174,40 @@ class RequestRouter:
             )
 
         if self._is_simple_qa(text):
-            return self._decision(
-                route="direct_task",
+            return self._profile(
                 task_type="simple_qa",
+                legacy_route="direct_task",
                 confidence=0.8,
                 reason="matched_simple_qa_hint",
             )
 
         if self._is_complex(text):
-            return self._decision(
-                route="planned_task",
+            return self._profile(
                 task_type=self._infer_task_type(text, matched_skills),
+                legacy_route="planned_task",
                 confidence=0.7,
                 reason="matched_complex_hint",
                 matched_skills=self._infer_supporting_skills(text),
             )
 
-        return self._decision(
-            route="fallback_react",
+        return self._profile(
             task_type="open_domain_reasoning",
+            legacy_route="fallback_react",
             confidence=0.45,
             reason="fallback_react_for_unclassified_query",
         )
 
-    def _decision(
+    def _profile(
         self,
         *,
-        route: str,
         task_type: str,
+        legacy_route: str,
         confidence: float,
         reason: str,
         matched_skills: List[str] | None = None,
-    ) -> RouteDecision:
-        return RouteDecision(
-            route=route,
+    ) -> TaskProfile:
+        return TaskProfile.from_legacy_route(
+            route=legacy_route,
             task_type=task_type,
             confidence=confidence,
             reason=reason,
@@ -257,21 +277,6 @@ class RequestRouter:
         if any(word in text for word in ("位置", "坐标", "升起", "落下")):
             inferred.append("celestial-position-calculator")
         return inferred
-
-    def profile(self, query: str) -> TaskProfile:
-        """返回任务画像 TaskProfile（Phase 1 引入）。
-
-        当前状态：主路径未调用本方法，profile() 仅供测试和旁路观测使用。
-        收敛计划：待 UnifiedExecutionEngine 实现后，升级为主路由入口，替代 route()。
-        """
-        decision = self.route(query)
-        return TaskProfile.from_legacy_route(
-            route=decision.route,
-            task_type=decision.task_type,
-            confidence=decision.confidence,
-            matched_skills=decision.matched_skills,
-            expected_output_schema=decision.expected_output_schema,
-        )
 
     def _match_skills(self, text: str, lowered: str) -> List[str]:
         matched: List[str] = []

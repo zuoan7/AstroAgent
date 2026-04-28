@@ -1,10 +1,8 @@
-"""ExecutionEvent — 统一执行事件模型（Phase 7 引入）。
+"""ExecutionEvent — 统一执行事件模型。
 
-封装 executor 内部产生的事件，作为 StreamingService 和 executor 之间的标准化中间层。
-设计上是 StreamEvent 的上游输入，StreamingService 负责将其映射为旧前端事件（适配层）。
-
-当前状态：三条路径内部均已使用 ExecutionEvent；StreamingService 消费并适配为旧前端事件。
-收敛计划：Phase 8 可扩展 payload 字段，让所有前端事件均经由 ExecutionEvent 统一分发。
+封装 router / policy / engine / executor 内部产生的结构化事件，
+作为 StreamingService 的上游协议。旧前端事件名继续保留，
+由适配层完成 ExecutionEvent -> StreamEvent 映射。
 """
 from __future__ import annotations
 
@@ -14,13 +12,19 @@ from typing import Any, Dict, Optional
 
 # 内部事件类型集合（与前端事件名解耦，映射在 StreamingService 中完成）
 EXECUTION_EVENT_TYPES = {
+    "task_profile",       # Router 画像已生成
     "route_decided",      # 路由决策完成
+    "execution_decision", # Policy/Engine 执行决策完成
     "plan_built",         # 执行计划已生成
+    "plan_created",       # plan_built 兼容别名
     "step_started",       # 步骤开始执行
     "step_finished",      # 步骤执行结束
+    "tool_result",        # react 路径工具返回
+    "fallback_triggered", # 触发降级/兜底
     "answer_ready",       # 最终答案已生成
+    "final_answer",       # answer_ready 兼容别名
     "tool_called",        # react 路径工具调用（on_tool_start）
-    "tool_returned",      # react 路径工具返回（on_tool_end）
+    "tool_returned",      # tool_result 兼容别名
 }
 
 
@@ -46,10 +50,13 @@ class ExecutionEvent:
         _MAP = {
             "route_decided": "route_decision",
             "plan_built": "plan_update",
+            "plan_created": "plan_update",
             "step_started": "step_start",
             "step_finished": "step_end",
             "answer_ready": "final_answer",
+            "final_answer": "final_answer",
             "tool_called": "tool_start",
+            "tool_result": "tool_end",
             "tool_returned": "tool_end",
         }
         return _MAP.get(self.type)

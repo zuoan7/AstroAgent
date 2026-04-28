@@ -3,11 +3,8 @@ ExecutionContext — 统一执行上下文，Phase 2 引入。
 
 = TaskProfile + RequestContext，作为未来执行引擎的完整输入描述。
 
-当前状态：模型已稳定，但主路径仍使用 RouteDecision + 散参调用 TaskOrchestrator.run()。
-          from_legacy_params() 目前仅在 _run_orchestrated_path() 旁路记录块中调用，
-          不参与主执行逻辑。
-收敛计划：待 UnifiedExecutionEngine 实现后，替代 (RouteDecision, query,
-          chat_history, user_profile) 的分散传参形式，成为主路径统一输入。
+当前状态：ExecutionContext 已进入 Router/Policy/ExecutionEngine 主链路；
+          from_legacy_params() 仅保留为旧接口桥接与测试辅助。
 """
 from __future__ import annotations
 
@@ -75,8 +72,7 @@ class ExecutionContext:
     ) -> "ExecutionContext":
         """[Legacy adapter] 从旧式 (RouteDecision + 散落参数) 构造 ExecutionContext。
 
-        当前仅被 _run_orchestrated_path() 旁路记录块调用（写 latency meta，不驱动执行）。
-        待 UnifiedExecutionEngine 实现后，主入口将直接传入 ExecutionContext，本方法降为可选。
+        主路径已优先直接构造 ExecutionContext；本方法仅保留给兼容桥接和测试。
         """
         profile = TaskProfile.from_legacy_route(
             route=route,

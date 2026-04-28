@@ -108,6 +108,27 @@ class TestExecutionTraceEntry:
         assert "sources" in d
         assert "latency_ms" in d
 
+    def test_step_trace_to_execution_events(self):
+        entry = ExecutionTraceEntry.from_step_result(self._make_step_result())
+        events = entry.to_execution_events(source="planned")
+        assert [event.type for event in events] == ["step_started", "step_finished"]
+        assert events[0].payload["step_id"] == "s1"
+        assert events[1].payload["status"] == "success"
+
+    def test_react_trace_to_execution_events(self):
+        entry = ExecutionTraceEntry.from_react_tool(
+            step_id="run_abc",
+            tool_name="weather-lookup",
+            tool_input="北京",
+            output_summary="晴天",
+            status="success",
+            duration_sec=0.5,
+        )
+        events = entry.to_execution_events(source="react")
+        assert [event.type for event in events] == ["tool_called", "tool_result"]
+        assert events[0].payload["tool"] == "weather-lookup"
+        assert events[1].payload["output_summary"] == "晴天"
+
 
 # ─────────────────────────────────────────────────────────────────
 # ExecutionEvent 测试
@@ -116,18 +137,34 @@ class TestExecutionTraceEntry:
 class TestExecutionEvent:
 
     def test_known_type_constants(self):
-        for t in ("route_decided", "plan_built", "step_started", "step_finished",
-                  "answer_ready", "tool_called", "tool_returned"):
+        for t in (
+            "task_profile",
+            "route_decided",
+            "execution_decision",
+            "plan_built",
+            "plan_created",
+            "step_started",
+            "step_finished",
+            "tool_called",
+            "tool_result",
+            "fallback_triggered",
+            "answer_ready",
+            "final_answer",
+            "tool_returned",
+        ):
             assert t in EXECUTION_EVENT_TYPES
 
     def test_frontend_type_mapping_all(self):
         mappings = {
             "route_decided": "route_decision",
             "plan_built": "plan_update",
+            "plan_created": "plan_update",
             "step_started": "step_start",
             "step_finished": "step_end",
             "answer_ready": "final_answer",
+            "final_answer": "final_answer",
             "tool_called": "tool_start",
+            "tool_result": "tool_end",
             "tool_returned": "tool_end",
         }
         for internal, expected_frontend in mappings.items():
@@ -318,3 +355,77 @@ class TestEmitTraceEvents:
         types = [e.type for e in collected]
         assert "step_start" in types
         assert "step_end" in types
+
+
+class TestEmitExecutionEvent:
+    def _make_service(self):
+        from src.agent.streaming_service import BaseStreamingGenerator
+        svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
+        svc._event_processors = []
+        return svc
+
+    def test_route_decided_maps_to_route_decision(self):
+        from src.agent.streaming_events import StreamEvent
+
+        svc = self._make_service()
+        emitted = []
+
+        def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
+            return StreamEvent(
+                type=event_type,
+                content=content,
+                meta=meta or {"request_id": "test"},
+                sequence=1,
+            )
+
+        async def emit_fn(event):
+            yield event
+
+        async def run():
+            async for event in svc._emit_execution_event(
+                ExecutionEvent(
+                    type="route_decided",
+                    payload={"route": "direct_task", "task_type": "smalltalk"},
+                    source="router",
+                ),
+                next_event_fn=next_event_fn,
+                emit_fn=emit_fn,
+            ):
+                emitted.append(event)
+
+        asyncio.get_event_loop().run_until_complete(run())
+        assert len(emitted) == 1
+        assert emitted[0].type == "route_decision"
+
+    def test_plan_built_maps_to_plan_update(self):
+        from src.agent.streaming_events import StreamEvent
+
+        svc = self._make_service()
+        emitted = []
+
+        def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
+            return StreamEvent(
+                type=event_type,
+                content=content,
+                meta=meta or {"request_id": "test"},
+                sequence=1,
+            )
+
+        async def emit_fn(event):
+            yield event
+
+        async def run():
+            async for event in svc._emit_execution_event(
+                ExecutionEvent(
+                    type="plan_built",
+                    payload={"steps": [{"id": "s1", "status": "pending"}]},
+                    source="planned",
+                ),
+                next_event_fn=next_event_fn,
+                emit_fn=emit_fn,
+            ):
+                emitted.append(event)
+
+        asyncio.get_event_loop().run_until_complete(run())
+        assert len(emitted) == 1
+        assert emitted[0].type == "plan_update"

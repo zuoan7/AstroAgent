@@ -25,8 +25,8 @@ class TaskOrchestrator:
     .. deprecated::
         Phase 8 起，主路径已迁移至 ExecutionEngine（ENABLE_UNIFIED_EXECUTION_ENGINE=True）。
         本类保留为兼容层（flag=False 或 ExecutionEngine 未注入时的回退路径）。
-        收敛计划：下一轮（Phase 9）可将 _run_direct_task / _run_planned_task 降级为转调
-        DirectExecutor / PlannedExecutor，最终仅保留参数构建辅助方法（_build_skill_params 等）。
+        当前去向：长期保留 `run()` 作为外部 API 兼容入口；内部 direct/planned 逻辑
+        不再扩展新能力，仅做回退链路维护。
     """
 
     def __init__(
@@ -172,6 +172,11 @@ class TaskOrchestrator:
         chat_history: str,
         user_profile: str,
     ) -> ExecutionPlan:
+        """Deprecated compatibility helper.
+
+        新 planned 主路径优先走 Planner.plan_graph() / ExecutionEngine.preview_plan()；
+        本方法仅供旧 StreamingService / TaskOrchestrator 回退链路复用。
+        """
         return self._planner.plan(
             query=query,
             route_decision=decision,

@@ -12,6 +12,8 @@ mock_heavy_dependencies()
 sys.modules.pop("src.agent.streaming_service", None)
 
 from src.agent.models.final_response import FinalResponse
+from src.agent.models.execution_event import ExecutionEvent
+from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RequestRouter
 from src.agent.streaming_service import StreamingService
 from src.skills.mcp_client import MCPClient
@@ -119,6 +121,87 @@ async def test_streaming_service_smalltalk_uses_direct_route():
     assert "route_decision_ms" in final_answer["latency_metrics"]["stages_ms"]
 
 
+@pytest.mark.asyncio
+async def test_streaming_service_generate_events_uses_policy_decide():
+    route_decision = SimpleNamespace(
+        route="direct_task",
+        task_type="smalltalk",
+        confidence=0.98,
+        reason="matched_smalltalk_pattern",
+        matched_skills=[],
+        expected_output_schema="chat_answer_v1",
+        to_meta=lambda: {
+            "route": "direct_task",
+            "task_type": "smalltalk",
+            "route_confidence": 0.98,
+            "route_reason": "matched_smalltalk_pattern",
+            "matched_skills": [],
+            "expected_output_schema": "chat_answer_v1",
+        },
+    )
+    profile = TaskProfile.from_legacy_route(
+        route="direct_task",
+        task_type="smalltalk",
+        confidence=0.98,
+        reason="matched_smalltalk_pattern",
+        expected_output_schema="chat_answer_v1",
+    )
+    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    service = StreamingService(
+        agent_executor=None,
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=router,
+        task_orchestrator=SimpleNamespace(),
+    )
+
+    called = {"count": 0, "mode": None}
+
+    def decide(p, context=None):
+        called["count"] += 1
+        called["mode"] = "direct"
+        return SimpleNamespace(
+            mode="direct",
+            reason="test_decide",
+            fallback_modes=[],
+            legacy_execution_path="direct",
+            to_dict=lambda: {
+                "mode": "direct",
+                "reason": "test_decide",
+                "fallback_modes": [],
+                "legacy_execution_path": "direct",
+            },
+        )
+
+    service._execution_policy = SimpleNamespace(
+        mode="hybrid",
+        decide=decide,
+        choose_path=lambda route: "react" if route is None else "direct",
+        to_dict=lambda: {"mode": "hybrid"},
+    )
+
+    async def fake_run(decision, query, **kwargs):
+        return FinalResponse(
+            answer="你好，我可以帮你查询天象。",
+            summary="你好，我可以帮你查询天象。",
+            tools_used=[],
+            sources=[],
+            confidence=0.98,
+            route="direct_task",
+            task_type="smalltalk",
+        )
+
+    service._task_orchestrator.run = fake_run
+
+    events = []
+    async for event in service.generate_events("你好"):
+        events.append(event)
+
+    assert called["count"] >= 1
+    final_answer = next(event for event in events if event["type"] == "final_answer")
+    assert "你好" in final_answer["final_answer"]
+
+
 def test_save_to_memory_schedules_ltm_async(monkeypatch):
     memory = _MemoryStub()
     ltm = MagicMock()
@@ -139,3 +222,364 @@ def test_save_to_memory_schedules_ltm_async(monkeypatch):
 
     assert len(memory.messages) == 2
     assert called["started"] is True
+
+
+def test_streaming_service_generate_response_uses_policy_decide():
+    route_decision = SimpleNamespace(
+        route="direct_task",
+        task_type="smalltalk",
+        confidence=0.98,
+        reason="matched_smalltalk_pattern",
+        matched_skills=[],
+        expected_output_schema="chat_answer_v1",
+    )
+    profile = TaskProfile.from_legacy_route(
+        route="direct_task",
+        task_type="smalltalk",
+        confidence=0.98,
+        reason="matched_smalltalk_pattern",
+        expected_output_schema="chat_answer_v1",
+    )
+    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    service = StreamingService(
+        agent_executor=None,
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=router,
+        task_orchestrator=SimpleNamespace(),
+    )
+
+    called = {"count": 0}
+
+    def decide(p, context=None):
+        called["count"] += 1
+        return SimpleNamespace(
+            mode="direct",
+            reason="test_decide",
+            fallback_modes=[],
+            legacy_execution_path="direct",
+            to_dict=lambda: {
+                "mode": "direct",
+                "reason": "test_decide",
+                "fallback_modes": [],
+                "legacy_execution_path": "direct",
+            },
+        )
+
+    service._execution_policy = SimpleNamespace(
+        mode="hybrid",
+        decide=decide,
+        choose_path=lambda route: "react" if route is None else "direct",
+        to_dict=lambda: {"mode": "hybrid"},
+    )
+
+    async def fake_run(decision, query, **kwargs):
+        return FinalResponse(
+            answer="你好，我在。",
+            summary="你好，我在。",
+            tools_used=[],
+            sources=[],
+            confidence=0.98,
+            route="direct_task",
+            task_type="smalltalk",
+        )
+
+    service._task_orchestrator.run = fake_run
+
+    chunks = list(service.generate_response("你好"))
+
+    assert called["count"] >= 1
+    assert chunks == ["你好，我在。"]
+
+
+def test_streaming_service_generate_response_uses_engine_for_react():
+    route_decision = SimpleNamespace(
+        route="fallback_react",
+        task_type="open_domain_reasoning",
+        confidence=0.88,
+        reason="open_ended",
+        matched_skills=[],
+        expected_output_schema="react_answer_v1",
+    )
+    profile = TaskProfile.from_legacy_route(
+        route="fallback_react",
+        task_type="open_domain_reasoning",
+        confidence=0.88,
+        reason="open_ended",
+        expected_output_schema="react_answer_v1",
+    )
+    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    service = StreamingService(
+        agent_executor=SimpleNamespace(
+            invoke=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("legacy react invoke should not be called")
+            )
+        ),
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=router,
+        task_orchestrator=SimpleNamespace(),
+    )
+
+    called = {"count": 0}
+
+    def decide(p, context=None):
+        return SimpleNamespace(
+            mode="react",
+            reason="test_decide",
+            fallback_modes=[],
+            legacy_execution_path="react",
+            to_dict=lambda: {
+                "mode": "react",
+                "reason": "test_decide",
+                "fallback_modes": [],
+                "legacy_execution_path": "react",
+            },
+        )
+
+    async def fake_engine_run(*args, **kwargs):
+        called["count"] += 1
+        return FinalResponse(
+            answer="engine react 答案",
+            summary="engine react 答案",
+            tools_used=[],
+            sources=[],
+            confidence=0.8,
+            route="fallback_react",
+            task_type="open_domain_reasoning",
+        )
+
+    service._execution_policy = SimpleNamespace(
+        mode="hybrid",
+        decide=decide,
+        choose_path=lambda route: "react",
+        to_dict=lambda: {"mode": "hybrid"},
+    )
+    service._execution_engine = SimpleNamespace(run=fake_engine_run)
+    service._task_orchestrator.run = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("legacy orchestrator should not be called")
+    )
+
+    chunks = list(service.generate_response("写一段开放式宇宙随笔"))
+
+    assert called["count"] == 1
+    assert chunks == ["engine react 答案"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_service_generate_events_uses_engine_stream_for_react():
+    route_decision = SimpleNamespace(
+        route="fallback_react",
+        task_type="open_domain_reasoning",
+        confidence=0.88,
+        reason="open_ended",
+        matched_skills=[],
+        expected_output_schema="react_answer_v1",
+        to_meta=lambda: {
+            "route": "fallback_react",
+            "task_type": "open_domain_reasoning",
+            "route_confidence": 0.88,
+            "route_reason": "open_ended",
+            "matched_skills": [],
+            "expected_output_schema": "react_answer_v1",
+        },
+    )
+    profile = TaskProfile.from_legacy_route(
+        route="fallback_react",
+        task_type="open_domain_reasoning",
+        confidence=0.88,
+        reason="open_ended",
+        expected_output_schema="react_answer_v1",
+    )
+    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    service = StreamingService(
+        agent_executor=None,
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=router,
+        task_orchestrator=SimpleNamespace(),
+        agent_executor_factory=lambda: (_ for _ in ()).throw(
+            AssertionError("legacy react executor factory should not be called")
+        ),
+    )
+
+    streamed = {"count": 0}
+
+    def decide(p, context=None):
+        return SimpleNamespace(
+            mode="react",
+            reason="test_decide",
+            fallback_modes=[],
+            legacy_execution_path="react",
+            to_dict=lambda: {
+                "mode": "react",
+                "reason": "test_decide",
+                "fallback_modes": [],
+                "legacy_execution_path": "react",
+            },
+        )
+
+    async def fake_astream_events(*args, **kwargs):
+        streamed["count"] += 1
+        yield {
+            "event": "on_llm_stream",
+            "data": {"chunk": SimpleNamespace(content="Final Answer: engine stream 答案")},
+            "run_id": "react-engine-1",
+        }
+
+    service._execution_policy = SimpleNamespace(
+        mode="hybrid",
+        decide=decide,
+        choose_path=lambda route: "react",
+        to_dict=lambda: {"mode": "hybrid"},
+    )
+    service._execution_engine = SimpleNamespace(astream_events=fake_astream_events)
+
+    events = []
+    async for event in service.generate_events("写一段开放式宇宙随笔"):
+        events.append(event)
+
+    assert streamed["count"] == 1
+    final_answer = next(event for event in events if event["type"] == "final_answer")
+    assert final_answer["final_answer"] == "engine stream 答案"
+
+
+@pytest.mark.asyncio
+async def test_streaming_service_planned_events_use_engine_preview_plan():
+    route_decision = SimpleNamespace(
+        route="planned_task",
+        task_type="observation_recommendation",
+        confidence=0.9,
+        reason="complex_task",
+        matched_skills=["weather-lookup", "observation-planner"],
+        expected_output_schema="observation_answer_v1",
+        to_meta=lambda: {
+            "route": "planned_task",
+            "task_type": "observation_recommendation",
+            "route_confidence": 0.9,
+            "route_reason": "complex_task",
+            "matched_skills": ["weather-lookup", "observation-planner"],
+            "expected_output_schema": "observation_answer_v1",
+        },
+    )
+    profile = TaskProfile.from_legacy_route(
+        route="planned_task",
+        task_type="observation_recommendation",
+        confidence=0.9,
+        reason="complex_task",
+        matched_skills=["weather-lookup", "observation-planner"],
+        expected_output_schema="observation_answer_v1",
+    )
+    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    service = StreamingService(
+        agent_executor=None,
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=router,
+        task_orchestrator=SimpleNamespace(
+            build_execution_plan=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("legacy build_execution_plan should not be called")
+            )
+        ),
+    )
+
+    def decide(p, context=None):
+        return SimpleNamespace(
+            mode="planned",
+            reason="test_decide",
+            fallback_modes=["react"],
+            legacy_execution_path="planned",
+            to_dict=lambda: {
+                "mode": "planned",
+                "reason": "test_decide",
+                "fallback_modes": ["react"],
+                "legacy_execution_path": "planned",
+            },
+        )
+
+    from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+    plan = ExecutionPlan(
+        task_type="observation_recommendation",
+        output_schema="observation_answer_v1",
+        steps=[
+            PlanStep(id="weather_context", kind="tool", title="查询天气", skill="weather-lookup"),
+            PlanStep(id="observation_plan", kind="tool", title="生成观测计划", skill="observation-planner"),
+        ],
+    )
+
+    preview_called = {"count": 0}
+    run_called = {"count": 0}
+
+    def preview_plan(*args, **kwargs):
+        preview_called["count"] += 1
+        return plan
+
+    async def fake_run(*args, **kwargs):
+        run_called["count"] += 1
+        return FinalResponse(
+            answer="今晚适合先看猎户座。",
+            summary="今晚适合先看猎户座。",
+            tools_used=[],
+            sources=[],
+            confidence=0.9,
+            route="planned_task",
+            task_type="observation_recommendation",
+            execution_plan=plan.to_dict(),
+            execution_trace=[],
+            execution_events=[
+                ExecutionEvent(
+                    type="plan_created",
+                    payload={"plan": plan.to_dict()},
+                    source="planned",
+                ).to_dict(),
+                ExecutionEvent(
+                    type="step_started",
+                    payload={"step_id": "weather_context", "title": "查询天气"},
+                    source="planned",
+                ).to_dict(),
+                ExecutionEvent(
+                    type="step_finished",
+                    payload={"step_id": "weather_context", "status": "success"},
+                    source="planned",
+                ).to_dict(),
+                ExecutionEvent(
+                    type="step_started",
+                    payload={"step_id": "observation_plan", "title": "生成观测计划"},
+                    source="planned",
+                ).to_dict(),
+                ExecutionEvent(
+                    type="step_finished",
+                    payload={"step_id": "observation_plan", "status": "success"},
+                    source="planned",
+                ).to_dict(),
+                ExecutionEvent(
+                    type="answer_ready",
+                    payload={"answer": "今晚适合先看猎户座。"},
+                    source="planned",
+                ).to_dict(),
+            ],
+        )
+
+    service._execution_policy = SimpleNamespace(
+        mode="hybrid",
+        decide=decide,
+        choose_path=lambda route: "planned",
+        to_dict=lambda: {"mode": "hybrid"},
+    )
+    service._execution_engine = SimpleNamespace(
+        preview_plan=preview_plan,
+        run=fake_run,
+    )
+
+    events = []
+    async for event in service.generate_events("帮我看下北京今晚适合观测什么"):
+        events.append(event)
+
+    assert preview_called["count"] == 1
+    assert run_called["count"] == 1
+    assert any(event["type"] == "route_decision" for event in events)
+    assert any(event["type"] == "plan_update" for event in events)
+    assert any(event["type"] == "step_start" and event["step_id"] == "weather_context" for event in events)
+    assert any(event["type"] == "step_end" and event["step_id"] == "observation_plan" for event in events)
+    final_answer = next(event for event in events if event["type"] == "final_answer")
+    assert "猎户座" in final_answer["final_answer"]

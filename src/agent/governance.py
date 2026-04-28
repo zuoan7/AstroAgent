@@ -42,7 +42,7 @@ class AgentExecutionPolicy:
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def choose_path(self, route: Optional[str]) -> str:
+    def _legacy_path_from_route(self, route: Optional[str]) -> str:
         if self.mode == "react":
             return "react"
         if route == "direct_task":
@@ -59,12 +59,38 @@ class AgentExecutionPolicy:
             return "react"
         return "direct"
 
+    @staticmethod
+    def _legacy_task_type_for_route(route: Optional[str]) -> str:
+        if route == "direct_task":
+            return "smalltalk"
+        if route == "planned_task":
+            return "observation_recommendation"
+        return "open_domain_reasoning"
+
+    def choose_path(self, route: Optional[str]) -> str:
+        """Deprecated compatibility wrapper.
+
+        旧接口仍返回 direct/planned/react 字符串，但主调用方应迁移到
+        decide(profile, context) -> ExecutionDecision。
+        """
+        if route is None:
+            return self._legacy_path_from_route(route)
+
+        from src.agent.models.task_profile import TaskProfile
+
+        profile = TaskProfile.from_legacy_route(
+            route=route,
+            task_type=self._legacy_task_type_for_route(route),
+            confidence=0.0,
+        )
+        return self.decide(profile).legacy_execution_path
+
     def decide(
         self,
         profile: "TaskProfile",
         context: "Optional[ExecutionContext]" = None,
     ) -> "ExecutionDecision":
-        """基于 TaskProfile 推断 ExecutionDecision。
+        """Policy 主输出：基于 TaskProfile/ExecutionContext 推断 ExecutionDecision。
 
         规则（优先级从高到低）：
         1. mode==react（全局覆盖）-> react
@@ -72,32 +98,29 @@ class AgentExecutionPolicy:
         3. tool_need==single + openness!=high -> direct
         4. tool_need==multi 或 complexity==high（且 openness!=high）-> planned
         5. openness==high -> react
-        6. 兜底：委托给 choose_path(legacy_route)
+        6. 兜底：回退 legacy route 规则，但仍返回 ExecutionDecision。
 
-        受 ENABLE_EXECUTION_DECISION 保护，未开启时委托 choose_path。
-
-        当前状态：flag 默认 False，decide() 不接入主路径，结果仅供观测/测试。
-        收敛计划：待 UnifiedExecutionEngine 实现后，升级为主路径入口，
-                  替代 choose_path(route) 调用；choose_path() 降为兼容别名。
+        当前阶段：decide() 已是 Policy 层主决策接口。
+        choose_path() 仅保留为旧字符串接口兼容包装。
         """
         from src.agent.models.execution_decision import ExecutionDecision
 
-        if not bool(getattr(settings, "ENABLE_EXECUTION_DECISION", False)):
-            # Feature flag 关闭时，结果仍可观测但不接入主路径
-            path = self.choose_path(profile.legacy_route)
-            return ExecutionDecision(
-                mode=path,
-                reason="feature_flag_disabled_delegate_to_choose_path",
-                fallback_modes=[],
-                legacy_execution_path=path,
-            )
+        legacy_path = self._legacy_path_from_route(profile.legacy_route)
 
         if self.mode == "react":
             return ExecutionDecision(
                 mode="react",
                 reason="global_mode_override_react",
                 fallback_modes=[],
-                legacy_execution_path="react",
+                legacy_execution_path=legacy_path,
+            )
+
+        if profile.legacy_route == "planned_task" and profile.openness != "high":
+            return ExecutionDecision(
+                mode="planned",
+                reason="preserve_legacy_planned_route",
+                fallback_modes=["react"] if self.enable_react_fallback else [],
+                legacy_execution_path=legacy_path,
             )
 
         complexity = profile.complexity
@@ -109,7 +132,7 @@ class AgentExecutionPolicy:
                 mode="direct",
                 reason="low_complexity_no_tools",
                 fallback_modes=["react"] if self.enable_react_fallback else [],
-                legacy_execution_path="direct",
+                legacy_execution_path=legacy_path,
             )
 
         if tool_need == "single" and openness != "high":
@@ -117,7 +140,7 @@ class AgentExecutionPolicy:
                 mode="direct",
                 reason="single_tool_low_openness",
                 fallback_modes=["react"] if self.enable_react_fallback else [],
-                legacy_execution_path="direct",
+                legacy_execution_path=legacy_path,
             )
 
         if tool_need == "multi" or (complexity == "high" and openness != "high"):
@@ -125,7 +148,7 @@ class AgentExecutionPolicy:
                 mode="planned",
                 reason="multi_tool_or_high_complexity",
                 fallback_modes=["react"] if self.enable_react_fallback else [],
-                legacy_execution_path="planned",
+                legacy_execution_path=legacy_path,
             )
 
         if openness == "high":
@@ -133,16 +156,15 @@ class AgentExecutionPolicy:
                 mode="react",
                 reason="high_openness_react",
                 fallback_modes=[],
-                legacy_execution_path="react",
+                legacy_execution_path=legacy_path,
             )
 
         # 兜底：委托 choose_path
-        path = self.choose_path(profile.legacy_route)
         return ExecutionDecision(
-            mode=path,
-            reason="fallback_to_choose_path",
+            mode=legacy_path,
+            reason="fallback_to_legacy_route_mapping",
             fallback_modes=[],
-            legacy_execution_path=path,
+            legacy_execution_path=legacy_path,
         )
 
 

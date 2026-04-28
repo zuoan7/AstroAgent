@@ -532,8 +532,26 @@ data: {"type":"text","content":"今晚上海可以观测到木星..."}
 说明：
 
 - 这些对外事件由统一内部事件总线生成，再经 `FrontendJsonEventAdapter` / `SSEEventAdapter` 转换输出。
+- 内部主事件协议已收口为 `ExecutionEvent`；上述事件名属于前端兼容输出层，不要求前端立刻迁移。
 - 纯文本流、JSON 事件流和 SSE 流已收敛到同一底层事件序列，减少不同输出路径之间的逻辑漂移。
 - `final_answer` 事件当前会额外携带 `total_duration_sec`、`tool_count`、`tool_success_count`、`tool_error_count`、`evidence_count`、`memory_hit_count` 等前端可观测字段。
+
+### DAG Agent 主路径与兼容层
+
+当前 DAG Agent 主路径已经收口为：
+
+- `query -> TaskProfile`
+- `TaskProfile + ExecutionContext -> ExecutionDecision`
+- `ExecutionDecision -> ExecutionEngine.run(direct|planned|react)`
+- `Planner.plan_graph() -> WorkflowGraph`
+- `ExecutionEvent -> StreamingService adapter -> 旧前端 stream event`
+
+仍保留但已降级的兼容接口：
+
+- `RequestRouter.route(query)`：兼容输出 `RouteDecision`
+- `AgentExecutionPolicy.choose_path(route)`：兼容输出 `direct/planned/react` 字符串
+- `TaskOrchestrator.run()`：当 `ExecutionEngine` 未注入或显式关闭统一引擎时的回退门面
+- `ExecutionPlan` / `StepExecutor`：旧 planned 表达与线性执行兼容层
 
 ### 3. 知识库接口
 

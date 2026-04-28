@@ -3,10 +3,10 @@
 目标：
 1. config flags（ENABLE_UNIFIED_EXECUTION_ENGINE / ENABLE_WORKFLOW_GRAPH /
    ENABLE_UNIFIED_EXECUTION_TRACE / ENABLE_UNIFIED_EXECUTION_EVENTS）默认均为 True
-2. ExecutionEngine 新主路径可被正确调用（direct / planned 两种模式）
+2. ExecutionEngine 新主路径可被正确调用（direct / planned / react 三种模式）
 3. ENABLE_UNIFIED_EXECUTION_ENGINE=False 时回退到旧 TaskOrchestrator 路径
-4. ENABLE_WORKFLOW_GRAPH=True 时 PlannedExecutor 走 WorkflowExecutor
-5. ENABLE_WORKFLOW_GRAPH=False 时 PlannedExecutor 走旧 StepExecutor
+4. planned 主路径通过 WorkflowExecutor 稳定执行
+5. 旧兼容接口仍可用，并带有 deprecated/legacy 标记
 6. StreamingService._run_orchestrated_path 在新主路径下能正常返回 FinalResponse
 7. TaskOrchestrator 保留可用（兼容层不被误删）
 """
@@ -152,15 +152,17 @@ class TestExecutionEngineNewPaths:
             )
         assert isinstance(result, FinalResponse)
 
-    def test_engine_react_raises_not_implemented(self):
+    def test_engine_react_mode(self):
         engine = self._make_engine()
+        engine._react.run = AsyncMock(return_value=_make_final_response("react 答案"))
         decision = ExecutionDecision(mode="react", reason="test")
         route_decision = _route_decision()
 
-        with pytest.raises(NotImplementedError):
-            asyncio.get_event_loop().run_until_complete(
-                engine.run(decision, route_decision, "测试")
-            )
+        result = asyncio.get_event_loop().run_until_complete(
+            engine.run(decision, route_decision, "测试")
+        )
+        assert isinstance(result, FinalResponse)
+        assert result.answer == "react 答案"
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -332,6 +334,16 @@ class TestTaskOrchestratorCompatibility:
     def test_task_orchestrator_has_deprecated_notice(self):
         """docstring 中含有 deprecated 标记。"""
         assert "deprecated" in TaskOrchestrator.__doc__.lower()
+
+    def test_request_router_route_has_compatibility_notice(self):
+        from src.agent.request_router import RequestRouter
+
+        assert "compatibility" in (RequestRouter.route.__doc__ or "").lower()
+
+    def test_choose_path_has_deprecated_notice(self):
+        from src.agent.governance import AgentExecutionPolicy
+
+        assert "deprecated" in (AgentExecutionPolicy.choose_path.__doc__ or "").lower()
 
     def test_task_orchestrator_run_direct(self):
         skill_mgr = _skill_manager_mock()

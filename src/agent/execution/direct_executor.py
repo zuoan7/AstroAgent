@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, Optional
 
+from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.final_response import FinalResponse
 from src.agent.request_router import RouteDecision
 from src.agent.skill_param_builder import SkillParamBuilder
@@ -38,17 +39,21 @@ class DirectExecutor:
         user_profile: str = "",
     ) -> FinalResponse:
         if decision.task_type == "smalltalk":
-            return self._synthesizer.synthesize_smalltalk(
+            response = self._synthesizer.synthesize_smalltalk(
                 self._smalltalk_reply(query)
             )
+            self._attach_execution_events(response)
+            return response
 
         if decision.task_type == "single_tool_lookup":
             return await self._run_tool_task(decision, query)
 
         if decision.task_type == "simple_qa":
-            return await self._run_simple_qa(
+            response = await self._run_simple_qa(
                 query, chat_history=chat_history, user_profile=user_profile
             )
+            self._attach_execution_events(response)
+            return response
 
         raise ValueError(f"unsupported direct task type: {decision.task_type}")
 
@@ -64,11 +69,19 @@ class DirectExecutor:
             skill_name,
             **params,
         )
-        return self._synthesizer.synthesize_direct(
+        response = self._synthesizer.synthesize_direct(
             query=query,
             task_type=decision.task_type,
             skill_results=[result],
         )
+        self._attach_execution_events(
+            response,
+            tool_name=skill_name,
+            tool_input=params,
+            tool_summary=result.summary,
+            tool_status="success" if result.success else "error",
+        )
+        return response
 
     async def _run_simple_qa(
         self,
@@ -94,6 +107,53 @@ class DirectExecutor:
             rag_context=context,
             retrieval=retrieval,
         )
+
+    def _attach_execution_events(
+        self,
+        response: FinalResponse,
+        *,
+        tool_name: Optional[str] = None,
+        tool_input: Optional[Dict[str, Any]] = None,
+        tool_summary: str = "",
+        tool_status: str = "success",
+    ) -> None:
+        events = []
+        if tool_name:
+            events.append(
+                ExecutionEvent(
+                    type="tool_called",
+                    payload={
+                        "tool": tool_name,
+                        "input": dict(tool_input or {}),
+                        "status": "running",
+                    },
+                    source="direct",
+                ).to_dict()
+            )
+            events.append(
+                ExecutionEvent(
+                    type="tool_result",
+                    payload={
+                        "tool": tool_name,
+                        "output_summary": tool_summary,
+                        "status": tool_status,
+                    },
+                    source="direct",
+                ).to_dict()
+            )
+        events.append(
+            ExecutionEvent(
+                type="answer_ready",
+                payload={
+                    "answer": response.answer,
+                    "summary": response.summary,
+                    "route": response.route,
+                    "task_type": response.task_type,
+                },
+                source="direct",
+            ).to_dict()
+        )
+        response.execution_events = events
 
     def _invoke_llm(self, prompt: str) -> str:
         result = self._llm.invoke(prompt)

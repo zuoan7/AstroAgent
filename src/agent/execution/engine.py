@@ -6,12 +6,13 @@ Phase 9 起：ENABLE_UNIFIED_EXECUTION_ENGINE=True，本引擎为默认主路径
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Optional
 
 from src.agent.execution.direct_executor import DirectExecutor
 from src.agent.execution.planned_executor import PlannedExecutor
 from src.agent.execution.react_executor import ReactExecutor
 from src.agent.executor import EventCallback
+from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.final_response import FinalResponse
 from src.agent.planner import Planner
 from src.agent.policies.budget_policy import RequestBudgetTracker
@@ -99,15 +100,22 @@ class ExecutionEngine:
         mode = decision.mode
 
         if mode == "direct":
-            return await self._direct.run(
+            response = await self._direct.run(
                 legacy_decision,
                 query,
                 chat_history=chat_history,
                 user_profile=user_profile,
             )
+            self._attach_engine_events(
+                response,
+                decision=decision,
+                legacy_decision=legacy_decision,
+                context=context,
+            )
+            return response
 
         if mode == "planned":
-            return await self._planned.run(
+            response = await self._planned.run(
                 legacy_decision,
                 query,
                 chat_history=chat_history,
@@ -116,11 +124,124 @@ class ExecutionEngine:
                 event_callback=event_callback,
                 budget_tracker=budget_tracker,
             )
+            self._attach_engine_events(
+                response,
+                decision=decision,
+                legacy_decision=legacy_decision,
+                context=context,
+            )
+            return response
 
         if mode == "react":
-            raise NotImplementedError(
-                "ExecutionEngine.run() 不支持 react 流式路径；"
-                "请通过 engine.react.astream_events() 进行流式调用。"
+            response = await self._react.run(
+                legacy_decision,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
             )
+            self._attach_engine_events(
+                response,
+                decision=decision,
+                legacy_decision=legacy_decision,
+                context=context,
+            )
+            return response
 
         raise ValueError(f"unsupported execution mode: {mode!r}")
+
+    async def astream_events(
+        self,
+        decision: "ExecutionDecision",
+        legacy_decision: RouteDecision,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+        version: str = "v1",
+        context: Optional["ExecutionContext"] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """统一的流式事件入口。
+
+        当前仅 react 路径需要原始流式事件；direct/planned 继续通过 FinalResponse/trace 适配。
+        """
+        if decision.mode != "react":
+            raise ValueError(
+                "ExecutionEngine.astream_events() currently only supports react mode"
+            )
+
+        agent_input = self._react.build_agent_input(
+            getattr(context, "query", query),
+            chat_history=getattr(context, "chat_history", chat_history),
+            user_profile=getattr(context, "user_profile", user_profile),
+        )
+        async for event in self._react.astream_events(agent_input, version=version):
+            yield event
+
+    def preview_plan(
+        self,
+        decision: "ExecutionDecision",
+        legacy_decision: RouteDecision,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+        execution_plan: Optional["ExecutionPlan"] = None,
+    ) -> Optional["ExecutionPlan"]:
+        """为 StreamingService 提供展示层所需的兼容计划视图。"""
+        if decision.mode != "planned":
+            return None
+        return self._planned.preview_plan(
+            legacy_decision,
+            query,
+            chat_history=chat_history,
+            user_profile=user_profile,
+            execution_plan=execution_plan,
+        )
+
+    def _attach_engine_events(
+        self,
+        response: FinalResponse,
+        *,
+        decision: "ExecutionDecision",
+        legacy_decision: RouteDecision,
+        context: Optional["ExecutionContext"],
+    ) -> None:
+        events = []
+        if context is not None and getattr(context, "profile", None) is not None:
+            events.append(
+                ExecutionEvent(
+                    type="task_profile",
+                    payload=context.profile.to_dict(),
+                    source="router",
+                ).to_dict()
+            )
+        events.append(
+            ExecutionEvent(
+                type="route_decided",
+                payload=legacy_decision.to_meta(),
+                source="router",
+            ).to_dict()
+        )
+        events.append(
+            ExecutionEvent(
+                type="execution_decision",
+                payload=decision.to_dict(),
+                source="policy",
+            ).to_dict()
+        )
+        if response.execution_events:
+            events.extend(list(response.execution_events))
+        else:
+            events.append(
+                ExecutionEvent(
+                    type="answer_ready",
+                    payload={
+                        "answer": response.answer,
+                        "summary": response.summary,
+                        "route": response.route,
+                        "task_type": response.task_type,
+                    },
+                    source=decision.mode,
+                ).to_dict()
+            )
+        response.execution_events = events

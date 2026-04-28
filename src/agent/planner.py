@@ -3,20 +3,58 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+from src.agent.models.workflow_graph import WorkflowGraph
 from src.core.config import settings
 
 
 class Planner:
     """
-    Stage 3 planner.
+    Planner for planned tasks.
 
-    当前以模板规划为主，将复杂请求转换为正式 ExecutionPlan。
+    当前优先输出 WorkflowGraph（plan_graph），ExecutionPlan 仅保留兼容表示。
     """
 
     def __init__(self, llm: Optional[Any] = None) -> None:
         self._llm = llm
 
     def plan(
+        self,
+        *,
+        query: str,
+        route_decision: Any,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> ExecutionPlan:
+        """Compatibility entry returning ExecutionPlan."""
+        return self._resolve_plan(
+            query=query,
+            route_decision=route_decision,
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
+
+    def plan_graph(
+        self,
+        *,
+        query: str,
+        route_decision: Any,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> WorkflowGraph:
+        """Primary planned-path entry returning WorkflowGraph.
+
+        初版复用现有模板/通用规划逻辑，但对外直接返回 WorkflowGraph，
+        使 graph 成为 planned 路径的优先计划表达。
+        """
+        plan = self._resolve_plan(
+            query=query,
+            route_decision=route_decision,
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
+        return WorkflowGraph.from_execution_plan(plan)
+
+    def _resolve_plan(
         self,
         *,
         query: str,

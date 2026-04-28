@@ -13,6 +13,8 @@ mock_heavy_dependencies()
 
 from src.agent.models.workflow_graph import WorkflowEdge, WorkflowGraph, WorkflowNode
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+from src.agent.planner import Planner
+from src.agent.request_router import RouteDecision
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -41,6 +43,21 @@ def _parallel_plan() -> ExecutionPlan:
                      parallel_group="img", required=False, timeout_ms=8000),
             PlanStep(id="p3", kind="tool", title="后续步骤", skill="observation-planner"),
         ],
+    )
+
+
+def _route_decision(
+    task_type: str = "observation_recommendation",
+    matched_skills=None,
+    output_schema: str = "observation_answer_v1",
+) -> RouteDecision:
+    return RouteDecision(
+        route="planned_task",
+        task_type=task_type,
+        confidence=0.9,
+        reason="test",
+        matched_skills=matched_skills or [],
+        expected_output_schema=output_schema,
     )
 
 
@@ -276,3 +293,69 @@ class TestFromExecutionPlan:
         assert len(g.nodes) == 1
         assert g.edges == []
         assert g.node("only").depends_on == []
+
+    def test_node_from_plan_step_preserves_key_semantics(self):
+        step = PlanStep(
+            id="weather_context",
+            kind="tool",
+            title="查询天气条件",
+            skill="weather-lookup",
+            params={"city": "北京"},
+            required=False,
+            timeout_ms=8000,
+        )
+        node = WorkflowGraph.node_from_plan_step(step, depends_on=["prep"])
+        assert node.id == "weather_context"
+        assert node.title == "查询天气条件"
+        assert node.kind == "tool"
+        assert node.skill == "weather-lookup"
+        assert node.inputs == {"city": "北京"}
+        assert node.depends_on == ["prep"]
+        assert node.timeout_ms == 8000
+        assert node.optional is True
+        assert node.output_key == "weather_context"
+
+
+class TestPlannerGraphPlanning:
+    def test_plan_graph_returns_valid_workflow_graph(self):
+        planner = Planner()
+        graph = planner.plan_graph(
+            query="北京今晚适合观测什么",
+            route_decision=_route_decision(
+                task_type="observation_recommendation",
+                matched_skills=["weather-lookup", "observation-planner"],
+            ),
+        )
+        assert isinstance(graph, WorkflowGraph)
+        assert graph.validate() == []
+        assert graph.output_schema == "observation_answer_v1"
+        assert graph.metadata.get("task_type") == "observation_recommendation"
+        assert graph.node("weather_context") is not None
+        assert graph.node("observation_plan") is not None
+
+    def test_legacy_plan_remains_available(self):
+        planner = Planner()
+        plan = planner.plan(
+            query="北京今晚适合观测什么",
+            route_decision=_route_decision(
+                task_type="observation_recommendation",
+                matched_skills=["weather-lookup", "observation-planner"],
+            ),
+        )
+        assert isinstance(plan, ExecutionPlan)
+        assert len(plan.steps) >= 1
+
+    def test_execution_plan_from_workflow_graph_keeps_compatibility(self):
+        planner = Planner()
+        graph = planner.plan_graph(
+            query="今晚用双筒看什么",
+            route_decision=_route_decision(
+                task_type="observation_recommendation",
+                matched_skills=["weather-lookup", "observation-planner"],
+            ),
+        )
+        plan = ExecutionPlan.from_workflow_graph(graph)
+        assert isinstance(plan, ExecutionPlan)
+        assert plan.task_type == "observation_recommendation"
+        assert plan.output_schema == "observation_answer_v1"
+        assert [step.id for step in plan.steps] == [node.id for node in graph.topological_order()]

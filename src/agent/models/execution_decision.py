@@ -5,11 +5,8 @@ ExecutionDecision — 最小可用执行模式决策，Phase 3 引入。
 
 MVP 字段：mode / reason / fallback_modes / legacy_execution_path
 
-当前状态：模型已稳定，decide() 可通过 ENABLE_EXECUTION_DECISION flag 开启。
-          主路径仍调用 choose_path(route)；flag 关闭时 decide() 内部委托 choose_path()，
-          结果可观测但不驱动执行。
-收敛计划：待 UnifiedExecutionEngine 实现后，decide() 作为主路径入口，
-          替代 choose_path(route) 调用；choose_path() 降为兼容别名。
+当前状态：ExecutionDecision 已是 Policy 层主输出；
+          choose_path(route) 仅保留为 legacy 字符串兼容接口。
 """
 from __future__ import annotations
 

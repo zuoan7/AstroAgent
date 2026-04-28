@@ -57,6 +57,66 @@ class ExecutionTraceEntry:
             "duration_sec": self.duration_sec,
         }
 
+    def to_execution_events(self, *, source: str = "") -> List["ExecutionEvent"]:
+        """转换为 ExecutionEvent 列表。
+
+        planned/direct trace 生成 step_started/step_finished；
+        react tool trace 生成 tool_called/tool_result。
+        """
+        from src.agent.models.execution_event import ExecutionEvent
+
+        if self.tool_name:
+            tool_name = self.tool_name or self.skill or self.title or self.step_id
+            return [
+                ExecutionEvent(
+                    type="tool_called",
+                    payload={
+                        "run_id": self.step_id,
+                        "tool": tool_name,
+                        "input": self.tool_input or "",
+                        "status": "running",
+                    },
+                    source=source or "react",
+                ),
+                ExecutionEvent(
+                    type="tool_result",
+                    payload={
+                        "run_id": self.step_id,
+                        "tool": tool_name,
+                        "output_summary": self.tool_output_summary or self.summary,
+                        "status": self.status,
+                        "duration_sec": self.duration_sec,
+                        "error": self.error,
+                    },
+                    source=source or "react",
+                ),
+            ]
+
+        return [
+            ExecutionEvent(
+                type="step_started",
+                payload={
+                    "step_id": self.step_id,
+                    "title": self.title,
+                    "skill": self.skill,
+                    "kind": self.kind,
+                },
+                source=source or "planned",
+            ),
+            ExecutionEvent(
+                type="step_finished",
+                payload={
+                    "step_id": self.step_id,
+                    "title": self.title,
+                    "status": self.status,
+                    "skill": self.skill,
+                    "latency_ms": self.latency_ms,
+                    "error": self.error,
+                },
+                source=source or "planned",
+            ),
+        ]
+
     @classmethod
     def from_step_result(cls, step_result: Any) -> "ExecutionTraceEntry":
         """从 StepExecutionResult 构造（planned/direct 路径）。"""

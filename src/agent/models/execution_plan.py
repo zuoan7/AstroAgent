@@ -34,6 +34,11 @@ class PlanStep:
 
 @dataclass
 class ExecutionPlan:
+    """Compatibility plan model.
+
+    planned 主路径已优先使用 WorkflowGraph；ExecutionPlan 继续保留给旧序列化、
+    旧接口输入以及 TaskOrchestrator / StreamingService 兼容回退链路。
+    """
     task_type: str
     output_schema: str
     steps: List[PlanStep] = field(default_factory=list)
@@ -78,3 +83,48 @@ class ExecutionPlan:
                 }
             )
         return frontend_steps
+
+    @classmethod
+    def from_workflow_graph(
+        cls,
+        graph: Any,
+        *,
+        task_type: Optional[str] = None,
+    ) -> "ExecutionPlan":
+        """[Compatibility adapter] 从 WorkflowGraph 恢复 ExecutionPlan。
+
+        用于 graph-first planned 路径下，向旧序列化/观测/Outcome 结构提供兼容 Plan。
+        """
+        steps: List[PlanStep] = []
+        for node in graph.topological_order():
+            steps.append(
+                PlanStep(
+                    id=node.id,
+                    kind=node.kind,
+                    title=node.title,
+                    skill=node.skill,
+                    params=dict(node.inputs or {}),
+                    required=not node.optional,
+                    timeout_ms=node.timeout_ms,
+                )
+            )
+
+        metadata = getattr(graph, "metadata", {}) or {}
+        resolved_task_type = (
+            task_type
+            or metadata.get("task_type")
+            or "observation_recommendation"
+        )
+
+        return cls(
+            task_type=resolved_task_type,
+            output_schema=getattr(graph, "output_schema", "generic_answer_v1"),
+            steps=steps,
+            planner_type=metadata.get("planner_type", "graph_native"),
+            rationale=metadata.get("rationale", ""),
+            planner_version=metadata.get("planner_version", "planner_v2"),
+            schema_version=metadata.get("schema_version", "schema_v2"),
+            budget_policy_version=metadata.get(
+                "budget_policy_version", "budget_v1"
+            ),
+        )

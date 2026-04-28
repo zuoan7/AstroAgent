@@ -3,15 +3,12 @@ Phase 3 ExecutionDecision 测试
 目标：验证 ExecutionDecision 构造、AgentExecutionPolicy.decide() 行为，
       以及在关键样本下与 choose_path() 结果基本一致。
 
-当前状态：ExecutionDecision 模型已稳定，decide() 受 ENABLE_EXECUTION_DECISION 控制。
-          主路径仍调用 choose_path(route)；flag 默认 False，decide() 仅供观测/测试。
-收敛计划：待 UnifiedExecutionEngine 实现后，decide() 接入主路径，
-          choose_path() 降为兼容别名。
+当前状态：ExecutionDecision 模型已稳定，decide() 已成为 Policy 主输出。
+          choose_path(route) 保留为兼容别名，返回 legacy_execution_path。
 """
 from __future__ import annotations
 
 import pytest
-from unittest.mock import patch
 
 from tests.mock_deps import mock_heavy_dependencies
 
@@ -83,40 +80,13 @@ class TestExecutionDecisionConstruction:
             d.mode = "react"  # type: ignore[misc]
 
 
-class TestDecideFeatureFlagDisabled:
-    """ENABLE_EXECUTION_DECISION=False 时委托 choose_path，结果可观测但不接入主路径。"""
-
-    def _decide_with_flag_off(self, route, task_type, policy_kwargs=None, matched_skills=None):
-        policy = _policy(**(policy_kwargs or {}))
-        profile = _profile(route, task_type, matched_skills=matched_skills)
-        with patch("src.agent.governance.settings") as mock_settings:
-            mock_settings.ENABLE_EXECUTION_DECISION = False
-            mock_settings.AGENT_MODE = policy.mode
-            return policy.decide(profile)
-
-    def test_direct_task_delegates_to_choose_path(self):
-        d = self._decide_with_flag_off("direct_task", "smalltalk")
-        assert d.mode == "direct"
-        assert "delegate_to_choose_path" in d.reason
-
-    def test_planned_task_delegates_to_choose_path(self):
-        d = self._decide_with_flag_off("planned_task", "observation_recommendation", matched_skills=["weather-lookup", "observation-planner"])
-        assert d.mode == "planned"
-
-    def test_fallback_react_delegates_to_choose_path(self):
-        d = self._decide_with_flag_off("fallback_react", "open_domain_reasoning")
-        assert d.mode == "react"
-
-
-class TestDecideFeatureFlagEnabled:
-    """ENABLE_EXECUTION_DECISION=True 时按 TaskProfile 三维规则决策。"""
+class TestDecidePrimaryOutput:
+    """decide() 现在是 policy 主输出。"""
 
     def _decide(self, route, task_type, policy_kwargs=None, matched_skills=None):
         policy = _policy(**(policy_kwargs or {}))
         profile = _profile(route, task_type, matched_skills=matched_skills)
-        with patch("src.agent.governance.settings") as mock_settings:
-            mock_settings.ENABLE_EXECUTION_DECISION = True
-            return policy.decide(profile)
+        return policy.decide(profile)
 
     # 规则 1：complexity low + tool_need none -> direct
     def test_smalltalk_direct(self):
@@ -139,13 +109,12 @@ class TestDecideFeatureFlagEnabled:
     def test_multi_tool_planned(self):
         d = self._decide("planned_task", "observation_recommendation", matched_skills=["weather-lookup", "observation-planner"])
         assert d.mode == "planned"
-        assert "multi_tool" in d.reason or "high_complexity" in d.reason
+        assert d.reason in ("preserve_legacy_planned_route", "multi_tool_or_high_complexity")
 
     def test_high_complexity_single_skill_planned(self):
-        # planned_task with single skill => complexity=medium, tool_need=single
-        # 按规则 2 应为 direct（openness=low）
+        # planned_task 兼容保底：即使画像可降为 direct，也保留 planned。
         d = self._decide("planned_task", "observation_recommendation", matched_skills=["weather-lookup"])
-        assert d.mode in ("direct", "planned")  # medium complexity, single tool -> direct
+        assert d.mode == "planned"
 
     # 规则 4：openness high -> react
     def test_open_domain_react(self):
@@ -172,44 +141,35 @@ class TestDecideConsistencyWithChoosePath:
         ("fallback_react", "open_domain_reasoning", [], "react"),
     ]
 
-    def test_consistency_flag_enabled(self):
-        """flag=True 时，decide().legacy_execution_path 与 choose_path() 结果相同。"""
+    def test_decide_legacy_execution_path_matches_choose_path(self):
         policy = _policy()
         mismatches = []
         for route, task_type, skills, expected in self.SAMPLES:
             profile = _profile(route, task_type, matched_skills=skills)
             legacy_path = policy.choose_path(route)
-            with patch("src.agent.governance.settings") as mock_settings:
-                mock_settings.ENABLE_EXECUTION_DECISION = True
-                d = policy.decide(profile)
+            d = policy.decide(profile)
             if d.legacy_execution_path != legacy_path:
                 mismatches.append(
                     f"{route}/{task_type}: decide={d.legacy_execution_path}, choose_path={legacy_path}"
                 )
         assert not mismatches, f"Mismatches found:\n" + "\n".join(mismatches)
 
-    def test_consistency_flag_disabled(self):
-        """flag=False 时，decide() 完全委托 choose_path()，结果必须 100% 一致。"""
+    def test_decide_mode_matches_choose_path_on_key_samples(self):
         policy = _policy()
         for route, task_type, skills, expected in self.SAMPLES:
             profile = _profile(route, task_type, matched_skills=skills)
             legacy_path = policy.choose_path(route)
-            with patch("src.agent.governance.settings") as mock_settings:
-                mock_settings.ENABLE_EXECUTION_DECISION = False
-                d = policy.decide(profile)
+            d = policy.decide(profile)
             assert d.mode == legacy_path, (
                 f"{route}/{task_type}: decide={d.mode}, choose_path={legacy_path}"
             )
 
     def test_fallback_react_not_broken(self):
-        """fallback_react 场景不论 flag 状态均应产出 react。"""
+        """fallback_react 场景应稳定产出 react。"""
         policy = _policy()
         profile = _profile("fallback_react", "open_domain_reasoning")
-        for flag_val in (True, False):
-            with patch("src.agent.governance.settings") as mock_settings:
-                mock_settings.ENABLE_EXECUTION_DECISION = flag_val
-                d = policy.decide(profile)
-            assert d.mode == "react", f"flag={flag_val}: expected react, got {d.mode}"
+        d = policy.decide(profile)
+        assert d.mode == "react"
 
 
 class TestDecideEdgeCases:
@@ -218,27 +178,21 @@ class TestDecideEdgeCases:
     def test_decide_returns_execution_decision_type(self):
         policy = _policy()
         profile = _profile("direct_task", "smalltalk")
-        with patch("src.agent.governance.settings") as mock_settings:
-            mock_settings.ENABLE_EXECUTION_DECISION = True
-            result = policy.decide(profile)
+        result = policy.decide(profile)
         assert isinstance(result, ExecutionDecision)
 
     def test_decide_with_none_context_ok(self):
         """context 参数为 None 时不应抛出。"""
         policy = _policy()
         profile = _profile("direct_task", "smalltalk")
-        with patch("src.agent.governance.settings") as mock_settings:
-            mock_settings.ENABLE_EXECUTION_DECISION = True
-            result = policy.decide(profile, context=None)
+        result = policy.decide(profile, context=None)
         assert result.mode == "direct"
 
     def test_decide_multi_tool_has_fallback_react(self):
         """多工具 -> planned，且有 react 兜底（enable_react_fallback=True）。"""
         policy = _policy(enable_react_fallback=True)
         profile = _profile("planned_task", "observation_recommendation", matched_skills=["weather-lookup", "observation-planner"])
-        with patch("src.agent.governance.settings") as mock_settings:
-            mock_settings.ENABLE_EXECUTION_DECISION = True
-            d = policy.decide(profile)
+        d = policy.decide(profile)
         assert d.mode == "planned"
         assert "react" in d.fallback_modes
 
@@ -246,9 +200,7 @@ class TestDecideEdgeCases:
         """enable_react_fallback=False 时，fallback_modes 不含 react。"""
         policy = _policy(enable_react_fallback=False)
         profile = _profile("planned_task", "observation_recommendation", matched_skills=["weather-lookup", "observation-planner"])
-        with patch("src.agent.governance.settings") as mock_settings:
-            mock_settings.ENABLE_EXECUTION_DECISION = True
-            d = policy.decide(profile)
+        d = policy.decide(profile)
         assert d.mode == "planned"
         assert "react" not in d.fallback_modes
 

@@ -385,14 +385,13 @@ class AgentGovernanceConfig(BaseSettings):
     ENABLE_TASK_PROFILE: bool = Field(False, description="[重构flag] 启用 TaskProfile 任务画像")
     # Phase 2: ExecutionContext 统一执行上下文，收敛目标：替代散落的 chat_history/user_profile 参数
     ENABLE_EXECUTION_CONTEXT: bool = Field(False, description="[重构flag] 启用 ExecutionContext 统一上下文")
-    # Phase 2: ExecutionDecision 路由决策对象，收敛目标：替代 RouteDecision
-    ENABLE_EXECUTION_DECISION: bool = Field(False, description="[重构flag] 启用 ExecutionDecision 路由决策对象")
-    # Phase 4/8: UnifiedExecutionEngine 统一执行引擎，Phase 8 起默认开启
-    # 收敛计划：下一轮可删除 flag，直接移除旧 TaskOrchestrator 分支
+    # Phase 3/9: ExecutionDecision 已是主决策输出；该 flag 仅保留文档/观测兼容含义
+    ENABLE_EXECUTION_DECISION: bool = Field(False, description="[兼容flag] ExecutionDecision 已为主决策输出，保留历史配置位")
+    # Phase 4/8: UnifiedExecutionEngine 统一执行引擎，当前默认主路径
+    # 收敛计划：后续可删除 flag，直接移除旧 TaskOrchestrator 分支
     ENABLE_UNIFIED_EXECUTION_ENGINE: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionEngine（Phase 8 默认开启）")
-    # Phase 5/8: WorkflowGraph DAG 执行图，Phase 8 起默认开启
-    # 收敛计划：下一轮可删除 flag，移除 StepExecutor 分支
-    ENABLE_WORKFLOW_GRAPH: bool = Field(True, description="[重构flag] 启用 WorkflowGraph DAG 执行图（Phase 8 默认开启）")
+    # Phase 5/9: WorkflowGraph 已是 planned 主计划表达；flag=False 仅保留 legacy plan->graph 回退
+    ENABLE_WORKFLOW_GRAPH: bool = Field(True, description="[兼容flag] 控制 Planner.plan_graph 优先级；关闭时回退到 plan()+from_execution_plan()")
     # Phase 7/8: UnifiedExecutionTrace 统一执行追踪，Phase 8 起默认开启
     # 收敛计划：下一轮升级 FinalResponse.execution_trace 为 List[ExecutionTraceEntry]
     ENABLE_UNIFIED_EXECUTION_TRACE: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionTrace（Phase 8 默认开启）")

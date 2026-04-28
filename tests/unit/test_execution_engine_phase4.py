@@ -3,9 +3,7 @@
 目标：验证 DirectExecutor / PlannedExecutor / ReactExecutor / ExecutionEngine 结构，
       以及三种模式都可通过 ExecutionEngine 被调用，旧路径仍可工作。
 
-当前状态：ENABLE_UNIFIED_EXECUTION_ENGINE 默认 False，ExecutionEngine 不接入主路径。
-收敛计划：待 flag 开启后，StreamingService 改为调用 ExecutionEngine.run()，
-          TaskOrchestrator 降级为兼容门面。
+当前状态：ExecutionEngine 已是默认主路径，TaskOrchestrator 为兼容回退门面。
 """
 from __future__ import annotations
 
@@ -21,8 +19,11 @@ from src.agent.execution.engine import ExecutionEngine
 from src.agent.execution.direct_executor import DirectExecutor
 from src.agent.execution.planned_executor import PlannedExecutor
 from src.agent.execution.react_executor import ReactExecutor
+from src.agent.models.execution_context import ExecutionContext
 from src.agent.models.execution_decision import ExecutionDecision
 from src.agent.models.final_response import FinalResponse
+from src.agent.models.request_context import RequestContext
+from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RouteDecision
 
 
@@ -52,6 +53,26 @@ def _route_decision(route: str, task_type: str, matched_skills=None) -> RouteDec
 
 def _exec_decision(mode: str) -> ExecutionDecision:
     return ExecutionDecision(mode=mode, reason="test")
+
+
+def _exec_context(task_type: str, *, legacy_route: str = "direct_task") -> ExecutionContext:
+    return ExecutionContext(
+        profile=TaskProfile(
+            task_type=task_type,
+            complexity="low",
+            openness="low",
+            tool_need="none",
+            legacy_route=legacy_route,
+            confidence=0.9,
+            reason="test",
+        ),
+        request=RequestContext(
+            query="测试",
+            chat_history="",
+            user_profile="",
+            use_long_term_memory=True,
+        ),
+    )
 
 
 def _mock_synthesizer(answer: str = "合成答案") -> MagicMock:
@@ -133,9 +154,12 @@ class TestDirectExecutorViaEngine:
         ed = _exec_decision("direct")
         rd = _route_decision("direct_task", "smalltalk")
         result = asyncio.get_event_loop().run_until_complete(
-            engine.run(ed, rd, "你好")
+            engine.run(ed, rd, "你好", context=_exec_context("smalltalk"))
         )
         assert isinstance(result, FinalResponse)
+        event_types = [event["type"] for event in result.execution_events]
+        assert event_types[:3] == ["task_profile", "route_decided", "execution_decision"]
+        assert "answer_ready" in event_types
         engine.direct._synthesizer.synthesize_smalltalk.assert_called_once()
 
     def test_direct_simple_qa(self):
@@ -210,9 +234,20 @@ class TestPlannedExecutorViaEngine:
         ed = _exec_decision("planned")
         rd = _route_decision("planned_task", "observation_recommendation", ["weather-lookup"])
         result = asyncio.get_event_loop().run_until_complete(
-            engine.run(ed, rd, "北京今晚观测条件")
+            engine.run(
+                ed,
+                rd,
+                "北京今晚观测条件",
+                context=_exec_context(
+                    "observation_recommendation",
+                    legacy_route="planned_task",
+                ),
+            )
         )
         assert isinstance(result, FinalResponse)
+        event_types = [event["type"] for event in result.execution_events]
+        assert "plan_created" in event_types
+        assert "answer_ready" in event_types
         synth.synthesize.assert_called_once()
 
 
@@ -257,14 +292,74 @@ class TestReactExecutor:
         assert len(collected) == 1
         assert collected[0]["event"] == "on_tool_start"
 
-    def test_react_mode_raises_not_implemented_in_engine(self):
-        engine = _make_engine()
+    def test_react_run_uses_invoke_when_available(self):
+        mock_agent = MagicMock()
+        mock_agent.invoke.return_value = {"output": "Final Answer: 统一 react 答案"}
+        engine = _make_engine(react_executor=ReactExecutor(agent_executor=mock_agent))
         ed = _exec_decision("react")
         rd = _route_decision("fallback_react", "open_domain_reasoning")
-        with pytest.raises(NotImplementedError):
-            asyncio.get_event_loop().run_until_complete(
-                engine.run(ed, rd, "帮我写小说")
+        result = asyncio.get_event_loop().run_until_complete(
+            engine.run(
+                ed,
+                rd,
+                "帮我写小说",
+                context=_exec_context(
+                    "open_domain_reasoning",
+                    legacy_route="fallback_react",
+                ),
             )
+        )
+        assert isinstance(result, FinalResponse)
+        assert result.answer == "统一 react 答案"
+        assert result.route == "fallback_react"
+        event_types = [event["type"] for event in result.execution_events]
+        assert event_types[:3] == ["task_profile", "route_decided", "execution_decision"]
+        assert "answer_ready" in event_types
+
+    def test_react_run_falls_back_to_stream_aggregation(self):
+        class _AgentStub:
+            async def astream_events(self, agent_input, version="v1"):
+                yield {
+                    "event": "on_tool_start",
+                    "data": {"name": "weather-lookup", "input": "北京天气"},
+                    "run_id": "react-tool-1",
+                }
+                yield {
+                    "event": "on_tool_end",
+                    "data": {"name": "weather-lookup", "output": "晴朗"},
+                    "run_id": "react-tool-1",
+                }
+                yield {
+                    "event": "on_llm_stream",
+                    "data": {"chunk": MagicMock(content="Thought: 正在推理\n")},
+                    "run_id": "react-1",
+                }
+                yield {
+                    "event": "on_llm_stream",
+                    "data": {"chunk": MagicMock(content="Final Answer: 流式 react 答案")},
+                    "run_id": "react-1",
+                }
+
+        engine = _make_engine(react_executor=ReactExecutor(agent_executor=_AgentStub()))
+        ed = _exec_decision("react")
+        rd = _route_decision("fallback_react", "open_domain_reasoning")
+        result = asyncio.get_event_loop().run_until_complete(
+            engine.run(
+                ed,
+                rd,
+                "帮我写小说",
+                context=_exec_context(
+                    "open_domain_reasoning",
+                    legacy_route="fallback_react",
+                ),
+            )
+        )
+        assert isinstance(result, FinalResponse)
+        assert result.answer == "流式 react 答案"
+        event_types = [event["type"] for event in result.execution_events]
+        assert "tool_called" in event_types
+        assert "tool_result" in event_types
+        assert "answer_ready" in event_types
 
 
 class TestDirectExecutorUnit:

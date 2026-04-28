@@ -1,9 +1,7 @@
 """统一执行引擎包（Phase 4 引入）。
 
-当前状态：ExecutionEngine 及三个 Executor 已存在，但 ENABLE_UNIFIED_EXECUTION_ENGINE 默认关闭。
-          主路径仍由 StreamingService -> TaskOrchestrator 驱动；本包为旁路结构统一层。
-收敛计划：待 ENABLE_UNIFIED_EXECUTION_ENGINE 开启后，StreamingService 改为调用
-          ExecutionEngine.run()，TaskOrchestrator 降级为兼容门面。
+当前状态：ExecutionEngine 已是默认主执行入口，统一 direct / planned / react。
+          TaskOrchestrator 降级为兼容回退门面。
 """
 from src.agent.execution.engine import ExecutionEngine
 from src.agent.execution.direct_executor import DirectExecutor

@@ -18,7 +18,7 @@ from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 
 from src.agent.models.task_profile import TaskProfile, LEGACY_ROUTE_MAP
-from src.agent.request_router import RequestRouter
+from src.agent.request_router import RequestRouter, RouteDecision
 
 
 class TestTaskProfileConstruction:
@@ -95,16 +95,35 @@ class TestTaskProfileConstruction:
             route="direct_task",
             task_type="smalltalk",
             confidence=0.98,
+            reason="matched_smalltalk_pattern",
             expected_output_schema="chat_answer_v1",
         )
         d = p.to_dict()
         required = {
             "task_type", "complexity", "openness", "tool_need",
-            "matched_skills", "confidence", "expected_output_schema", "legacy_route",
+            "matched_skills", "confidence", "reason", "expected_output_schema", "legacy_route",
         }
         assert required.issubset(d.keys())
         assert d["expected_output_schema"] == "chat_answer_v1"
         assert d["confidence"] == 0.98
+        assert d["reason"] == "matched_smalltalk_pattern"
+
+    def test_to_legacy_route_decision_preserves_legacy_fields(self):
+        p = TaskProfile.from_legacy_route(
+            route="planned_task",
+            task_type="observation_recommendation",
+            confidence=0.82,
+            matched_skills=["weather-lookup", "observation-planner"],
+            reason="matched_multiple_skills",
+            expected_output_schema="observation_answer_v1",
+        )
+        decision = p.to_legacy_route_decision()
+        assert decision.route == "planned_task"
+        assert decision.task_type == "observation_recommendation"
+        assert decision.confidence == 0.82
+        assert decision.reason == "matched_multiple_skills"
+        assert decision.matched_skills == ["weather-lookup", "observation-planner"]
+        assert decision.expected_output_schema == "observation_answer_v1"
 
     def test_legacy_route_map_covers_all_routes(self):
         for route in ("direct_task", "planned_task", "fallback_react"):
@@ -151,6 +170,14 @@ class TestRequestRouterProfile:
         else:
             assert p.tool_need in ("single", "multi")
 
+    def test_simple_qa_profile_low_complexity_no_tools(self):
+        p = self.router.profile("赤经是什么？")
+        assert p.task_type == "simple_qa"
+        assert p.complexity == "low"
+        assert p.openness == "low"
+        assert p.tool_need == "none"
+        assert p.legacy_route == "direct_task"
+
     def test_open_ended_profile_openness_high(self):
         p = self.router.profile("帮我写一篇关于宇宙的科幻小说")
         assert p.openness == "high"
@@ -169,7 +196,6 @@ class TestRequestRouterProfile:
         assert p.expected_output_schema == decision.expected_output_schema
 
     def test_route_still_returns_route_decision(self):
-        from src.agent.request_router import RouteDecision
         decision = self.router.route("你好")
         assert isinstance(decision, RouteDecision)
         assert decision.route == "direct_task"
@@ -181,3 +207,38 @@ class TestRequestRouterProfile:
         assert p.legacy_route == decision.route
         assert p.task_type == decision.task_type
         assert p.matched_skills == decision.matched_skills
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "你好",
+            "赤经是什么？",
+            "帮我查一下北京今天天气怎么样",
+            "帮我看下北京今晚观测条件，同时查查有没有天象活动",
+            "帮我写一篇关于宇宙的科幻小说",
+        ],
+    )
+    def test_route_and_profile_legacy_fields_are_consistent(self, query):
+        decision = self.router.route(query)
+        profile = self.router.profile(query)
+        assert decision.route == profile.legacy_route
+        assert decision.task_type == profile.task_type
+        assert decision.confidence == profile.confidence
+        assert decision.reason == profile.reason
+        assert decision.matched_skills == profile.matched_skills
+        assert decision.expected_output_schema == profile.expected_output_schema
+
+    @pytest.mark.parametrize(
+        ("query", "expected_route", "expected_task_type"),
+        [
+            ("你好", "direct_task", "smalltalk"),
+            ("北京天气怎么样", "direct_task", "single_tool_lookup"),
+            ("赤经是什么", "direct_task", "simple_qa"),
+            ("请比较双筒和赤道仪观测方案并给出步骤", "planned_task", "observation_recommendation"),
+            ("帮我写一篇关于宇宙的科幻小说", "fallback_react", "open_domain_reasoning"),
+        ],
+    )
+    def test_route_legacy_behavior_remains_unchanged(self, query, expected_route, expected_task_type):
+        decision = self.router.route(query)
+        assert decision.route == expected_route
+        assert decision.task_type == expected_task_type
