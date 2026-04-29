@@ -4,7 +4,7 @@
 1. ExecutionTraceEntry 能从 StepExecutionResult / dict / react_tool 构造
 2. StepExecutionResult.to_trace_entry() 可用
 3. ExecutionEvent 内部类型 <-> 前端事件名映射正确
-4. StreamingService._emit_trace_events() 对 planned 路径正确产出旧前端事件序列
+4. FrontendExecutionEventAdapter 对 planned 路径正确产出旧前端事件序列
 5. 旧前端事件名（plan_update / step_start / step_end / evidence_found）不变
 """
 from __future__ import annotations
@@ -17,8 +17,10 @@ from tests.mock_deps import mock_heavy_dependencies
 
 mock_heavy_dependencies()
 
+from src.agent.frontend_event_adapter import FrontendExecutionEventAdapter
 from src.agent.models.execution_trace_entry import ExecutionTraceEntry
 from src.agent.models.execution_event import ExecutionEvent, EXECUTION_EVENT_TYPES
+from src.agent.streaming_events import StreamEvent
 from src.agent.executor import StepExecutionResult
 
 
@@ -184,17 +186,14 @@ class TestExecutionEvent:
 
 
 # ─────────────────────────────────────────────────────────────────
-# StreamingService._emit_trace_events() 测试
+# FrontendExecutionEventAdapter trace 映射测试
 # ─────────────────────────────────────────────────────────────────
 
 class TestEmitTraceEvents:
-    """验证 _emit_trace_events 产出事件序列与旧前端事件名兼容。"""
+    """验证 adapter 产出事件序列与旧前端事件名兼容。"""
 
-    def _make_service(self):
-        from src.agent.streaming_service import BaseStreamingGenerator
-        svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
-        svc._event_processors = []
-        return svc
+    def _make_adapter(self):
+        return FrontendExecutionEventAdapter()
 
     def _make_trace_dict(self, status: str = "success") -> dict:
         return {
@@ -211,7 +210,7 @@ class TestEmitTraceEvents:
         }
 
     def _collect_events(self, trace_dict: dict, plan_steps: list) -> list:
-        svc = self._make_service()
+        adapter = self._make_adapter()
         evidence_items = []
         tool_timeline = []
         collected = []
@@ -219,7 +218,6 @@ class TestEmitTraceEvents:
         sequence_counter = [0]
 
         def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
-            from src.agent.streaming_events import StreamEvent
             sequence_counter[0] += 1
             return StreamEvent(
                 type=event_type,
@@ -232,17 +230,18 @@ class TestEmitTraceEvents:
             yield event
 
         async def run():
-            async for ev in svc._emit_trace_events(
+            async for ev in adapter.emit_trace_events(
                 trace_dict,
                 plan_steps=plan_steps,
                 evidence_items=evidence_items,
                 tool_timeline=tool_timeline,
                 next_event_fn=next_event_fn,
                 emit_fn=emit_fn,
+                preview_text_fn=lambda value, max_len: str(value)[:max_len],
             ):
                 collected.append(ev)
 
-        asyncio.get_event_loop().run_until_complete(run())
+        asyncio.run(run())
         return collected, evidence_items, tool_timeline
 
     def test_event_types_order(self):
@@ -325,12 +324,11 @@ class TestEmitTraceEvents:
             skill="weather-lookup", input_params={}, attempts=1,
         )
         entry = ExecutionTraceEntry.from_step_result(sr)
-        svc = self._make_service()
+        adapter = self._make_adapter()
         collected = []
         sequence_counter = [0]
 
         def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
-            from src.agent.streaming_events import StreamEvent
             sequence_counter[0] += 1
             return StreamEvent(
                 type=event_type, content=content,
@@ -341,33 +339,29 @@ class TestEmitTraceEvents:
             yield event
 
         async def run():
-            async for ev in svc._emit_trace_events(
+            async for ev in adapter.emit_trace_events(
                 entry,
                 plan_steps=plan_steps,
                 evidence_items=[],
                 tool_timeline=[],
                 next_event_fn=next_event_fn,
                 emit_fn=emit_fn,
+                preview_text_fn=lambda value, max_len: str(value)[:max_len],
             ):
                 collected.append(ev)
 
-        asyncio.get_event_loop().run_until_complete(run())
+        asyncio.run(run())
         types = [e.type for e in collected]
         assert "step_start" in types
         assert "step_end" in types
 
 
 class TestEmitExecutionEvent:
-    def _make_service(self):
-        from src.agent.streaming_service import BaseStreamingGenerator
-        svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
-        svc._event_processors = []
-        return svc
+    def _make_adapter(self):
+        return FrontendExecutionEventAdapter()
 
     def test_route_decided_maps_to_route_decision(self):
-        from src.agent.streaming_events import StreamEvent
-
-        svc = self._make_service()
+        adapter = self._make_adapter()
         emitted = []
 
         def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
@@ -382,7 +376,7 @@ class TestEmitExecutionEvent:
             yield event
 
         async def run():
-            async for event in svc._emit_execution_event(
+            async for event in adapter.emit_execution_event(
                 ExecutionEvent(
                     type="route_decided",
                     payload={"route": "direct_task", "task_type": "smalltalk"},
@@ -393,14 +387,12 @@ class TestEmitExecutionEvent:
             ):
                 emitted.append(event)
 
-        asyncio.get_event_loop().run_until_complete(run())
+        asyncio.run(run())
         assert len(emitted) == 1
         assert emitted[0].type == "route_decision"
 
     def test_plan_built_maps_to_plan_update(self):
-        from src.agent.streaming_events import StreamEvent
-
-        svc = self._make_service()
+        adapter = self._make_adapter()
         emitted = []
 
         def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
@@ -415,7 +407,7 @@ class TestEmitExecutionEvent:
             yield event
 
         async def run():
-            async for event in svc._emit_execution_event(
+            async for event in adapter.emit_execution_event(
                 ExecutionEvent(
                     type="plan_built",
                     payload={"steps": [{"id": "s1", "status": "pending"}]},
@@ -426,6 +418,44 @@ class TestEmitExecutionEvent:
             ):
                 emitted.append(event)
 
-        asyncio.get_event_loop().run_until_complete(run())
+        asyncio.run(run())
+        assert len(emitted) == 1
+        assert emitted[0].type == "plan_update"
+
+    def test_plan_created_with_plan_payload_maps_to_plan_update(self):
+        adapter = self._make_adapter()
+        emitted = []
+
+        def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
+            return StreamEvent(
+                type=event_type,
+                content=content,
+                meta=meta or {"request_id": "test"},
+                sequence=1,
+            )
+
+        async def emit_fn(event):
+            yield event
+
+        async def run():
+            async for event in adapter.emit_response_execution_events(
+                MagicMock(
+                    execution_events=[
+                        ExecutionEvent(
+                            type="plan_created",
+                            payload={"plan": {"steps": [{"id": "s1", "status": "pending"}]}},
+                            source="planned",
+                        ).to_dict()
+                    ]
+                ),
+                plan_steps=[],
+                evidence_items=[],
+                tool_timeline=[],
+                next_event_fn=next_event_fn,
+                emit_fn=emit_fn,
+            ):
+                emitted.append(event)
+
+        asyncio.run(run())
         assert len(emitted) == 1
         assert emitted[0].type == "plan_update"

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 
-# 内部事件类型集合（与前端事件名解耦，映射在 StreamingService 中完成）
+# 内部事件类型集合（与前端事件名解耦，映射由前端事件 adapter 完成）
 EXECUTION_EVENT_TYPES = {
     "task_profile",       # Router 画像已生成
     "route_decided",      # 路由决策完成
@@ -42,24 +42,14 @@ class ExecutionEvent:
     source: str = ""
 
     def to_frontend_type(self) -> Optional[str]:
-        """将内部事件类型映射为旧前端事件类型（保持兼容）。
+        """兼容接口：返回旧前端事件名。
 
-        收敛计划：Phase 8 可将此映射移入 FrontendJsonEventAdapter，
-                  届时 ExecutionEvent 与 StreamEvent 解耦更彻底。
+        主映射逻辑已迁入 FrontendExecutionEventAdapter；
+        此方法仅保留给旧测试和外部兼容调用。
         """
-        _MAP = {
-            "route_decided": "route_decision",
-            "plan_built": "plan_update",
-            "plan_created": "plan_update",
-            "step_started": "step_start",
-            "step_finished": "step_end",
-            "answer_ready": "final_answer",
-            "final_answer": "final_answer",
-            "tool_called": "tool_start",
-            "tool_result": "tool_end",
-            "tool_returned": "tool_end",
-        }
-        return _MAP.get(self.type)
+        from src.agent.frontend_event_adapter import FrontendExecutionEventAdapter
+
+        return FrontendExecutionEventAdapter.FRONTEND_EVENT_TYPE_MAP.get(self.type)
 
     def to_dict(self) -> Dict[str, Any]:
         return {

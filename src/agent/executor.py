@@ -64,7 +64,7 @@ class StepExecutor:
     """Deprecated linear ExecutionPlan executor.
 
     主 planned 路径已迁移到 WorkflowExecutor；本类仍保留给 TaskOrchestrator
-    与历史测试/回退路径使用。
+    与历史测试/回退路径使用。新 planned 代码不得新增对本类的依赖。
     """
 
     def __init__(self, skill_manager: Any) -> None:
@@ -79,6 +79,7 @@ class StepExecutor:
         event_callback: Optional[EventCallback] = None,
         budget_tracker: Optional[RequestBudgetTracker] = None,
     ) -> ExecutionOutcome:
+        """Execute a legacy ExecutionPlan linearly for compatibility only."""
         outcome = ExecutionOutcome(plan=plan)
         steps = list(plan.steps)
         index = 0

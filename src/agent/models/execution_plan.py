@@ -17,6 +17,21 @@ class PlanStep:
     retry_policy: int = 0
     timeout_ms: Optional[int] = None
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PlanStep":
+        return cls(
+            id=str(data.get("id", "")),
+            kind=str(data.get("kind", "tool")),
+            title=str(data.get("title", "")),
+            description=str(data.get("description", "")),
+            skill=data.get("skill"),
+            params=dict(data.get("params", {}) or {}),
+            required=bool(data.get("required", True)),
+            parallel_group=data.get("parallel_group"),
+            retry_policy=int(data.get("retry_policy", 0) or 0),
+            timeout_ms=data.get("timeout_ms"),
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -36,8 +51,9 @@ class PlanStep:
 class ExecutionPlan:
     """Compatibility plan model.
 
-    planned 主路径已优先使用 WorkflowGraph；ExecutionPlan 继续保留给旧序列化、
-    旧接口输入以及 TaskOrchestrator / StreamingService 兼容回退链路。
+    planned 主路径已优先使用 WorkflowGraph；ExecutionPlan 不再是主计划表达，
+    继续保留给旧序列化、旧接口输入、展示层兼容视图，以及
+    TaskOrchestrator / StreamingService 兼容回退链路。
     """
     task_type: str
     output_schema: str
@@ -85,6 +101,24 @@ class ExecutionPlan:
         return frontend_steps
 
     @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ExecutionPlan":
+        return cls(
+            task_type=str(data.get("task_type", "observation_recommendation")),
+            output_schema=str(data.get("output_schema", "generic_answer_v1")),
+            steps=[
+                PlanStep.from_dict(step)
+                for step in list(data.get("steps", []) or [])
+            ],
+            planner_type=str(data.get("planner_type", "template")),
+            rationale=str(data.get("rationale", "")),
+            planner_version=str(data.get("planner_version", "planner_v2")),
+            schema_version=str(data.get("schema_version", "schema_v2")),
+            budget_policy_version=str(
+                data.get("budget_policy_version", "budget_v1")
+            ),
+        )
+
+    @classmethod
     def from_workflow_graph(
         cls,
         graph: Any,
@@ -93,8 +127,17 @@ class ExecutionPlan:
     ) -> "ExecutionPlan":
         """[Compatibility adapter] 从 WorkflowGraph 恢复 ExecutionPlan。
 
-        用于 graph-first planned 路径下，向旧序列化/观测/Outcome 结构提供兼容 Plan。
+        用于 graph-first planned 路径下，向旧序列化、展示层、Outcome 结构
+        提供兼容 Plan。
         """
+        metadata = getattr(graph, "metadata", {}) or {}
+        compat_plan = metadata.get("_compat_plan")
+        if isinstance(compat_plan, dict):
+            plan = cls.from_dict(compat_plan)
+            if task_type is not None:
+                plan.task_type = task_type
+            return plan
+
         steps: List[PlanStep] = []
         for node in graph.topological_order():
             steps.append(
@@ -109,7 +152,6 @@ class ExecutionPlan:
                 )
             )
 
-        metadata = getattr(graph, "metadata", {}) or {}
         resolved_task_type = (
             task_type
             or metadata.get("task_type")

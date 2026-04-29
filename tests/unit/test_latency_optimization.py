@@ -56,9 +56,13 @@ class _MemoryStub:
 )
 def test_request_router_routes_expected_queries(query, expected_route, expected_task_type):
     router = RequestRouter()
+    profile = router.profile(query)
+    assert profile.legacy_route == expected_route
+    assert profile.task_type == expected_task_type
+
     decision = router.route(query)
-    assert decision.route == expected_route
-    assert decision.task_type == expected_task_type
+    assert decision.route == profile.legacy_route
+    assert decision.task_type == profile.task_type
 
 
 def test_mcp_parallel_calls_are_truly_concurrent(monkeypatch):
@@ -118,7 +122,36 @@ async def test_streaming_service_smalltalk_uses_direct_route():
     assert "latency_metrics" in event_types
     final_answer = next(event for event in events if event["type"] == "final_answer")
     assert "你好" in final_answer["final_answer"]
-    assert "route_decision_ms" in final_answer["latency_metrics"]["stages_ms"]
+
+
+def test_streaming_service_prefers_profile_over_route_for_compat_decision():
+    router = SimpleNamespace(
+        profile=lambda query: TaskProfile.from_legacy_route(
+            route="direct_task",
+            task_type="smalltalk",
+            confidence=0.98,
+            reason="profile_first",
+            expected_output_schema="chat_answer_v1",
+        ),
+        route=lambda query: (_ for _ in ()).throw(
+            AssertionError("route() should not be used when profile() is available")
+        ),
+    )
+    service = StreamingService(
+        agent_executor=None,
+        memory=_MemoryStub(),
+        user_id="test_user",
+        request_router=router,
+        task_orchestrator=SimpleNamespace(),
+    )
+
+    decision = service._resolve_legacy_route_decision(
+        "你好",
+        precomputed_profile=router.profile("你好"),
+    )
+
+    assert decision.route == "direct_task"
+    assert decision.task_type == "smalltalk"
 
 
 @pytest.mark.asyncio

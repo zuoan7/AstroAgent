@@ -2,10 +2,9 @@
 Phase 1 TaskProfile 测试
 目标：验证 TaskProfile 构造、RequestRouter.profile() 行为及 legacy_route 映射。
 
-当前状态：TaskProfile 模型已稳定，但主执行路径仍使用 RouteDecision。
-          RequestRouter.profile() 仅供旁路观测，主路径调用 route()。
-收敛计划：待 UnifiedExecutionEngine 实现后，profile() 成为主路由入口，
-          TaskProfile 替代 RouteDecision 驱动执行决策。
+当前状态：TaskProfile 已成为 Router 内部主输出；
+          route() / RouteDecision 仅保留兼容层用途。
+收敛计划：继续压缩 RouteDecision 使用面，直到仅剩外部兼容调用。
 """
 from __future__ import annotations
 
@@ -199,6 +198,23 @@ class TestRequestRouterProfile:
         decision = self.router.route("你好")
         assert isinstance(decision, RouteDecision)
         assert decision.route == "direct_task"
+
+    def test_route_compatibility_entry_delegates_to_profile(self, monkeypatch):
+        profile = TaskProfile.from_legacy_route(
+            route="planned_task",
+            task_type="observation_recommendation",
+            confidence=0.66,
+            matched_skills=["weather-lookup"],
+            reason="compat_profile",
+            expected_output_schema="observation_answer_v1",
+        )
+        monkeypatch.setattr(self.router, "profile", lambda query: profile)
+
+        decision = self.router.route("兼容入口")
+
+        assert decision.route == profile.legacy_route
+        assert decision.task_type == profile.task_type
+        assert decision.reason == profile.reason
 
     def test_profile_and_route_consistent_for_same_query(self):
         query = "帮我查一下北京今天天气怎么样"

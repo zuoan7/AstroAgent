@@ -28,6 +28,7 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 - [Memory Directory Structure](docs/MEMORY_DIRECTORY_STRUCTURE.md)：记忆模块目录拆分、分层职责与迁移结构
 - [Memory Module Documentation](docs/MEMORY_MODULE_DOCUMENTATION.md)：短期记忆、长期记忆、兼容层与仓储实现说明
 - [Streaming Event Bus](docs/streaming-event-bus.md)：流式输出统一事件总线、适配器接口、插件机制与兼容性说明
+- [Agent Compatibility Matrix](docs/agent_compatibility_matrix.md)：DAG Agent 重构后各兼容层、deprecated 接口、feature flags 与删除条件清单
 
 ## 近期变更
 
@@ -544,14 +545,41 @@ data: {"type":"text","content":"今晚上海可以观测到木星..."}
 - `TaskProfile + ExecutionContext -> ExecutionDecision`
 - `ExecutionDecision -> ExecutionEngine.run(direct|planned|react)`
 - `Planner.plan_graph() -> WorkflowGraph`
-- `ExecutionEvent -> StreamingService adapter -> 旧前端 stream event`
+- `ExecutionEvent -> FrontendExecutionEventAdapter -> 旧前端 stream event`
 
 仍保留但已降级的兼容接口：
 
 - `RequestRouter.route(query)`：兼容输出 `RouteDecision`
+- `RouteDecision`：旧路由结果对象，仍供旧执行入口、旧事件透传和测试基线使用
 - `AgentExecutionPolicy.choose_path(route)`：兼容输出 `direct/planned/react` 字符串
 - `TaskOrchestrator.run()`：当 `ExecutionEngine` 未注入或显式关闭统一引擎时的回退门面
+- `TaskOrchestrator.build_execution_plan()`：legacy planned 展示/执行 helper
+- `Planner.plan()`：兼容输出 `ExecutionPlan`
 - `ExecutionPlan` / `StepExecutor`：旧 planned 表达与线性执行兼容层
+
+现存兼容层说明：
+
+- 旧接口兼容层：
+  - `RequestRouter.route()`、`RouteDecision`
+  - `AgentExecutionPolicy.choose_path()`
+  - `TaskOrchestrator.run()`、`TaskOrchestrator.build_execution_plan()`
+  - `Planner.plan()`
+- 旧 planned 表达兼容层：
+  - `ExecutionPlan`
+  - `StepExecutor`
+- 配置兼容层：
+  - `ENABLE_UNIFIED_EXECUTION_ENGINE`
+  - `ENABLE_WORKFLOW_GRAPH`
+  - `ENABLE_TASK_PROFILE`
+  - `ENABLE_EXECUTION_CONTEXT`
+  - `ENABLE_EXECUTION_DECISION`
+  - `ENABLE_UNIFIED_EXECUTION_TRACE`
+  - `ENABLE_UNIFIED_EXECUTION_EVENTS`
+- 前端协议兼容层：
+  - 旧事件名仍保持不变：`route_decision`、`plan_update`、`step_start`、`step_end`、`tool_start`、`tool_end`、`final_answer`
+  - 这些事件由 `FrontendExecutionEventAdapter` 从内部 `ExecutionEvent` / `ExecutionTraceEntry` 适配输出
+
+详细状态、测试覆盖与删除条件见 [Agent Compatibility Matrix](docs/agent_compatibility_matrix.md)。
 
 ### 3. 知识库接口
 

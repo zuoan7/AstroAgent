@@ -12,6 +12,7 @@ from src.agent.governance import (
     GovernanceMetricsRegistry,
     RequestObservation,
 )
+from src.agent.frontend_event_adapter import FrontendExecutionEventAdapter
 from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.models.final_response import FinalResponse
@@ -40,14 +41,6 @@ MAX_ACTION_HISTORY_ENTRIES = 100
 TOOL_INPUT_LOG_PREVIEW_CHARS = 300
 TOOL_OUTPUT_LOG_PREVIEW_CHARS = 200
 FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS = 500
-
-
-def _update_status(steps: List[Dict[str, Any]], step_id: str, status: str) -> None:
-    """原地更新 plan_steps 列表中指定 step 的 status（共用 helper）。"""
-    for s in steps:
-        if s["id"] == step_id:
-            s["status"] = status
-            return
 
 
 class BaseStreamingGenerator:
@@ -85,6 +78,7 @@ class BaseStreamingGenerator:
         self._max_same_action_count = 2
         self._event_processors = list(event_processors or [])
         self._execution_policy = execution_policy or AgentExecutionPolicy.from_settings()
+        self._frontend_event_adapter = FrontendExecutionEventAdapter()
         self._governance_metrics = governance_metrics
         self._audit_logger = audit_logger
         self._agent_executor_factory = agent_executor_factory
@@ -591,6 +585,41 @@ class BaseStreamingGenerator:
             and getattr(self, "_execution_engine", None) is not None
         )
 
+    def _preview_execution_plan_for_streaming(
+        self,
+        execution_decision: Any,
+        decision: Any,
+        query: str,
+        *,
+        chat_history: str,
+        user_profile: str,
+    ) -> Optional[ExecutionPlan]:
+        """Return the planned-task preview used by legacy frontend events.
+
+        主展示路径应优先使用 `ExecutionEngine.preview_plan()`。
+        只有 unified engine 不可用时，才回退到
+        `TaskOrchestrator.build_execution_plan()` 以维持旧 planned 展示兼容。
+        """
+        if self._use_unified_execution_engine():
+            return self._execution_engine.preview_plan(
+                execution_decision,
+                decision,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
+
+        if self._task_orchestrator and hasattr(
+            self._task_orchestrator, "build_execution_plan"
+        ):
+            return self._task_orchestrator.build_execution_plan(
+                decision,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
+        return None
+
     def _build_request_context(
         self,
         query: str,
@@ -621,10 +650,14 @@ class BaseStreamingGenerator:
         use_long_term_memory: bool,
         chat_history: str = "",
         user_profile: str = "",
+        precomputed_profile: Optional[Any] = None,
     ) -> tuple[Any, Optional[Any], Optional[Any]]:
-        """优先走 TaskProfile/ExecutionContext -> ExecutionDecision，保留 legacy 回退。"""
+        """优先走 TaskProfile/ExecutionContext -> ExecutionDecision，保留 legacy 回退。
+
+        ENABLE_TASK_PROFILE / ENABLE_EXECUTION_CONTEXT / ENABLE_EXECUTION_DECISION
+        现仅为历史配置兼容位，不再切换此主流程。
+        """
         from src.agent.models.execution_context import ExecutionContext
-        from src.agent.models.execution_decision import ExecutionDecision
         from src.agent.models.request_context import RequestContext
         from src.agent.models.task_profile import TaskProfile
 
@@ -632,7 +665,9 @@ class BaseStreamingGenerator:
 
         router = getattr(self, "_request_router", None)
 
-        if router and hasattr(router, "profile"):
+        if precomputed_profile is not None:
+            profile = precomputed_profile
+        elif router and hasattr(router, "profile"):
             profile = router.profile(query)
         elif legacy_decision and isinstance(getattr(legacy_decision, "route", None), str):
             profile = TaskProfile.from_legacy_route(
@@ -646,16 +681,25 @@ class BaseStreamingGenerator:
                 ),
             )
         else:
-            path = policy.choose_path(None)
-            return (
-                ExecutionDecision(
-                    mode=path,
-                    reason="legacy_wrapper_no_route",
-                    fallback_modes=[],
-                    legacy_execution_path=path,
-                ),
-                None,
-                None,
+            # 即使缺少 router/legacy route，也构造兼容画像并统一走 decide()。
+            if policy.mode == "react":
+                fallback_route = "fallback_react"
+                fallback_task_type = "open_domain_reasoning"
+            elif policy.mode == "planned" or policy.enable_planner:
+                fallback_route = "planned_task"
+                fallback_task_type = "observation_recommendation"
+            elif policy.enable_react_fallback:
+                fallback_route = "fallback_react"
+                fallback_task_type = "open_domain_reasoning"
+            else:
+                fallback_route = "direct_task"
+                fallback_task_type = "smalltalk"
+
+            profile = TaskProfile.from_legacy_route(
+                route=fallback_route,
+                task_type=fallback_task_type,
+                confidence=0.0,
+                reason="compat_profile_without_router_or_legacy_decision",
             )
 
         context = ExecutionContext(
@@ -669,137 +713,26 @@ class BaseStreamingGenerator:
         )
         return policy.decide(profile, context), profile, context
 
-    def _to_execution_event(self, event: Any, *, source: str = "") -> ExecutionEvent:
-        if isinstance(event, ExecutionEvent):
-            return event
-        if isinstance(event, dict):
-            return ExecutionEvent(
-                type=str(event.get("type", "")),
-                payload=dict(event.get("payload", {}) or {}),
-                source=source or str(event.get("source", "") or ""),
-            )
-        raise TypeError(f"unsupported execution event payload: {type(event)!r}")
-
-    async def _emit_execution_event(
+    def _resolve_legacy_route_decision(
         self,
-        event: Any,
+        query: str,
         *,
-        next_event_fn: Any,
-        emit_fn: Any,
-        source: str = "",
-    ) -> AsyncGenerator[StreamEvent, None]:
-        execution_event = self._to_execution_event(event, source=source)
-        frontend_type = execution_event.to_frontend_type()
-        if not frontend_type:
-            return
-        async for processed in emit_fn(
-            next_event_fn(frontend_type, content=execution_event.payload)
+        precomputed_profile: Optional[Any] = None,
+    ) -> Optional[Any]:
+        """优先从 TaskProfile 派生 RouteDecision；仅无 profile 时回退 route()。"""
+        if precomputed_profile is not None and hasattr(
+            precomputed_profile, "to_legacy_route_decision"
         ):
-            yield processed
+            return precomputed_profile.to_legacy_route_decision()
 
-    def _iter_response_execution_events(
-        self,
-        response: FinalResponse,
-    ) -> List[ExecutionEvent]:
-        events = []
-        for event in getattr(response, "execution_events", []) or []:
-            events.append(self._to_execution_event(event))
-        return events
-
-    async def _emit_response_execution_events(
-        self,
-        response: FinalResponse,
-        *,
-        plan_steps: List[Dict[str, Any]],
-        evidence_items: List[Dict[str, Any]],
-        tool_timeline: List[Dict[str, Any]],
-        next_event_fn: Any,
-        emit_fn: Any,
-        include_answer_ready: bool = False,
-    ) -> AsyncGenerator[StreamEvent, None]:
-        for event in self._iter_response_execution_events(response):
-            if event.type in {"task_profile", "execution_decision", "fallback_triggered"}:
-                continue
-            if event.type == "route_decided":
-                continue
-            if event.type in {"answer_ready", "final_answer"} and not include_answer_ready:
-                continue
-            if event.type in {"plan_built", "plan_created"}:
-                plan_payload = event.payload.get("steps")
-                if isinstance(plan_payload, list):
-                    async for processed in self._emit_execution_event(
-                        ExecutionEvent(
-                            type="plan_built",
-                            payload={"steps": plan_payload},
-                            source=event.source,
-                        ),
-                        next_event_fn=next_event_fn,
-                        emit_fn=emit_fn,
-                    ):
-                        yield processed
-                continue
-            if event.type == "step_started":
-                step_id = str(event.payload.get("step_id", ""))
-                if step_id:
-                    _update_status(plan_steps, step_id, "running")
-                async for processed in self._emit_execution_event(
-                    event,
-                    next_event_fn=next_event_fn,
-                    emit_fn=emit_fn,
-                ):
-                    yield processed
-                continue
-            if event.type == "step_finished":
-                step_id = str(event.payload.get("step_id", ""))
-                status = str(event.payload.get("status", ""))
-                if step_id:
-                    _update_status(
-                        plan_steps,
-                        step_id,
-                        "done" if status == "success" else "error",
-                    )
-                async for processed in self._emit_execution_event(
-                    event,
-                    next_event_fn=next_event_fn,
-                    emit_fn=emit_fn,
-                ):
-                    yield processed
-                continue
-            if event.type in {"tool_called", "tool_result", "tool_returned"}:
-                payload = dict(event.payload)
-                tool_name = payload.get("tool")
-                if event.type == "tool_called":
-                    tool_timeline.append(
-                        {
-                            "run_id": payload.get("run_id"),
-                            "tool": tool_name,
-                            "input": payload.get("input", ""),
-                            "status": "running",
-                        }
-                    )
-                else:
-                    tool_timeline.append(
-                        {
-                            "run_id": payload.get("run_id"),
-                            "tool": tool_name,
-                            "output_summary": payload.get("output_summary", ""),
-                            "duration_sec": payload.get("duration_sec"),
-                            "status": payload.get("status"),
-                        }
-                    )
-                async for processed in self._emit_execution_event(
-                    event,
-                    next_event_fn=next_event_fn,
-                    emit_fn=emit_fn,
-                ):
-                    yield processed
-                continue
-            async for processed in self._emit_execution_event(
-                event,
-                next_event_fn=next_event_fn,
-                emit_fn=emit_fn,
+        router = getattr(self, "_request_router", None)
+        if router and hasattr(router, "route"):
+            candidate = router.route(query)
+            if isinstance(getattr(candidate, "route", None), str) and hasattr(
+                candidate, "to_meta"
             ):
-                yield processed
+                return candidate
+        return None
 
     def _build_frontend_plan_steps(
         self,
@@ -912,93 +845,6 @@ class BaseStreamingGenerator:
 
     def clear_event_processors(self):
         self._event_processors.clear()
-
-    async def _emit_trace_events(
-        self,
-        trace_entry: Any,
-        *,
-        plan_steps: List[Dict[str, Any]],
-        evidence_items: List[Dict[str, Any]],
-        tool_timeline: List[Dict[str, Any]],
-        next_event_fn: Any,
-        emit_fn: Any,
-    ):
-        """将一条 ExecutionTraceEntry（或等价 dict）映射为旧前端事件序列。
-
-        产出事件顺序：plan_update(running) -> step_start -> evidence_found* -> step_end -> plan_update(status)
-        保持与旧 planned 路径内联逻辑完全等价，以保证前端兼容性。
-
-        收敛计划：Phase 8 可将此方法迁入独立适配器类，StreamingService 只做调用。
-        """
-        from src.agent.models.execution_trace_entry import ExecutionTraceEntry
-
-        if isinstance(trace_entry, dict):
-            entry = ExecutionTraceEntry.from_dict(trace_entry)
-        else:
-            entry = trace_entry
-
-        step_id = entry.step_id
-        step_title = entry.title or step_id
-
-        # plan_update: running
-        _update_status(plan_steps, step_id, "running")
-        async for processed in self._emit_execution_event(
-            ExecutionEvent(
-                type="plan_built",
-                payload={"steps": list(plan_steps)},
-                source="planned",
-            ),
-            next_event_fn=next_event_fn,
-            emit_fn=emit_fn,
-        ):
-            yield processed
-
-        trace_events = entry.to_execution_events(source="planned")
-
-        async for processed in self._emit_execution_event(
-            trace_events[0],
-            next_event_fn=next_event_fn,
-            emit_fn=emit_fn,
-        ):
-            yield processed
-
-        tool_timeline.append({
-            "run_id": step_id,
-            "tool": entry.skill,
-            "input": entry.input_params,
-            "output_summary": self._preview_text(entry.summary, 240),
-            "latency_ms": entry.latency_ms,
-            "status": entry.status,
-        })
-
-        for source in entry.sources:
-            if source not in evidence_items:
-                evidence_items.append(source)
-                async for processed in emit_fn(
-                    next_event_fn("evidence_found", content=source)
-                ):
-                    yield processed
-
-        mapped_status = "done" if entry.status == "success" else "error"
-        _update_status(plan_steps, step_id, mapped_status)
-
-        async for processed in self._emit_execution_event(
-            trace_events[-1],
-            next_event_fn=next_event_fn,
-            emit_fn=emit_fn,
-        ):
-            yield processed
-
-        async for processed in self._emit_execution_event(
-            ExecutionEvent(
-                type="plan_built",
-                payload={"steps": list(plan_steps)},
-                source="planned",
-            ),
-            next_event_fn=next_event_fn,
-            emit_fn=emit_fn,
-        ):
-            yield processed
 
     def _build_stream_event(
         self,
@@ -1279,36 +1125,36 @@ class BaseStreamingGenerator:
                 ):
                     yield processed
 
+            precomputed_profile = None
             decision = None
+            router = getattr(self, "_request_router", None)
+            if router and hasattr(router, "profile"):
+                with latency.measure("route_decision_ms"):
+                    precomputed_profile = router.profile(query)
+                    decision = self._resolve_legacy_route_decision(
+                        query,
+                        precomputed_profile=precomputed_profile,
+                    )
+            elif router and hasattr(router, "route"):
+                with latency.measure("route_decision_ms"):
+                    decision = self._resolve_legacy_route_decision(query)
+
             execution_decision, profile, _exec_context = self._resolve_execution_decision(
                 query,
-                None,
+                decision,
                 use_long_term_memory=use_long_term_memory,
                 chat_history=request_context.chat_history,
                 user_profile=request_context.user_profile,
+                precomputed_profile=precomputed_profile,
             )
             execution_path = execution_decision.mode
             fallback_used = False
             output_schema_parse_success = response_mode != "final_answer"
-            if self._request_router and hasattr(self._request_router, "route"):
-                with latency.measure("route_decision_ms"):
-                    candidate = self._request_router.route(query)
-                if isinstance(getattr(candidate, "route", None), str) and hasattr(
-                    candidate, "to_meta"
-                ):
-                    decision = candidate
-                    if profile is None:
-                        execution_decision, profile, _exec_context = (
-                            self._resolve_execution_decision(
-                                query,
-                                decision,
-                                use_long_term_memory=use_long_term_memory,
-                                chat_history=request_context.chat_history,
-                                user_profile=request_context.user_profile,
-                            )
-                        )
-            elif profile is not None and hasattr(profile, "to_legacy_route_decision"):
-                decision = profile.to_legacy_route_decision()
+            if decision is None:
+                decision = self._resolve_legacy_route_decision(
+                    query,
+                    precomputed_profile=profile,
+                )
 
             if decision is not None:
                 execution_path = execution_decision.mode
@@ -1322,7 +1168,7 @@ class BaseStreamingGenerator:
                     "feature_flags",
                     self._execution_policy.to_dict(),
                 )
-                async for processed in self._emit_execution_event(
+                async for processed in self._frontend_event_adapter.emit_execution_event(
                     ExecutionEvent(
                         type="route_decided",
                         payload=decision.to_meta(),
@@ -1334,30 +1180,20 @@ class BaseStreamingGenerator:
                     yield processed
 
             if execution_path == "planned" and decision:
-                if self._use_unified_execution_engine():
-                    actual_plan = self._execution_engine.preview_plan(
-                        execution_decision,
-                        decision,
-                        query,
-                        chat_history=request_context.chat_history,
-                        user_profile=request_context.user_profile,
-                    )
-                elif self._task_orchestrator and hasattr(
-                    self._task_orchestrator, "build_execution_plan"
-                ):
-                    actual_plan = self._task_orchestrator.build_execution_plan(
-                        decision,
-                        query,
-                        chat_history=request_context.chat_history,
-                        user_profile=request_context.user_profile,
-                    )
+                actual_plan = self._preview_execution_plan_for_streaming(
+                    execution_decision,
+                    decision,
+                    query,
+                    chat_history=request_context.chat_history,
+                    user_profile=request_context.user_profile,
+                )
                 if actual_plan is not None:
                     plan_steps = self._build_frontend_plan_steps(
                         query=query,
                         use_long_term_memory=use_long_term_memory,
                         execution_plan=actual_plan,
                     )
-                    async for processed in self._emit_execution_event(
+                    async for processed in self._frontend_event_adapter.emit_execution_event(
                         ExecutionEvent(
                             type="plan_built",
                             payload={"steps": plan_steps},
@@ -1396,7 +1232,7 @@ class BaseStreamingGenerator:
                 direct_answer = final_resp.answer
                 response_chunks.append(direct_answer)
                 if final_resp.execution_events:
-                    async for processed in self._emit_response_execution_events(
+                    async for processed in self._frontend_event_adapter.emit_response_execution_events(
                         final_resp,
                         plan_steps=plan_steps,
                         evidence_items=evidence_items,
@@ -1407,13 +1243,14 @@ class BaseStreamingGenerator:
                         yield processed
                 elif execution_path == "planned":
                     for trace in final_resp.execution_trace:
-                        async for processed in self._emit_trace_events(
+                        async for processed in self._frontend_event_adapter.emit_trace_events(
                             trace,
                             plan_steps=plan_steps,
                             evidence_items=evidence_items,
                             tool_timeline=tool_timeline,
                             next_event_fn=next_event,
                             emit_fn=emit,
+                            preview_text_fn=self._preview_text,
                         ):
                             yield processed
                 else:
@@ -1471,7 +1308,7 @@ class BaseStreamingGenerator:
                     run_id = raw_event.get("run_id")
 
                     if event_type == "on_tool_start":
-                        async for processed in self._emit_execution_event(
+                        async for processed in self._frontend_event_adapter.emit_execution_event(
                             ExecutionEvent(
                                 type="tool_called",
                                 payload={
@@ -1535,7 +1372,7 @@ class BaseStreamingGenerator:
                     if event_type == "on_tool_end":
                         tool_result = self._handle_tool_end(request_id, run_id, data)
                         tool_meta = tool_result.get("meta", {}) or {}
-                        async for processed in self._emit_execution_event(
+                        async for processed in self._frontend_event_adapter.emit_execution_event(
                             ExecutionEvent(
                                 type="tool_returned",
                                 payload={
@@ -1934,15 +1771,29 @@ class StreamingService(BaseStreamingGenerator):
         fallback_used = False
 
         try:
+            precomputed_profile = None
             decision = None
-            if self._request_router and hasattr(self._request_router, "route"):
-                decision = self._request_router.route(query)
+            router = getattr(self, "_request_router", None)
+            if router and hasattr(router, "profile"):
+                precomputed_profile = router.profile(query)
+                decision = self._resolve_legacy_route_decision(
+                    query,
+                    precomputed_profile=precomputed_profile,
+                )
+            elif router and hasattr(router, "route"):
+                decision = self._resolve_legacy_route_decision(query)
 
-            execution_decision, _, _ = self._resolve_execution_decision(
+            execution_decision, profile, _ = self._resolve_execution_decision(
                 query,
                 decision,
                 use_long_term_memory=True,
+                precomputed_profile=precomputed_profile,
             )
+            if decision is None:
+                decision = self._resolve_legacy_route_decision(
+                    query,
+                    precomputed_profile=profile,
+                )
             execution_path = execution_decision.mode
             use_unified_engine = self._use_unified_execution_engine()
             if decision and (

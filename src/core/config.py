@@ -380,24 +380,70 @@ class AgentGovernanceConfig(BaseSettings):
     )
     MODEL_POLICY_VERSION: str = Field("model_policy_v1", description="模型策略版本")
 
-    # ── 重构阶段 feature flags（Phase 8 已全部开启，旧路径保留为 flag=False 兼容层）──
-    # Phase 1: TaskProfile 任务画像，收敛目标：替代 task_type 字段
-    ENABLE_TASK_PROFILE: bool = Field(False, description="[重构flag] 启用 TaskProfile 任务画像")
-    # Phase 2: ExecutionContext 统一执行上下文，收敛目标：替代散落的 chat_history/user_profile 参数
-    ENABLE_EXECUTION_CONTEXT: bool = Field(False, description="[重构flag] 启用 ExecutionContext 统一上下文")
-    # Phase 3/9: ExecutionDecision 已是主决策输出；该 flag 仅保留文档/观测兼容含义
-    ENABLE_EXECUTION_DECISION: bool = Field(False, description="[兼容flag] ExecutionDecision 已为主决策输出，保留历史配置位")
-    # Phase 4/8: UnifiedExecutionEngine 统一执行引擎，当前默认主路径
-    # 收敛计划：后续可删除 flag，直接移除旧 TaskOrchestrator 分支
-    ENABLE_UNIFIED_EXECUTION_ENGINE: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionEngine（Phase 8 默认开启）")
-    # Phase 5/9: WorkflowGraph 已是 planned 主计划表达；flag=False 仅保留 legacy plan->graph 回退
-    ENABLE_WORKFLOW_GRAPH: bool = Field(True, description="[兼容flag] 控制 Planner.plan_graph 优先级；关闭时回退到 plan()+from_execution_plan()")
-    # Phase 7/8: UnifiedExecutionTrace 统一执行追踪，Phase 8 起默认开启
-    # 收敛计划：下一轮升级 FinalResponse.execution_trace 为 List[ExecutionTraceEntry]
-    ENABLE_UNIFIED_EXECUTION_TRACE: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionTrace（Phase 8 默认开启）")
-    # Phase 7/8: UnifiedExecutionEvents 统一事件模型，Phase 8 起默认开启
-    # 收敛计划：下一轮将 ExecutionEvent.to_frontend_type() 映射迁入 FrontendJsonEventAdapter
-    ENABLE_UNIFIED_EXECUTION_EVENTS: bool = Field(True, description="[重构flag] 启用 UnifiedExecutionEvents（Phase 8 默认开启）")
+    # ── DAG Agent 重构相关配置位（主路径 + 兼容语义）──
+    # Deprecated config: TaskProfile 已是 Router 主输出，flag 不再切换核心行为。
+    # 去向：RequestRouter.profile() / RouteDecision.from_task_profile() 兼容桥接。
+    ENABLE_TASK_PROFILE: bool = Field(
+        False,
+        description=(
+            "[deprecated config] TaskProfile 已固定为 Router 主输出；"
+            "该配置位仅为历史配置兼容保留，不再切换主路径"
+        ),
+    )
+    # Deprecated config: ExecutionContext 已在 StreamingService -> Policy 主链路构造。
+    # 去向：BaseStreamingGenerator._resolve_execution_decision() / ExecutionContext.from_legacy_params()。
+    ENABLE_EXECUTION_CONTEXT: bool = Field(
+        False,
+        description=(
+            "[deprecated config] ExecutionContext 已固定为主链路上下文；"
+            "该配置位仅为历史配置兼容保留，不再切换主路径"
+        ),
+    )
+    # Deprecated config: ExecutionDecision 已是 Policy 主输出。
+    # 去向：AgentExecutionPolicy.decide()；choose_path() 仅保留旧字符串接口包装。
+    ENABLE_EXECUTION_DECISION: bool = Field(
+        False,
+        description=(
+            "[deprecated config] ExecutionDecision 已固定为主决策输出；"
+            "该配置位仅保留文档/观测兼容含义，不再切换主路径"
+        ),
+    )
+    # Compatibility switch: 仍真实控制 unified engine 与旧 TaskOrchestrator 的切换。
+    # 去向：默认保留为灰度/回滚开关；后续移除前需先清掉 legacy orchestrator 调用方。
+    ENABLE_UNIFIED_EXECUTION_ENGINE: bool = Field(
+        True,
+        description=(
+            "[compatibility flag] Unified ExecutionEngine 默认开启；"
+            "设为 False 时回退到 legacy TaskOrchestrator 路径"
+        ),
+    )
+    # Compatibility switch: 仍真实控制 Planner.plan_graph 与 legacy plan()->from_execution_plan()。
+    # 去向：默认保留为 planned 路径灰度/兼容开关。
+    ENABLE_WORKFLOW_GRAPH: bool = Field(
+        True,
+        description=(
+            "[compatibility flag] WorkflowGraph 为 planned 主计划表达；"
+            "设为 False 时回退到 legacy plan()+from_execution_plan()"
+        ),
+    )
+    # Deprecated config: unified trace 已成为统一响应/观测格式，当前无运行时分支。
+    # 去向：FinalResponse.execution_trace / ExecutionTraceEntry 兼容适配链路。
+    ENABLE_UNIFIED_EXECUTION_TRACE: bool = Field(
+        True,
+        description=(
+            "[deprecated config] Unified execution trace 已固定为默认响应/观测格式；"
+            "该配置位仅为历史配置兼容保留，不再切换主路径"
+        ),
+    )
+    # Deprecated config: ExecutionEvent 已是统一内部事件模型，当前无运行时分支。
+    # 去向：ExecutionEngine._attach_engine_events() / StreamingService 事件适配层。
+    ENABLE_UNIFIED_EXECUTION_EVENTS: bool = Field(
+        True,
+        description=(
+            "[deprecated config] Unified execution events 已固定为内部事件模型；"
+            "该配置位仅为历史配置兼容保留，不再切换主路径"
+        ),
+    )
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 

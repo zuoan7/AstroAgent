@@ -25,8 +25,15 @@ class TaskOrchestrator:
     .. deprecated::
         Phase 8 起，主路径已迁移至 ExecutionEngine（ENABLE_UNIFIED_EXECUTION_ENGINE=True）。
         本类保留为兼容层（flag=False 或 ExecutionEngine 未注入时的回退路径）。
-        当前去向：长期保留 `run()` 作为外部 API 兼容入口；内部 direct/planned 逻辑
-        不再扩展新能力，仅做回退链路维护。
+        当前去向：
+        1. `run()` 作为旧 direct/planned 外部调用入口继续保留；
+        2. `build_execution_plan()` 仅供 legacy planned 展示/执行链路复用；
+        3. 新代码不得新增对本类的内部主路径依赖。
+
+        删除条件：
+        - StreamingService 不再需要 legacy orchestrator 回退；
+        - 外部调用方迁移到 ExecutionEngine / TaskProfile / ExecutionDecision；
+        - 兼容测试与 flag=False 回退链路退场。
     """
 
     def __init__(
@@ -57,6 +64,13 @@ class TaskOrchestrator:
         execution_plan: Optional[ExecutionPlan] = None,
         event_callback: Optional[EventCallback] = None,
     ) -> FinalResponse:
+        """Deprecated compatibility entry for legacy direct/planned callers.
+
+        新主路径应使用 `ExecutionEngine.run()`。本方法仅用于：
+        - `ENABLE_UNIFIED_EXECUTION_ENGINE=False` 的兼容回退
+        - 尚未迁移的外部 direct/planned 调用
+        - 历史测试基线
+        """
         budget_tracker = RequestBudgetTracker()
         self._synthesizer._budget_tracker = budget_tracker
         if decision.route == "direct_task":
@@ -174,8 +188,12 @@ class TaskOrchestrator:
     ) -> ExecutionPlan:
         """Deprecated compatibility helper.
 
-        新 planned 主路径优先走 Planner.plan_graph() / ExecutionEngine.preview_plan()；
-        本方法仅供旧 StreamingService / TaskOrchestrator 回退链路复用。
+        新 planned 主路径优先走 `Planner.plan_graph()` / `ExecutionEngine.preview_plan()`；
+        StreamingService 在 unified engine 可用时不应再调用本方法。
+
+        当前仅保留给：
+        - TaskOrchestrator.run() 的 legacy planned 执行链路
+        - StreamingService 在 legacy orchestrator 回退模式下的 planned 展示
         """
         return self._planner.plan(
             query=query,

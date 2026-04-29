@@ -237,6 +237,7 @@ class WorkflowGraph:
             edges=edges,
             output_schema=plan.output_schema,
             metadata={
+                "_compat_plan": plan.to_dict(),
                 "task_type": plan.task_type,
                 "planner_type": plan.planner_type,
                 "rationale": plan.rationale,

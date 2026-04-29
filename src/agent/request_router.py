@@ -70,10 +70,18 @@ TASK_TYPE_TO_OUTPUT_SCHEMA = {
 
 @dataclass
 class RouteDecision:
-    """Legacy router output.
+    """Deprecated legacy router output.
 
-    Router 内部主输出已收口为 TaskProfile；本模型保留给旧调用链
-    （StreamingService 兼容事件、TaskOrchestrator、历史测试/外部调用）继续消费。
+    新代码应优先消费 TaskProfile；RouteDecision 仅保留给兼容调用链：
+    1. 外部兼容 API（仍直接依赖 route() / RouteDecision 的调用方）
+    2. 旧 stream event 输出（仍需要 legacy route/task_type 元信息）
+    3. TaskOrchestrator 兼容层
+    4. 历史基线测试
+
+    删除条件：
+    - StreamingService 主路径不再需要 legacy route 元信息适配
+    - TaskOrchestrator 及所有外部调用方迁移到 TaskProfile/ExecutionDecision
+    - 基线/兼容测试完成退场
     """
     route: str
     task_type: str
@@ -94,7 +102,7 @@ class RouteDecision:
 
     @classmethod
     def from_task_profile(cls, profile: TaskProfile) -> "RouteDecision":
-        """兼容层：将 Router 内部 TaskProfile 输出转换为旧 RouteDecision。"""
+        """兼容层：将 Router 主输出 TaskProfile 转换为旧 RouteDecision。"""
         return cls(
             route=profile.legacy_route,
             task_type=profile.task_type,
@@ -124,13 +132,24 @@ class RequestRouter:
     def route(self, query: str) -> RouteDecision:
         """Deprecated compatibility entry.
 
-        新主链路应优先调用 profile() 获取 TaskProfile；route() 仅保留给
-        仍依赖 RouteDecision 的外部调用方。
+        新代码应优先调用 profile() 获取 TaskProfile；route() 仅保留给：
+        1. 外部兼容 API
+        2. 旧 stream event 输出适配
+        3. TaskOrchestrator 兼容层
+        4. 历史测试/基线快照
+
+        删除条件：
+        - 所有主路径调用已改为 profile() / TaskProfile
+        - 不再有外部调用方依赖 RouteDecision
+        - TaskOrchestrator 兼容层完成清理
         """
         return RouteDecision.from_task_profile(self.profile(query))
 
     def profile(self, query: str) -> TaskProfile:
-        """Router 内部主分类入口，返回 TaskProfile。"""
+        """Router 内部主分类入口，返回 TaskProfile。
+
+        ENABLE_TASK_PROFILE 配置位仅为历史兼容保留，不再切换该主路径。
+        """
         text = (query or "").strip()
         lowered = text.lower()
 

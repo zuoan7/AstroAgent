@@ -435,3 +435,126 @@ class TestLegacyPathUnchanged:
             asyncio.get_event_loop().run_until_complete(
                 orch.run(rd, "query", chat_history="", user_profile="")
             )
+
+    def test_task_orchestrator_planned_still_works(self):
+        from src.agent.executor import ExecutionOutcome
+        from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+        from src.agent.models.skill_result import SkillResult
+        from src.agent.task_orchestrator import TaskOrchestrator
+
+        plan = ExecutionPlan(
+            task_type="observation_recommendation",
+            output_schema="observation_answer_v1",
+            steps=[
+                PlanStep(id="s1", kind="tool", title="天气", skill="weather-lookup"),
+            ],
+        )
+        planner = MagicMock()
+        planner.plan.return_value = plan
+        planner.plan_graph.side_effect = RuntimeError("graph planning disabled in test")
+
+        executor = MagicMock()
+        executor.execute = AsyncMock(
+            return_value=ExecutionOutcome(
+                plan=plan,
+                skill_results=[
+                    SkillResult(
+                        skill_name="weather-lookup",
+                        success=True,
+                        summary="天气良好",
+                        data={},
+                    )
+                ],
+                step_results=[],
+            )
+        )
+        synth = _mock_synthesizer("planned 兼容答案")
+        synth.synthesize.return_value = FinalResponse(
+            answer="planned 兼容答案",
+            summary="planned 兼容答案",
+            route="planned_task",
+            task_type="observation_recommendation",
+            execution_plan=plan.to_dict(),
+            execution_trace=[],
+        )
+        fallback = MagicMock()
+        fallback.version = "fallback_v2"
+        fallback.decide_for_execution.return_value = None
+
+        orch = TaskOrchestrator(
+            skill_manager=MagicMock(),
+            rag_retriever=MagicMock(),
+            llm=MagicMock(),
+            response_synthesizer=synth,
+            planner=planner,
+            executor=executor,
+            fallback_policy=fallback,
+        )
+        rd = _route_decision(
+            "planned_task",
+            "observation_recommendation",
+            ["weather-lookup"],
+        )
+
+        result = asyncio.get_event_loop().run_until_complete(
+            orch.run(rd, "今晚适合观测什么", chat_history="", user_profile="")
+        )
+        assert isinstance(result, FinalResponse)
+        assert result.route == "planned_task"
+        assert result.execution_plan is not None
+        synth.synthesize.assert_called_once()
+
+    def test_engine_preview_plan_replaces_legacy_build_execution_plan_for_display(self):
+        from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+        from src.agent.task_orchestrator import TaskOrchestrator
+
+        plan = ExecutionPlan(
+            task_type="observation_recommendation",
+            output_schema="observation_answer_v1",
+            steps=[
+                PlanStep(id="weather_context", kind="tool", title="天气", skill="weather-lookup"),
+                PlanStep(id="observation_plan", kind="tool", title="计划", skill="observation-planner"),
+            ],
+        )
+        planner = MagicMock()
+        planner.plan.return_value = plan
+        planner.plan_graph.side_effect = RuntimeError("graph planning disabled in test")
+
+        orch = TaskOrchestrator(
+            skill_manager=MagicMock(),
+            rag_retriever=MagicMock(),
+            llm=MagicMock(),
+            planner=planner,
+        )
+        engine = ExecutionEngine.__new__(ExecutionEngine)
+        engine._direct = MagicMock()
+        engine._planned = PlannedExecutor(
+            skill_manager=MagicMock(),
+            llm=MagicMock(),
+            synthesizer=_mock_synthesizer(),
+            planner=planner,
+        )
+        engine._react = MagicMock()
+
+        rd = _route_decision(
+            "planned_task",
+            "observation_recommendation",
+            ["weather-lookup", "observation-planner"],
+        )
+        ed = _exec_decision("planned")
+
+        legacy_plan = orch.build_execution_plan(
+            rd,
+            "帮我看下北京今晚适合观测什么",
+            chat_history="",
+            user_profile="",
+        )
+        preview_plan = engine.preview_plan(
+            ed,
+            rd,
+            "帮我看下北京今晚适合观测什么",
+            chat_history="",
+            user_profile="",
+        )
+
+        assert preview_plan.to_dict() == legacy_plan.to_dict()

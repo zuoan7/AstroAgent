@@ -72,6 +72,7 @@ class AgentExecutionPolicy:
 
         旧接口仍返回 direct/planned/react 字符串，但主调用方应迁移到
         decide(profile, context) -> ExecutionDecision。
+        当前保留用途：老测试、外部调用方、compatibility adapter。
         """
         if route is None:
             return self._legacy_path_from_route(route)
@@ -98,10 +99,11 @@ class AgentExecutionPolicy:
         3. tool_need==single + openness!=high -> direct
         4. tool_need==multi 或 complexity==high（且 openness!=high）-> planned
         5. openness==high -> react
-        6. 兜底：回退 legacy route 规则，但仍返回 ExecutionDecision。
+        6. 兜底：直接使用 legacy route 映射补全 ExecutionDecision，不反向依赖 choose_path()。
 
         当前阶段：decide() 已是 Policy 层主决策接口。
         choose_path() 仅保留为旧字符串接口兼容包装。
+        ENABLE_EXECUTION_DECISION 配置位仅为历史兼容保留，不再切换此逻辑。
         """
         from src.agent.models.execution_decision import ExecutionDecision
 
@@ -198,8 +200,11 @@ def evaluate_router_benchmark(
     mismatch_items: List[Dict[str, Any]] = []
 
     for case in cases:
-        decision = router.route(case.query)
-        actual_route = getattr(decision, "route", None)
+        if hasattr(router, "profile"):
+            actual_route = getattr(router.profile(case.query), "legacy_route", None)
+        else:
+            decision = router.route(case.query)
+            actual_route = getattr(decision, "route", None)
         category_stats = by_category.setdefault(
             case.category,
             {"total": 0, "mismatch": 0},

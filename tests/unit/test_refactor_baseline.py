@@ -500,31 +500,34 @@ class TestMinimalBehaviorBaseline:
 # ─── Task 6: feature flags 默认值验证 ─────────────────────────────────────────
 
 class TestFeatureFlagsDefaults:
-    """验证新增 feature flags 默认关闭且不影响现有逻辑。"""
+    """验证 DAG 重构配置位的默认值与兼容语义。"""
 
     def test_enable_task_profile_default_false(self):
+        # Deprecated config: TaskProfile 已固定为 Router 主输出
         assert settings.ENABLE_TASK_PROFILE is False
 
     def test_enable_execution_context_default_false(self):
+        # Deprecated config: ExecutionContext 已固定进入主链路
         assert settings.ENABLE_EXECUTION_CONTEXT is False
 
     def test_enable_execution_decision_default_false(self):
+        # Deprecated config: ExecutionDecision 已固定为 Policy 主输出
         assert settings.ENABLE_EXECUTION_DECISION is False
 
     def test_enable_unified_execution_engine_default_true(self):
-        # Phase 8 起默认开启，旧路径保留为 flag=False 兼容层
+        # Compatibility flag: True 为默认主路径，False 回退 legacy TaskOrchestrator
         assert settings.ENABLE_UNIFIED_EXECUTION_ENGINE is True
 
     def test_enable_workflow_graph_default_true(self):
-        # Phase 8 起默认开启，旧 StepExecutor 路径保留为 flag=False 兼容层
+        # Compatibility flag: True 优先 plan_graph，False 回退 legacy plan()->graph
         assert settings.ENABLE_WORKFLOW_GRAPH is True
 
     def test_enable_unified_execution_trace_default_true(self):
-        # Phase 8 起默认开启
+        # Deprecated config: 仅保留历史配置位，不再切换主路径
         assert settings.ENABLE_UNIFIED_EXECUTION_TRACE is True
 
     def test_enable_unified_execution_events_default_true(self):
-        # Phase 8 起默认开启
+        # Deprecated config: 仅保留历史配置位，不再切换主路径
         assert settings.ENABLE_UNIFIED_EXECUTION_EVENTS is True
 
     def test_existing_flags_unaffected(self):

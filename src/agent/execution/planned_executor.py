@@ -25,7 +25,8 @@ from src.core.config import settings
 class PlannedExecutor:
     """封装 planned_task 主链路：plan -> execute(DAG) -> synthesize。
 
-    ExecutionPlan 统一转换为 WorkflowGraph 后由 WorkflowExecutor 执行。
+    主路径使用 WorkflowGraph + WorkflowExecutor；
+    ExecutionPlan 仅作为兼容输入/输出视图保留。
     """
 
     def __init__(

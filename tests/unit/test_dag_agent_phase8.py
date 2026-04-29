@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,11 +24,16 @@ mock_heavy_dependencies()
 from src.agent.execution.engine import ExecutionEngine
 from src.agent.execution.direct_executor import DirectExecutor
 from src.agent.execution.planned_executor import PlannedExecutor
+from src.agent.governance import AgentExecutionPolicy
+from src.agent.models.execution_context import ExecutionContext
 from src.agent.models.execution_decision import ExecutionDecision
 from src.agent.models.final_response import FinalResponse
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+from src.agent.models.request_context import RequestContext
 from src.agent.models.skill_result import SkillResult
+from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RouteDecision
+from src.agent.request_router import RequestRouter
 from src.agent.task_orchestrator import TaskOrchestrator
 
 
@@ -127,9 +133,7 @@ class TestExecutionEngineNewPaths:
         decision = ExecutionDecision(mode="direct", reason="test")
         route_decision = _route_decision("direct_task", "smalltalk")
 
-        result = asyncio.get_event_loop().run_until_complete(
-            engine.run(decision, route_decision, "你好")
-        )
+        result = asyncio.run(engine.run(decision, route_decision, "你好"))
         assert isinstance(result, FinalResponse)
 
     def test_engine_planned_mode(self):
@@ -147,7 +151,7 @@ class TestExecutionEngineNewPaths:
 
         with patch.object(engine._planned, "_planner") as mock_planner:
             mock_planner.plan.return_value = plan
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 engine.run(decision, route_decision, "今晚北京天气", execution_plan=plan)
             )
         assert isinstance(result, FinalResponse)
@@ -158,9 +162,7 @@ class TestExecutionEngineNewPaths:
         decision = ExecutionDecision(mode="react", reason="test")
         route_decision = _route_decision()
 
-        result = asyncio.get_event_loop().run_until_complete(
-            engine.run(decision, route_decision, "测试")
-        )
+        result = asyncio.run(engine.run(decision, route_decision, "测试"))
         assert isinstance(result, FinalResponse)
         assert result.answer == "react 答案"
 
@@ -217,7 +219,7 @@ class TestOrchestratedPathBranching:
         orig = config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE
         try:
             config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = True
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 svc._run_orchestrated_path(
                     "你好",
                     decision,
@@ -238,7 +240,7 @@ class TestOrchestratedPathBranching:
         orig = config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE
         try:
             config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = False
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 svc._run_orchestrated_path(
                     "你好",
                     decision,
@@ -261,7 +263,7 @@ class TestOrchestratedPathBranching:
         orig = config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE
         try:
             config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = True
-            result = asyncio.get_event_loop().run_until_complete(
+            result = asyncio.run(
                 svc._run_orchestrated_path(
                     "你好",
                     decision,
@@ -272,6 +274,142 @@ class TestOrchestratedPathBranching:
         finally:
             config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = orig
         assert result.answer == "旧路径答案"
+
+
+class TestDeprecatedRefactorFlagsCompatibility:
+    """已 deprecated 的重构配置位不应再切换 profile/context/decision 主路径。"""
+
+    @pytest.mark.parametrize(
+        ("query", "expected_mode", "expected_route"),
+        [
+            ("你好", "direct", "direct_task"),
+            ("帮我看下北京今晚观测条件，同时查查有没有天象活动", "planned", "planned_task"),
+            ("帮我写一篇关于宇宙的科幻小说", "react", "fallback_react"),
+        ],
+    )
+    def test_deprecated_profile_context_decision_flags_do_not_change_main_path(
+        self,
+        query: str,
+        expected_mode: str,
+        expected_route: str,
+    ):
+        from src.agent.streaming_service import BaseStreamingGenerator
+        from src.core import config as config_module
+
+        svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
+        svc._execution_policy = AgentExecutionPolicy(
+            mode="hybrid",
+            enable_react_fallback=True,
+        )
+        svc._request_router = RequestRouter()
+
+        orig_profile = config_module.settings.ENABLE_TASK_PROFILE
+        orig_context = config_module.settings.ENABLE_EXECUTION_CONTEXT
+        orig_decision = config_module.settings.ENABLE_EXECUTION_DECISION
+        try:
+            config_module.settings.ENABLE_TASK_PROFILE = False
+            config_module.settings.ENABLE_EXECUTION_CONTEXT = False
+            config_module.settings.ENABLE_EXECUTION_DECISION = False
+            result_false = svc._resolve_execution_decision(
+                query,
+                legacy_decision=None,
+                use_long_term_memory=False,
+            )
+
+            config_module.settings.ENABLE_TASK_PROFILE = True
+            config_module.settings.ENABLE_EXECUTION_CONTEXT = True
+            config_module.settings.ENABLE_EXECUTION_DECISION = True
+            result_true = svc._resolve_execution_decision(
+                query,
+                legacy_decision=None,
+                use_long_term_memory=False,
+            )
+        finally:
+            config_module.settings.ENABLE_TASK_PROFILE = orig_profile
+            config_module.settings.ENABLE_EXECUTION_CONTEXT = orig_context
+            config_module.settings.ENABLE_EXECUTION_DECISION = orig_decision
+
+        decision_false, profile_false, context_false = result_false
+        decision_true, profile_true, context_true = result_true
+
+        assert decision_false.mode == expected_mode
+        assert decision_true.mode == expected_mode
+        assert profile_false is not None and profile_false.legacy_route == expected_route
+        assert profile_true is not None and profile_true.legacy_route == expected_route
+        assert context_false is not None and isinstance(context_false, ExecutionContext)
+        assert context_true is not None and isinstance(context_true, ExecutionContext)
+
+    def test_deprecated_trace_and_event_flags_do_not_disable_execution_artifacts(self):
+        from src.core import config as config_module
+
+        engine = ExecutionEngine.__new__(ExecutionEngine)
+        response = FinalResponse(
+            answer="测试答案",
+            summary="测试答案",
+            route="direct_task",
+            task_type="smalltalk",
+            execution_trace=[{"step_id": "s1", "status": "success"}],
+        )
+        decision = ExecutionDecision(mode="direct", reason="test")
+        legacy_decision = _route_decision("direct_task", "smalltalk")
+        context = ExecutionContext(
+            profile=TaskProfile.from_legacy_route(
+                route="direct_task",
+                task_type="smalltalk",
+                confidence=0.9,
+            ),
+            request=RequestContext(query="你好"),
+        )
+
+        orig_trace = config_module.settings.ENABLE_UNIFIED_EXECUTION_TRACE
+        orig_events = config_module.settings.ENABLE_UNIFIED_EXECUTION_EVENTS
+        try:
+            config_module.settings.ENABLE_UNIFIED_EXECUTION_TRACE = False
+            config_module.settings.ENABLE_UNIFIED_EXECUTION_EVENTS = False
+            engine._attach_engine_events(
+                response,
+                decision=decision,
+                legacy_decision=legacy_decision,
+                context=context,
+            )
+        finally:
+            config_module.settings.ENABLE_UNIFIED_EXECUTION_TRACE = orig_trace
+            config_module.settings.ENABLE_UNIFIED_EXECUTION_EVENTS = orig_events
+
+        assert response.execution_trace == [{"step_id": "s1", "status": "success"}]
+        event_types = [event["type"] for event in response.execution_events]
+        assert "task_profile" in event_types
+        assert "execution_decision" in event_types
+
+    def test_streaming_service_resolve_execution_decision_does_not_call_choose_path(self):
+        from src.agent.streaming_service import BaseStreamingGenerator
+
+        svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
+        svc._request_router = None
+        svc._execution_policy = SimpleNamespace(
+            mode="hybrid",
+            enable_planner=False,
+            enable_react_fallback=True,
+            choose_path=lambda route: (_ for _ in ()).throw(
+                AssertionError("choose_path should not be used by internal main path")
+            ),
+            decide=lambda profile, context=None: ExecutionDecision(
+                mode="react",
+                reason="compat_profile_without_router_or_legacy_decision",
+                fallback_modes=[],
+                legacy_execution_path="react",
+            ),
+        )
+
+        decision, profile, context = svc._resolve_execution_decision(
+            "写一篇宇宙随笔",
+            legacy_decision=None,
+            use_long_term_memory=False,
+        )
+
+        assert decision.mode == "react"
+        assert profile is not None and profile.legacy_route == "fallback_react"
+        assert context is not None and context.query == "写一篇宇宙随笔"
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -313,9 +451,7 @@ class TestPlannedExecutorWorkflowBranch:
             )
         )
         executor._workflow_executor = wf_executor
-        result = asyncio.get_event_loop().run_until_complete(
-            executor.run(decision, "今晚天气", execution_plan=plan)
-        )
+        result = asyncio.run(executor.run(decision, "今晚天气", execution_plan=plan))
         wf_executor.execute.assert_called_once()
         assert isinstance(result, FinalResponse)
 
@@ -361,7 +497,7 @@ class TestTaskOrchestratorCompatibility:
         orch._fallback_policy = FallbackPolicy()
 
         decision = _route_decision("direct_task", "smalltalk")
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             orch.run(decision, "你好", chat_history="", user_profile="")
         )
         assert isinstance(result, FinalResponse)

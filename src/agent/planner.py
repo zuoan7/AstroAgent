@@ -25,12 +25,20 @@ class Planner:
         chat_history: str = "",
         user_profile: str = "",
     ) -> ExecutionPlan:
-        """Compatibility entry returning ExecutionPlan."""
-        return self._resolve_plan(
+        """Deprecated compatibility entry returning ExecutionPlan.
+
+        新 planned 主路径应优先使用 `plan_graph()` 获取 WorkflowGraph；
+        本方法仅为旧调用方/旧序列化输出提供兼容表示。
+        """
+        graph = self.plan_graph(
             query=query,
             route_decision=route_decision,
             chat_history=chat_history,
             user_profile=user_profile,
+        )
+        return ExecutionPlan.from_workflow_graph(
+            graph,
+            task_type=getattr(route_decision, "task_type", None),
         )
 
     def plan_graph(

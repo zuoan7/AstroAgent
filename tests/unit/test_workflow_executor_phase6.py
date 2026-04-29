@@ -314,6 +314,24 @@ class TestPlannedExecutorGraphFlag:
         from src.agent.models.final_response import FinalResponse
         assert isinstance(result, FinalResponse)
 
+    def test_planned_main_path_does_not_depend_on_step_executor(self):
+        skill_results = {
+            "weather-lookup": _ok_skill_result("weather-lookup"),
+            "observation-planner": _ok_skill_result("observation-planner"),
+        }
+        pe, synth = self._make_planned_executor(skill_results)
+        rd = _route_decision()
+
+        with patch("src.agent.executor.StepExecutor.execute", side_effect=AssertionError("legacy step executor should not be called")):
+            result = asyncio.get_event_loop().run_until_complete(
+                pe.run(rd, "北京今晚")
+            )
+
+        pe._planner.plan_graph.assert_called_once()
+        synth.synthesize.assert_called_once()
+        from src.agent.models.final_response import FinalResponse
+        assert isinstance(result, FinalResponse)
+
     def test_flag_true_full_execution(self):
         """flag=True 时端到端执行，skill 被实际调用。"""
         skill_results = {

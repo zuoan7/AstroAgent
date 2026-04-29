@@ -37,7 +37,11 @@ class WorkflowExecutor:
         event_callback: Optional[EventCallback] = None,
         budget_tracker: Optional[RequestBudgetTracker] = None,
     ) -> ExecutionOutcome:
-        """按拓扑顺序逐节点执行，返回 ExecutionOutcome（结构与 StepExecutor 相同）。"""
+        """按拓扑顺序逐节点执行。
+
+        `plan` 参数仅用于兼容 Outcome/trace/展示层结构；主执行语义来自 `graph`，
+        不再依赖 StepExecutor 的线性计划解释。
+        """
         outcome = ExecutionOutcome(plan=plan)
 
         try:

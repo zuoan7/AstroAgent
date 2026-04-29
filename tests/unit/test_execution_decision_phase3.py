@@ -15,6 +15,8 @@ from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 
 from src.agent.models.execution_decision import ExecutionDecision, VALID_EXECUTION_MODES
+from src.agent.models.execution_context import ExecutionContext
+from src.agent.models.request_context import RequestContext
 from src.agent.models.task_profile import TaskProfile
 from src.agent.governance import AgentExecutionPolicy
 
@@ -170,6 +172,25 @@ class TestDecideConsistencyWithChoosePath:
         profile = _profile("fallback_react", "open_domain_reasoning")
         d = policy.decide(profile)
         assert d.mode == "react"
+
+    def test_choose_path_matches_decide_on_legacy_profiles(self):
+        policy = _policy()
+        for route, task_type, skills, expected in self.SAMPLES:
+            profile = TaskProfile.from_legacy_route(
+                route=route,
+                task_type=task_type,
+                confidence=0.0,
+                matched_skills=skills,
+            )
+            decision = policy.decide(
+                profile,
+                ExecutionContext(
+                    profile=profile,
+                    request=RequestContext(query=f"compat:{route}"),
+                ),
+            )
+            assert policy.choose_path(route) == decision.mode
+            assert policy.choose_path(route) == decision.legacy_execution_path
 
 
 class TestDecideEdgeCases:

@@ -333,6 +333,29 @@ class TestPlannerGraphPlanning:
         assert graph.node("weather_context") is not None
         assert graph.node("observation_plan") is not None
 
+    def test_plan_is_compat_wrapper_over_plan_graph(self, monkeypatch):
+        planner = Planner()
+        graph = WorkflowGraph.from_execution_plan(_simple_plan())
+        called = {"count": 0}
+
+        def fake_plan_graph(*, query, route_decision, chat_history="", user_profile=""):
+            called["count"] += 1
+            return graph
+
+        monkeypatch.setattr(planner, "plan_graph", fake_plan_graph)
+
+        plan = planner.plan(
+            query="北京今晚适合观测什么",
+            route_decision=_route_decision(
+                task_type="observation_recommendation",
+                matched_skills=["weather-lookup", "observation-planner"],
+            ),
+        )
+
+        assert called["count"] == 1
+        assert isinstance(plan, ExecutionPlan)
+        assert [step.id for step in plan.steps] == ["s1", "s2"]
+
     def test_legacy_plan_remains_available(self):
         planner = Planner()
         plan = planner.plan(
@@ -359,3 +382,10 @@ class TestPlannerGraphPlanning:
         assert plan.task_type == "observation_recommendation"
         assert plan.output_schema == "observation_answer_v1"
         assert [step.id for step in plan.steps] == [node.id for node in graph.topological_order()]
+
+    def test_execution_plan_roundtrip_keeps_legacy_step_fields(self):
+        original = _parallel_plan()
+        graph = WorkflowGraph.from_execution_plan(original)
+        restored = ExecutionPlan.from_workflow_graph(graph)
+
+        assert restored.to_dict() == original.to_dict()
