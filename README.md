@@ -27,6 +27,7 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 
 - [Memory Directory Structure](docs/MEMORY_DIRECTORY_STRUCTURE.md)：记忆模块目录拆分、分层职责与迁移结构
 - [Memory Module Documentation](docs/MEMORY_MODULE_DOCUMENTATION.md)：短期记忆、长期记忆、兼容层与仓储实现说明
+- [Memory Context Evaluation](docs/memory_context_evaluation.md)：短期记忆上下文构建的 V1/V2 评估目标、指标口径、最终结果与回归命令
 - [Streaming Event Bus](docs/streaming-event-bus.md)：流式输出统一事件总线、适配器接口、插件机制与兼容性说明
 - [Agent Compatibility Matrix](docs/agent_compatibility_matrix.md)：DAG Agent 重构后各兼容层、deprecated 接口、feature flags 与删除条件清单
 

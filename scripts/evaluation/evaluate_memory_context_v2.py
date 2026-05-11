@@ -49,6 +49,21 @@ DEFAULT_DATASET = REPO_ROOT / "data/eval/memory/memory_context_eval_v2.json"
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "reports/evaluation/memory_context_v2"
 DEFAULT_BUDGETS = [300, 600, 1000, 2000]
 PRIMARY_BUDGET = 1000
+NEGATIVE_CONSTRAINT_CUES = [
+    "不要",
+    "排除",
+    "不应",
+    "不能",
+    "不是",
+    "别说",
+    "别管",
+    "先别",
+    "只关注",
+    "优先",
+    "旧结果不",
+    "旧",
+    "冲突",
+]
 
 
 def evidence_text(context: dict[str, Any]) -> str:
@@ -68,6 +83,152 @@ def evidence_text(context: dict[str, Any]) -> str:
             ),
         ]
     )
+
+
+def message_text(context: dict[str, Any]) -> str:
+    return json.dumps(
+        context.get("selected_recent_messages", []),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def context_or_tool_text(context: dict[str, Any]) -> str:
+    return "\n".join([context.get("context_text", ""), selected_tool_text(context)])
+
+
+def unique_hits(*hit_lists: list[str]) -> list[str]:
+    hits = []
+    for hit_list in hit_lists:
+        for keyword in hit_list:
+            if keyword not in hits:
+                hits.append(keyword)
+    return hits
+
+
+def is_constraint_text(text: str) -> bool:
+    return any(cue in (text or "") for cue in NEGATIVE_CONSTRAINT_CUES)
+
+
+def selected_messages(context: dict[str, Any]) -> list[dict[str, Any]]:
+    return list(context.get("selected_recent_messages", []) or [])
+
+
+def message_hits_by_constraint_type(
+    context: dict[str, Any],
+    keywords: list[str],
+) -> tuple[list[str], list[str]]:
+    constraint_hits: list[str] = []
+    harmful_hits: list[str] = []
+    for message in selected_messages(context):
+        content = message.get("content", "")
+        hits = keyword_hits(content, keywords)
+        if not hits:
+            continue
+        target = constraint_hits if is_constraint_text(content) else harmful_hits
+        for keyword in hits:
+            if keyword not in target:
+                target.append(keyword)
+    return constraint_hits, harmful_hits
+
+
+def task_state_constraint_text(context: dict[str, Any]) -> str:
+    state = context.get("selected_task_state") or {}
+    fields = []
+    for constraint in list(state.get("active_constraints") or []):
+        if is_constraint_text(constraint):
+            fields.append(constraint)
+    return "\n".join(fields)
+
+
+def task_state_goal_text(context: dict[str, Any]) -> str:
+    state = context.get("selected_task_state") or {}
+    return "\n".join(
+        [
+            state.get("current_goal", ""),
+            state.get("next_action", ""),
+        ]
+    )
+
+
+def negative_constraint_hits(
+    scenario: dict[str, Any],
+    context: dict[str, Any],
+) -> list[str]:
+    wrong_keywords = list(scenario.get("wrong_tool_keywords", []))
+    if not wrong_keywords:
+        return []
+
+    return keyword_hits(task_state_constraint_text(context), wrong_keywords)
+
+
+def classify_stale_evidence(
+    scenario: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any] | None:
+    spec = scenario.get("stale_evidence")
+    if not spec:
+        return None
+
+    stale_keywords = list(spec.get("stale_keywords", []))
+    stale_tool_hits = keyword_hits(selected_tool_text(context), stale_keywords)
+    stale_message_constraint_hits, stale_message_harmful_hits = (
+        message_hits_by_constraint_type(context, stale_keywords)
+    )
+    stale_message_hits = unique_hits(
+        stale_message_constraint_hits, stale_message_harmful_hits
+    )
+    stale_task_constraint_hits = keyword_hits(
+        task_state_constraint_text(context), stale_keywords
+    )
+    stale_task_goal_hits = keyword_hits(task_state_goal_text(context), stale_keywords)
+    harmful_hits = unique_hits(stale_tool_hits, stale_message_harmful_hits)
+    return {
+        "stale_tool_hits": stale_tool_hits,
+        "stale_tool_present": bool(stale_tool_hits),
+        "stale_message_hits": stale_message_hits,
+        "stale_message_present": bool(stale_message_hits),
+        "stale_message_constraint_hits": stale_message_constraint_hits,
+        "stale_message_harmful_hits": stale_message_harmful_hits,
+        "stale_task_state_constraint_hits": stale_task_constraint_hits,
+        "stale_task_state_constraint_present": bool(stale_task_constraint_hits),
+        "stale_task_state_goal_hits": stale_task_goal_hits,
+        "stale_task_state_goal_present": bool(stale_task_goal_hits),
+        "harmful_stale_evidence_hits": harmful_hits,
+        "harmful_stale_evidence_present": bool(harmful_hits),
+    }
+
+
+def classify_wrong_evidence(
+    scenario: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    wrong_keywords = list(scenario.get("wrong_tool_keywords", []))
+    if not wrong_keywords:
+        return {
+            "wrong_task_state_constraint_keywords_hit": [],
+            "wrong_task_state_goal_keywords_hit": [],
+            "harmful_wrong_keywords_hit": [],
+            "harmful_wrong_injected": False,
+        }
+
+    tool_hits = keyword_hits(selected_tool_text(context), wrong_keywords)
+    message_constraint_hits, message_harmful_hits = message_hits_by_constraint_type(
+        context, wrong_keywords
+    )
+    task_constraint_hits = keyword_hits(
+        task_state_constraint_text(context), wrong_keywords
+    )
+    task_goal_hits = keyword_hits(task_state_goal_text(context), wrong_keywords)
+    harmful_hits = unique_hits(tool_hits, message_harmful_hits)
+    return {
+        "wrong_task_state_constraint_keywords_hit": task_constraint_hits,
+        "wrong_task_state_goal_keywords_hit": task_goal_hits,
+        "wrong_message_constraint_keywords_hit": message_constraint_hits,
+        "wrong_message_harmful_keywords_hit": message_harmful_hits,
+        "harmful_wrong_keywords_hit": harmful_hits,
+        "harmful_wrong_injected": bool(harmful_hits),
+    }
 
 
 def build_context(
@@ -135,21 +296,28 @@ def stale_avoidance_result(
     fresh_keywords = list(spec.get("fresh_keywords", []))
     stale_keywords = list(spec.get("stale_keywords", []))
     text = evidence_text(context)
+    stale_presence_text = context_or_tool_text(context)
     fresh_hits = keyword_hits(text, fresh_keywords)
     stale_hits = keyword_hits(text, stale_keywords)
+    stale_present_hits = keyword_hits(stale_presence_text, stale_keywords)
     fresh_rank = first_keyword_rank(context, fresh_keywords)
     stale_rank = first_keyword_rank(context, stale_keywords)
     fresh_is_primary = fresh_rank is not None and (
         stale_rank is None or fresh_rank < stale_rank
     )
-    avoided = bool(fresh_hits and fresh_is_primary and not stale_hits)
+    stale_present = bool(stale_present_hits)
+    avoided = bool(fresh_hits and fresh_is_primary and not stale_present)
+    stale_source = classify_stale_evidence(scenario, context) or {}
     return {
         "fresh_hits": fresh_hits,
         "stale_hits": stale_hits,
+        "stale_present_hits": stale_present_hits,
+        "stale_evidence_present": stale_present,
         "fresh_rank": fresh_rank,
         "stale_rank": stale_rank,
         "fresh_is_primary": fresh_is_primary,
         "stale_evidence_avoided": avoided,
+        **stale_source,
     }
 
 
@@ -176,6 +344,17 @@ def evaluate_context_result(
     wrong_keywords = list(scenario.get("wrong_tool_keywords", []))
     wrong_hits = keyword_hits(all_text, wrong_keywords)
     wrong_injected = bool(wrong_hits)
+    wrong_tool_evidence_hits = keyword_hits(selected_tool_text(context), wrong_keywords)
+    wrong_message_hits = keyword_hits(message_text(context), wrong_keywords)
+    irrelevant_message_hits = keyword_hits(
+        message_text(context), list(scenario.get("irrelevant_keywords", []))
+    )
+    message_noise_hits = []
+    for keyword in [*wrong_message_hits, *irrelevant_message_hits]:
+        if keyword not in message_noise_hits:
+            message_noise_hits.append(keyword)
+    negative_hits = negative_constraint_hits(scenario, context)
+    wrong_classification = classify_wrong_evidence(scenario, context)
     rank = expected_tool_rank(scenario, context)
     tool_evidence_reused = compute_tool_evidence_reused(scenario, context)
     stale_result = stale_avoidance_result(scenario, context)
@@ -198,6 +377,13 @@ def evaluate_context_result(
         "injected_irrelevant_keywords": irrelevant_hits,
         "wrong_tool_injected": wrong_injected,
         "wrong_tool_keywords_hit": wrong_hits,
+        "wrong_tool_evidence_injected": bool(wrong_tool_evidence_hits),
+        "wrong_tool_evidence_keywords_hit": wrong_tool_evidence_hits,
+        "wrong_message_noise_injected": bool(message_noise_hits),
+        "wrong_message_noise_keywords_hit": message_noise_hits,
+        "negative_constraint_hit": bool(negative_hits),
+        "negative_constraint_keywords_hit": negative_hits,
+        **wrong_classification,
         "stale_evidence": stale_result,
         "context_build_latency_ms": latency_ms,
         "context_tokens": context_tokens,
@@ -224,6 +410,9 @@ def aggregate_budget_results(
         for item in results
         if item["expected_tool_rank"] is not None
     ]
+    stale_cases = [
+        item for item in results if item.get("stale_evidence") is not None
+    ]
     return {
         "max_tokens": budget,
         "scenario_count": len(results),
@@ -243,6 +432,105 @@ def aggregate_budget_results(
         "wrong_tool_injection_rate": safe_rate(
             sum(1 for item in with_wrong_keywords if item["wrong_tool_injected"]),
             len(with_wrong_keywords),
+        ),
+        "wrong_tool_evidence_injection_rate": safe_rate(
+            sum(
+                1
+                for item in with_wrong_keywords
+                if item["wrong_tool_evidence_injected"]
+            ),
+            len(with_wrong_keywords),
+        ),
+        "wrong_message_noise_rate": safe_rate(
+            sum(1 for item in with_wrong_keywords if item["wrong_message_noise_injected"]),
+            len(with_wrong_keywords),
+        ),
+        "negative_constraint_hit_rate": safe_rate(
+            sum(1 for item in with_wrong_keywords if item["negative_constraint_hit"]),
+            len(with_wrong_keywords),
+        ),
+        "wrong_task_state_constraint_rate": safe_rate(
+            sum(
+                1
+                for item in with_wrong_keywords
+                if item["wrong_task_state_constraint_keywords_hit"]
+            ),
+            len(with_wrong_keywords),
+        ),
+        "wrong_task_state_goal_rate": safe_rate(
+            sum(
+                1
+                for item in with_wrong_keywords
+                if item["wrong_task_state_goal_keywords_hit"]
+            ),
+            len(with_wrong_keywords),
+        ),
+        "harmful_wrong_injection_rate": safe_rate(
+            sum(1 for item in with_wrong_keywords if item["harmful_wrong_injected"]),
+            len(with_wrong_keywords),
+        ),
+        "stale_evidence_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_evidence_present"]
+            ),
+            len(stale_cases),
+        ),
+        "fresh_evidence_primary_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["fresh_is_primary"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_tool_evidence_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_tool_present"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_message_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_message_present"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_task_state_constraint_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_task_state_constraint_present"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_task_state_goal_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_task_state_goal_present"]
+            ),
+            len(stale_cases),
+        ),
+        "harmful_stale_evidence_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["harmful_stale_evidence_present"]
+            ),
+            len(stale_cases),
         ),
         "avg_expected_tool_rank": mean(ranks) if ranks else None,
     }
@@ -285,6 +573,14 @@ def aggregate_overall(
         )
         for item in noise_cases
     ]
+    harmful_noise_scores = [
+        (
+            (1.0 if item["memory_hit"] else 0.0)
+            * (1.0 - item["irrelevant_memory_injection_rate"])
+            * (0.0 if item["harmful_wrong_injected"] else 1.0)
+        )
+        for item in noise_cases
+    ]
 
     return {
         "scenario_count": len(primary_results),
@@ -306,6 +602,38 @@ def aggregate_overall(
             sum(1 for item in wrong_cases if item["wrong_tool_injected"]),
             len(wrong_cases),
         ),
+        "wrong_tool_evidence_injection_rate": safe_rate(
+            sum(1 for item in wrong_cases if item["wrong_tool_evidence_injected"]),
+            len(wrong_cases),
+        ),
+        "wrong_message_noise_rate": safe_rate(
+            sum(1 for item in wrong_cases if item["wrong_message_noise_injected"]),
+            len(wrong_cases),
+        ),
+        "negative_constraint_hit_rate": safe_rate(
+            sum(1 for item in wrong_cases if item["negative_constraint_hit"]),
+            len(wrong_cases),
+        ),
+        "wrong_task_state_constraint_rate": safe_rate(
+            sum(
+                1
+                for item in wrong_cases
+                if item["wrong_task_state_constraint_keywords_hit"]
+            ),
+            len(wrong_cases),
+        ),
+        "wrong_task_state_goal_rate": safe_rate(
+            sum(
+                1
+                for item in wrong_cases
+                if item["wrong_task_state_goal_keywords_hit"]
+            ),
+            len(wrong_cases),
+        ),
+        "harmful_wrong_injection_rate": safe_rate(
+            sum(1 for item in wrong_cases if item["harmful_wrong_injected"]),
+            len(wrong_cases),
+        ),
         "paraphrase_case_count": len(paraphrase_results),
         "paraphrase_hit_rate": safe_rate(sum(paraphrase_passes), len(paraphrase_passes)),
         "stale_evidence_case_count": len(stale_cases),
@@ -318,8 +646,74 @@ def aggregate_overall(
             ),
             len(stale_cases),
         ),
+        "stale_evidence_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_evidence_present"]
+            ),
+            len(stale_cases),
+        ),
+        "fresh_evidence_primary_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["fresh_is_primary"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_tool_evidence_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_tool_present"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_message_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_message_present"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_task_state_constraint_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_task_state_constraint_present"]
+            ),
+            len(stale_cases),
+        ),
+        "stale_task_state_goal_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["stale_task_state_goal_present"]
+            ),
+            len(stale_cases),
+        ),
+        "harmful_stale_evidence_present_rate": safe_rate(
+            sum(
+                1
+                for item in stale_cases
+                if item["stale_evidence"]
+                and item["stale_evidence"]["harmful_stale_evidence_present"]
+            ),
+            len(stale_cases),
+        ),
         "noise_heavy_case_count": len(noise_cases),
         "noise_robustness_score": mean(noise_scores) if noise_scores else 0.0,
+        "harmful_noise_robustness_score": (
+            mean(harmful_noise_scores) if harmful_noise_scores else 0.0
+        ),
         "avg_expected_tool_rank": mean(ranks) if ranks else None,
         "avg_context_token_saving": mean(
             [item["context_token_saving"] for item in primary_results]
@@ -483,6 +877,12 @@ def failure_cases(primary_results: list[dict[str, Any]]) -> list[dict[str, Any]]
             reasons.append("tool_evidence_not_reused")
         if item["wrong_tool_injected"]:
             reasons.append("wrong_tool_injected")
+        if item["wrong_tool_evidence_injected"]:
+            reasons.append("wrong_tool_evidence_injected")
+        if item["wrong_message_noise_injected"]:
+            reasons.append("wrong_message_noise_injected")
+        if item["harmful_wrong_injected"]:
+            reasons.append("harmful_wrong_injected")
         if item.get("stale_evidence") and not item["stale_evidence"][
             "stale_evidence_avoided"
         ]:
@@ -496,6 +896,23 @@ def failure_cases(primary_results: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "reasons": reasons,
                     "missed_keywords": item["missed_keywords"],
                     "wrong_tool_keywords_hit": item["wrong_tool_keywords_hit"],
+                    "wrong_tool_evidence_keywords_hit": item[
+                        "wrong_tool_evidence_keywords_hit"
+                    ],
+                    "wrong_message_noise_keywords_hit": item[
+                        "wrong_message_noise_keywords_hit"
+                    ],
+                    "negative_constraint_keywords_hit": item[
+                        "negative_constraint_keywords_hit"
+                    ],
+                    "wrong_task_state_constraint_keywords_hit": item[
+                        "wrong_task_state_constraint_keywords_hit"
+                    ],
+                    "wrong_task_state_goal_keywords_hit": item[
+                        "wrong_task_state_goal_keywords_hit"
+                    ],
+                    "harmful_wrong_keywords_hit": item["harmful_wrong_keywords_hit"],
+                    "harmful_wrong_injected": item["harmful_wrong_injected"],
                     "injected_irrelevant_keywords": item[
                         "injected_irrelevant_keywords"
                     ],
@@ -506,15 +923,79 @@ def failure_cases(primary_results: list[dict[str, Any]]) -> list[dict[str, Any]]
     return failures
 
 
+def classify_residual_failures(
+    primary_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for item in primary_results:
+        if not (
+            item["wrong_tool_injected"]
+            or item.get("stale_evidence")
+            and item["stale_evidence"]["stale_evidence_present"]
+            or item["irrelevant_memory_injection_rate"] > 0
+        ):
+            continue
+
+        stale = item.get("stale_evidence") or {}
+        hit_sources = []
+        if item["wrong_tool_evidence_keywords_hit"] or stale.get("stale_tool_hits"):
+            hit_sources.append("tool")
+        if item["wrong_message_noise_keywords_hit"] or stale.get("stale_message_hits"):
+            hit_sources.append("message")
+        if (
+            item["wrong_task_state_constraint_keywords_hit"]
+            or stale.get("stale_task_state_constraint_hits")
+        ):
+            hit_sources.append("task_state_constraint")
+        if (
+            item["wrong_task_state_goal_keywords_hit"]
+            or stale.get("stale_task_state_goal_hits")
+        ):
+            hit_sources.append("task_state_goal")
+
+        harmful_hits = unique_hits(
+            item["harmful_wrong_keywords_hit"],
+            stale.get("harmful_stale_evidence_hits", []),
+        )
+        harmful = bool(harmful_hits)
+        if harmful:
+            reason = "Harmful keywords appear in tool evidence or non-constraint messages."
+        elif item["wrong_task_state_goal_keywords_hit"] or stale.get(
+            "stale_task_state_goal_hits"
+        ):
+            reason = "Strict hits include task_state goal/action and need manual review; selected tool evidence is clean."
+        elif hit_sources:
+            reason = "Strict hits are guardrail constraints or non-harmful stale context; selected tool evidence is clean."
+        else:
+            reason = "Only legacy irrelevant keyword matching remains."
+
+        rows.append(
+            {
+                "scenario_id": item["scenario_id"],
+                "strict_wrong_hits": item["wrong_tool_keywords_hit"],
+                "stale_hits": stale.get("stale_present_hits", []),
+                "hit_sources": hit_sources,
+                "harmful": harmful,
+                "harmful_hits": harmful_hits,
+                "reason": reason,
+            }
+        )
+    return rows
+
+
 def build_recommendations(overall: dict[str, Any], failures: list[dict[str, Any]]) -> list[str]:
     recommendations = []
-    if overall["wrong_tool_injection_rate"] > 0:
+    if overall["harmful_wrong_injection_rate"] > 0:
         recommendations.append(
-            "RetrievalPlanner 需要更强的实体约束或负向过滤，避免问北京时注入上海、问 M42 时注入 M31。"
+            "RetrievalPlanner 仍有 harmful wrong injection，需要继续加强实体约束或负向过滤。"
         )
-    if overall["stale_evidence_avoidance_rate"] < 1:
+    if overall["wrong_tool_evidence_injection_rate"] > 0:
         recommendations.append(
-            "对同一工具/实体的新旧结果应建立 freshness 规则，优先最新证据并压低旧结果。"
+            "工具证据 harmful injection 仍存在，应优先过滤 selected_tool_calls 中实体或工具类型不匹配的结果。"
+        )
+    if overall["harmful_stale_evidence_present_rate"] > 0:
+        recommendations.append(
+            "仍有 harmful stale evidence 进入上下文，应继续优化 freshness 规则。"
         )
     if overall["paraphrase_hit_rate"] < 0.8:
         recommendations.append(
@@ -540,6 +1021,7 @@ def write_summary_markdown(
     overall = report["overall_metrics"]
     primary = report["primary_results"]
     failures = report["failure_cases"]
+    residual_classifications = report["residual_failure_classification"]
     recommendations = build_recommendations(overall, failures)
 
     lines = [
@@ -556,26 +1038,57 @@ def write_summary_markdown(
         f"| tool_evidence_reuse_rate | {format_percent(overall['tool_evidence_reuse_rate'])} |",
         f"| paraphrase_hit_rate | {format_percent(overall['paraphrase_hit_rate'])} |",
         f"| stale_evidence_avoidance_rate | {format_percent(overall['stale_evidence_avoidance_rate'])} |",
+        f"| stale_evidence_present_rate | {format_percent(overall['stale_evidence_present_rate'])} |",
+        f"| stale_tool_evidence_present_rate | {format_percent(overall['stale_tool_evidence_present_rate'])} |",
+        f"| stale_message_present_rate | {format_percent(overall['stale_message_present_rate'])} |",
+        f"| stale_task_state_constraint_rate | {format_percent(overall['stale_task_state_constraint_rate'])} |",
+        f"| stale_task_state_goal_rate | {format_percent(overall['stale_task_state_goal_rate'])} |",
+        f"| harmful_stale_evidence_present_rate | {format_percent(overall['harmful_stale_evidence_present_rate'])} |",
+        f"| fresh_evidence_primary_rate | {format_percent(overall['fresh_evidence_primary_rate'])} |",
         f"| noise_robustness_score | {overall['noise_robustness_score']:.3f} |",
+        f"| harmful_noise_robustness_score | {overall['harmful_noise_robustness_score']:.3f} |",
         f"| wrong_tool_injection_rate | {format_percent(overall['wrong_tool_injection_rate'])} |",
+        f"| wrong_tool_evidence_injection_rate | {format_percent(overall['wrong_tool_evidence_injection_rate'])} |",
+        f"| wrong_message_noise_rate | {format_percent(overall['wrong_message_noise_rate'])} |",
+        f"| negative_constraint_hit_rate | {format_percent(overall['negative_constraint_hit_rate'])} |",
+        f"| wrong_task_state_constraint_rate | {format_percent(overall['wrong_task_state_constraint_rate'])} |",
+        f"| wrong_task_state_goal_rate | {format_percent(overall['wrong_task_state_goal_rate'])} |",
+        f"| harmful_wrong_injection_rate | {format_percent(overall['harmful_wrong_injection_rate'])} |",
         f"| avg_expected_tool_rank | {overall['avg_expected_tool_rank'] if overall['avg_expected_tool_rank'] is not None else 'n/a'} |",
         f"| avg_context_token_saving | {format_percent(overall['avg_context_token_saving'])} |",
         f"| context_build_latency_avg_ms | {format_ms(overall['context_build_latency_avg_ms'])} |",
         f"| context_build_latency_p95_ms | {format_ms(overall['context_build_latency_p95_ms'])} |",
         "",
+        "## Metric Semantics",
+        "- `wrong_tool_injection_rate` is the legacy strict metric: any wrong keyword in context text, selected tools, messages, or task_state counts.",
+        "- `wrong_tool_evidence_injection_rate` is the harmful tool-evidence metric: only wrong keywords inside `selected_tool_calls` count.",
+        "- `wrong_message_noise_rate` tracks wrong or irrelevant keywords from selected recent/relevant messages; message constraint hits are separately marked when possible.",
+        "- `wrong_task_state_constraint_rate` tracks task_state guardrails such as `不要混入上海`; these are not counted as harmful.",
+        "- `wrong_task_state_goal_rate` tracks wrong keywords in task_state current_goal/next_action as manual-review context.",
+        "- `harmful_wrong_injection_rate` counts selected tool calls and non-constraint messages; task_state guardrails and goal/action review hits are reported separately.",
+        "- `stale_evidence_present_rate` is legacy strict; `harmful_stale_evidence_present_rate` only counts stale selected tools or non-constraint messages.",
+        "",
         "## Budget Sweep Results",
-        "| max_tokens | Memory Hit | Tool Evidence Reuse | Irrelevant Injection | Wrong Tool Injection | Avg Expected Tool Rank |",
-        "|---:|---:|---:|---:|---:|---:|",
+        "| max_tokens | Memory Hit | Tool Evidence Reuse | Irrelevant Injection | Strict Wrong | Harmful Wrong | Harmful Tool Wrong | Message Noise | Stale Present | Harmful Stale | Fresh Primary | Avg Expected Tool Rank |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for item in overall["budget_sensitivity"]:
         rank = item["avg_expected_tool_rank"]
         lines.append(
-            "| {budget} | {hit} | {tool} | {irrelevant} | {wrong} | {rank} |".format(
+            "| {budget} | {hit} | {tool} | {irrelevant} | {wrong} | {harmful_wrong} | {tool_wrong} | {message_noise} | {stale_present} | {harmful_stale} | {fresh_primary} | {rank} |".format(
                 budget=item["max_tokens"],
                 hit=format_percent(item["memory_hit_rate"]),
                 tool=format_percent(item["tool_evidence_reuse_rate"]),
                 irrelevant=format_percent(item["avg_irrelevant_memory_injection_rate"]),
                 wrong=format_percent(item["wrong_tool_injection_rate"]),
+                harmful_wrong=format_percent(item["harmful_wrong_injection_rate"]),
+                tool_wrong=format_percent(item["wrong_tool_evidence_injection_rate"]),
+                message_noise=format_percent(item["wrong_message_noise_rate"]),
+                stale_present=format_percent(item["stale_evidence_present_rate"]),
+                harmful_stale=format_percent(
+                    item["harmful_stale_evidence_present_rate"]
+                ),
+                fresh_primary=format_percent(item["fresh_evidence_primary_rate"]),
                 rank=f"{rank:.2f}" if rank is not None else "n/a",
             )
         )
@@ -613,18 +1126,24 @@ def write_summary_markdown(
         [
             "",
             "## Noise Robustness",
-            "| Scenario | Memory Hit | Irrelevant Injection | Wrong Tool Injected |",
-            "|---|---:|---:|---:|",
+            "| Scenario | Memory Hit | Irrelevant Injection | Strict Wrong | Harmful Tool Wrong | Message Noise |",
+            "|---|---:|---:|---:|---:|---:|",
         ]
     )
     for item in primary:
         if item["noise_heavy"]:
             lines.append(
-                "| {scenario} | {hit} | {irrelevant} | {wrong} |".format(
+                "| {scenario} | {hit} | {irrelevant} | {wrong} | {tool_wrong} | {message_noise} |".format(
                     scenario=item["scenario_id"],
                     hit="yes" if item["memory_hit"] else "no",
                     irrelevant=format_percent(item["irrelevant_memory_injection_rate"]),
                     wrong="yes" if item["wrong_tool_injected"] else "no",
+                    tool_wrong=(
+                        "yes" if item["wrong_tool_evidence_injected"] else "no"
+                    ),
+                    message_noise=(
+                        "yes" if item["wrong_message_noise_injected"] else "no"
+                    ),
                 )
             )
 
@@ -632,20 +1151,32 @@ def write_summary_markdown(
         [
             "",
             "## Stale Evidence Avoidance",
-            "| Scenario | Avoided | Fresh Rank | Stale Rank | Stale Hits |",
-            "|---|---:|---:|---:|---|",
+            "| Scenario | Avoided | Strict Present | Tool | Message | Task Constraint | Harmful | Fresh Primary | Fresh Rank | Stale Rank | Stale Hits |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for item in primary:
         stale = item.get("stale_evidence")
         if stale:
             lines.append(
-                "| {scenario} | {avoided} | {fresh_rank} | {stale_rank} | {stale_hits} |".format(
+                "| {scenario} | {avoided} | {stale_present} | {tool} | {message} | {task_constraint} | {harmful} | {fresh_primary} | {fresh_rank} | {stale_rank} | {stale_hits} |".format(
                     scenario=item["scenario_id"],
                     avoided="yes" if stale["stale_evidence_avoided"] else "no",
+                    stale_present=(
+                        "yes" if stale["stale_evidence_present"] else "no"
+                    ),
+                    tool="yes" if stale["stale_tool_present"] else "no",
+                    message="yes" if stale["stale_message_present"] else "no",
+                    task_constraint=(
+                        "yes" if stale["stale_task_state_constraint_present"] else "no"
+                    ),
+                    harmful=(
+                        "yes" if stale["harmful_stale_evidence_present"] else "no"
+                    ),
+                    fresh_primary="yes" if stale["fresh_is_primary"] else "no",
                     fresh_rank=stale["fresh_rank"] or "n/a",
                     stale_rank=stale["stale_rank"] or "n/a",
-                    stale_hits=", ".join(stale["stale_hits"]) or "none",
+                    stale_hits=", ".join(stale["stale_present_hits"]) or "none",
                 )
             )
 
@@ -653,22 +1184,61 @@ def write_summary_markdown(
         [
             "",
             "## Failure Cases",
-            "| Scenario | Reasons | Wrong Hits | Irrelevant Hits |",
-            "|---|---|---|---|",
+            "| Scenario | Reasons | Strict Wrong Hits | Tool Wrong Hits | Message Noise Hits | Task Constraint Hits | Task Goal Hits | Harmful Hits | Irrelevant Hits |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
     )
     if failures:
         for item in failures:
             lines.append(
-                "| {scenario} | {reasons} | {wrong} | {irrelevant} |".format(
+                "| {scenario} | {reasons} | {wrong} | {tool_wrong} | {message_noise} | {task_constraint} | {task_goal} | {harmful} | {irrelevant} |".format(
                     scenario=item["scenario_id"],
                     reasons=", ".join(item["reasons"]),
                     wrong=", ".join(item["wrong_tool_keywords_hit"]) or "none",
+                    tool_wrong=", ".join(
+                        item["wrong_tool_evidence_keywords_hit"]
+                    )
+                    or "none",
+                    message_noise=", ".join(
+                        item["wrong_message_noise_keywords_hit"]
+                    )
+                    or "none",
+                    task_constraint=", ".join(
+                        item["wrong_task_state_constraint_keywords_hit"]
+                    )
+                    or "none",
+                    task_goal=", ".join(item["wrong_task_state_goal_keywords_hit"])
+                    or "none",
+                    harmful=", ".join(item["harmful_wrong_keywords_hit"]) or "none",
                     irrelevant=", ".join(item["injected_irrelevant_keywords"]) or "none",
                 )
             )
     else:
-        lines.append("| none | none | none | none |")
+        lines.append("| none | none | none | none | none | none | none | none | none |")
+
+    lines.extend(
+        [
+            "",
+            "## Residual Strict Failures Classification",
+            "| Scenario | Strict Wrong Hits | Stale Hits | Sources | Harmful | Harmful Hits | Reason |",
+            "|---|---|---|---|---:|---|---|",
+        ]
+    )
+    if residual_classifications:
+        for item in residual_classifications:
+            lines.append(
+                "| {scenario} | {strict} | {stale} | {sources} | {harmful} | {harmful_hits} | {reason} |".format(
+                    scenario=item["scenario_id"],
+                    strict=", ".join(item["strict_wrong_hits"]) or "none",
+                    stale=", ".join(item["stale_hits"]) or "none",
+                    sources=", ".join(item["hit_sources"]) or "none",
+                    harmful="yes" if item["harmful"] else "no",
+                    harmful_hits=", ".join(item["harmful_hits"]) or "none",
+                    reason=item["reason"],
+                )
+            )
+    else:
+        lines.append("| none | none | none | none | no | none | none |")
 
     lines.extend(["", "## Recommendations"])
     lines.extend(f"- {item}" for item in recommendations)
@@ -679,7 +1249,9 @@ def write_summary_markdown(
             "- 本评估为 synthetic stress eval，不调用真实 LLM/MCP。",
             "- 指标只评估 MemoryService.build_context 的上下文构造，不评估最终回答质量。",
             "- stale_evidence_avoidance 使用严格口径：必须命中新证据、新证据 rank 优于旧证据，并且上下文/selected_tool_calls 中不出现旧证据关键词。",
-            "- noise_robustness_score 使用 primary budget 下的 memory_hit、irrelevant injection 和 wrong tool injection 合成分数。",
+            "- strict wrong_tool_injection_rate 兼容旧报告，会把 task_state 负向约束、message 噪声和 tool evidence 混合计算。",
+            "- harmful wrong 口径只看 selected_tool_calls 和非约束型 message；task_state 负向约束与 goal/action review 命中单独报告。",
+            "- noise_robustness_score 沿用 strict wrong 口径；harmful_noise_robustness_score 使用 harmful wrong 口径。",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -717,6 +1289,7 @@ def run_evaluation(
         for budget in budgets
     ]
     failures = failure_cases(primary_results)
+    residual_classification = classify_residual_failures(primary_results)
     overall = aggregate_overall(primary_results, budget_sweep, paraphrase_results)
 
     report = {
@@ -734,6 +1307,7 @@ def run_evaluation(
         "primary_results": primary_results,
         "paraphrase_results": paraphrase_results,
         "failure_cases": failures,
+        "residual_failure_classification": residual_classification,
         "per_scenario": per_scenario,
     }
 
@@ -809,7 +1383,39 @@ def main() -> None:
         f"{format_percent(overall['stale_evidence_avoidance_rate'])}"
     )
     print(f"noise_robustness_score: {overall['noise_robustness_score']:.3f}")
+    print(
+        "harmful_noise_robustness_score: "
+        f"{overall['harmful_noise_robustness_score']:.3f}"
+    )
     print(f"wrong_tool_injection_rate: {format_percent(overall['wrong_tool_injection_rate'])}")
+    print(
+        "wrong_tool_evidence_injection_rate: "
+        f"{format_percent(overall['wrong_tool_evidence_injection_rate'])}"
+    )
+    print(
+        "harmful_wrong_injection_rate: "
+        f"{format_percent(overall['harmful_wrong_injection_rate'])}"
+    )
+    print(f"wrong_message_noise_rate: {format_percent(overall['wrong_message_noise_rate'])}")
+    print(
+        "negative_constraint_hit_rate: "
+        f"{format_percent(overall['negative_constraint_hit_rate'])}"
+    )
+    print(
+        "stale_evidence_present_rate: "
+        f"{format_percent(overall['stale_evidence_present_rate'])}"
+    )
+    print(
+        "stale_tool/message/task_constraint/harmful_rates: "
+        f"{format_percent(overall['stale_tool_evidence_present_rate'])}/"
+        f"{format_percent(overall['stale_message_present_rate'])}/"
+        f"{format_percent(overall['stale_task_state_constraint_rate'])}/"
+        f"{format_percent(overall['harmful_stale_evidence_present_rate'])}"
+    )
+    print(
+        "fresh_evidence_primary_rate: "
+        f"{format_percent(overall['fresh_evidence_primary_rate'])}"
+    )
     print(
         "context_build_latency_avg/p95/max_ms: "
         f"{overall['context_build_latency_avg_ms']:.2f}/"
