@@ -105,9 +105,15 @@ class FrontendJsonEventAdapter:
                 "content": str(event.content),
                 "meta": event.meta,
             }
-        if event.type in {"final_answer_delta", "warning", "error"}:
+        if event.type == "final_answer_delta":
             return {
                 "type": "text",
+                "content": str(event.content),
+                "meta": event.meta,
+            }
+        if event.type in {"warning", "error"}:
+            return {
+                "type": event.type,
                 "content": str(event.content),
                 "meta": event.meta,
             }

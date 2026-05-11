@@ -296,6 +296,8 @@ AstroAgent/
 | `API_PORT` | 否 | API 端口，默认 `8002` |
 | `MCP_PORT` | 否 | MCP 端口，默认 `8001` |
 | `MCP_SERVER_URL` | 否 | MCP 客户端连接地址，默认 `http://localhost:8001/mcp` |
+| `VITE_API_BASE_URL` | 否 | 前端直接请求的 API 地址；未配置时开发环境默认走 `/api` 代理 |
+| `VITE_API_PROXY_TARGET` | 否 | Vite 开发代理目标，默认 `http://localhost:8002` |
 | `LONG_TERM_MEMORY_PATH` | 否 | 长期记忆 SQLite 路径 |
 | `VECTOR_DB_PATH` | 否 | Chroma 向量库路径 |
 | `EPHEMERIS_FILE` | 否 | 星历文件路径，默认 `./data/ephemeris/de421.bsp` |
@@ -478,6 +480,8 @@ curl -X POST "http://localhost:8002/clear_memory?user_id=demo-user"
 ### Vue3 前端
 
 前端代码位于 `frontend/`，由 `Vue 3 + Vite + Pinia` 构建，默认开发地址为 `http://localhost:5173`。
+
+开发环境中，前端默认使用 `/api` 代理访问 FastAPI，代理目标为 `http://localhost:8002`。如需连接其他后端地址，可设置 `VITE_API_PROXY_TARGET`；如需绕过代理直接请求后端，可设置 `VITE_API_BASE_URL`。
 
 - 执行总览：展示每轮总耗时、工具调用数、证据条目数和记忆命中数
 - 执行时间线：逐条展示工具名称、输入参数、返回摘要与单次调用耗时

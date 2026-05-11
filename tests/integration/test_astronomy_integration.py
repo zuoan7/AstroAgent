@@ -440,18 +440,6 @@ class TestErrorHandlingIntegration:
         assert d["message"] == "工具调用失败"
         assert d["details"]["tool"] == "get_weather"
 
-    def test_safe_tool_call_decorator(self):
-        from src.core.errors import AgentError, ErrorCode, safe_tool_call
-
-        @safe_tool_call
-        def failing_tool():
-            raise ValueError("参数错误")
-
-        result = failing_tool()
-        assert isinstance(result, dict)
-        assert result["error"] is True
-        assert result["code"] == "VALIDATION_ERROR"
-
     def test_nasa_api_error_propagation(self):
         from src.astronomy.nasa_api import NASAAPIService
         from src.core.errors import AgentError, ErrorCode

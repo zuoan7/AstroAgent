@@ -40,7 +40,7 @@ export const useMemoryStore = defineStore('memory', () => {
       candidates.value = overview.candidates
       confirmations.value = overview.confirmations
       recentEvents.value = overview.recent_events
-      shortTerm.value = overview.short_term
+      shortTerm.value = overview.session_memory || overview.short_term || null
       context.value = session.context
     } finally {
       loading.value = false

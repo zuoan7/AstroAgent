@@ -1306,22 +1306,26 @@ class BaseStreamingGenerator:
                     event_type = raw_event.get("event")
                     data = raw_event.get("data", {}) or {}
                     run_id = raw_event.get("run_id")
+                    event_name = raw_event.get("name")
 
                     if event_type == "on_tool_start":
+                        tool_name = (
+                            data.get("name")
+                            or data.get("tool")
+                            or event_name
+                            or "unknown_tool"
+                        )
+                        tool_input = (
+                            "" if data.get("input") is None else str(data.get("input"))
+                        )
+                        tool_data = {**data, "name": tool_name, "input": tool_input}
                         async for processed in self._frontend_event_adapter.emit_execution_event(
                             ExecutionEvent(
                                 type="tool_called",
                                 payload={
-                                    "tool": (
-                                        data.get("name")
-                                        or data.get("tool")
-                                        or "unknown_tool"
-                                    ),
-                                    "input": (
-                                        ""
-                                        if data.get("input") is None
-                                        else str(data.get("input"))
-                                    ),
+                                    "run_id": run_id,
+                                    "tool": tool_name,
+                                    "input": tool_input,
                                     "status": "running",
                                 },
                                 source="react",
@@ -1330,25 +1334,17 @@ class BaseStreamingGenerator:
                                 event_type,
                                 meta={
                                     "run_id": run_id,
-                                    "tool": data.get("name")
-                                    or data.get("tool")
-                                    or "unknown_tool",
+                                    "tool": tool_name,
                                 },
                                 **kwargs,
                             ),
                             emit_fn=emit,
                         ):
                             yield processed
-                        tool_name = (
-                            data.get("name") or data.get("tool") or "unknown_tool"
-                        )
-                        tool_input = (
-                            "" if data.get("input") is None else str(data.get("input"))
-                        )
                         result = self._handle_tool_start(
                             request_id,
                             run_id,
-                            data,
+                            tool_data,
                             check_repeated=stop_on_repeated_action,
                         )
                         if result == "repeated":
@@ -1372,11 +1368,19 @@ class BaseStreamingGenerator:
                     if event_type == "on_tool_end":
                         tool_result = self._handle_tool_end(request_id, run_id, data)
                         tool_meta = tool_result.get("meta", {}) or {}
+                        tool_name = (
+                            tool_meta.get("name")
+                            or event_name
+                            or data.get("name")
+                            or data.get("tool")
+                            or "unknown_tool"
+                        )
                         async for processed in self._frontend_event_adapter.emit_execution_event(
                             ExecutionEvent(
                                 type="tool_returned",
                                 payload={
-                                    "tool": tool_meta.get("name"),
+                                    "run_id": run_id,
+                                    "tool": tool_name,
                                     "output": tool_result.get("tool_output_str", ""),
                                     "output_summary": self._preview_text(
                                         tool_result.get("tool_output_str", ""), 240
@@ -1395,7 +1399,7 @@ class BaseStreamingGenerator:
                                 event_type,
                                 meta={
                                     "run_id": run_id,
-                                    "tool": tool_meta.get("name"),
+                                    "tool": tool_name,
                                     "duration_sec": tool_result.get("duration"),
                                     "extracted_url": tool_result.get("extracted_url"),
                                 },
@@ -1407,7 +1411,7 @@ class BaseStreamingGenerator:
                         tool_timeline.append(
                             {
                                 "run_id": run_id,
-                                "tool": tool_meta.get("name"),
+                                "tool": tool_name,
                                 "input": tool_meta.get("input", ""),
                                 "output_summary": self._preview_text(
                                     tool_result.get("tool_output_str", ""), 240

@@ -30,6 +30,9 @@
         <div>
           <h3>{{ step.title }}</h3>
           <p>{{ step.description }}</p>
+          <small class="muted">
+            开始 {{ formatTime(step.startedAt) }} · 结束 {{ formatTime(step.finishedAt) }} · 耗时 {{ formatStepDuration(step) }}
+          </small>
         </div>
         <span class="status-pill" :class="step.status">{{ statusLabel(step.status) }}</span>
       </article>
@@ -48,6 +51,26 @@ function formatDuration(value) {
     return '--'
   }
   return `${Number(value).toFixed(2)}s`
+}
+
+function formatTime(value) {
+  if (!value) {
+    return '--'
+  }
+  return new Date(value).toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function formatStepDuration(step) {
+  if (!step.startedAt) {
+    return '--'
+  }
+  const end = step.finishedAt || Date.now()
+  return `${Math.max(0, (end - step.startedAt) / 1000).toFixed(2)}s`
 }
 
 function statusLabel(status) {

@@ -1,0 +1,286 @@
+{
+  "dataset_id": "memory_context_eval_v1",
+  "description": "Synthetic evaluation set for AstroAgent short-term memory context construction. No real LLM, MCP, or external API is required.",
+  "scenarios": [
+    {
+      "scenario_id": "obs_weather_followup_001",
+      "description": "用户先查询北京今晚观测天气，随后追问刚才天气结果是否影响观测",
+      "session_id": "eval_session_001",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "帮我查一下北京今晚适不适合做目视观测。"},
+          {"role": "assistant", "content": "我先查询北京今晚天气，再结合云量、湿度和透明度给出观测建议。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "weather-lookup",
+            "tool_input": "{\"city\":\"北京\",\"extensions\":\"all\",\"date\":\"tonight\"}",
+            "raw_output": "{\"city\":\"北京\",\"condition\":\"clear sky\",\"cloud\":\"云量 12%\",\"humidity\":\"湿度 38%\",\"wind\":\"东北风 2 级\",\"seeing\":\"中等偏好\",\"transparency\":\"良好\",\"observing_tips\":\"观测条件总体较好，云量低，适合行星和亮深空目标观测，但需避开城市光污染。\",\"hourly\":[{\"time\":\"20:00\",\"cloud\":\"15%\",\"humidity\":\"40%\"},{\"time\":\"22:00\",\"cloud\":\"12%\",\"humidity\":\"38%\"},{\"time\":\"00:00\",\"cloud\":\"10%\",\"humidity\":\"42%\"}],\"notes\":\"Beijing clear sky forecast generated for synthetic memory evaluation. Long padding: pressure stable, dew point below ambient, no precipitation, no dust alert, no high cloud deck, no moonlight constraint included, repeat observing_tips for compression measurement observing_tips observing_tips observing_tips.\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "判断北京今晚是否适合观测",
+          "active_constraints": ["需要考虑天气", "需要考虑云量"],
+          "next_action": "根据天气和观测目标给出建议"
+        }
+      },
+      "followup_query": "刚才查到的天气结果对今晚观测有什么影响？",
+      "expected_relevant_keywords": ["weather-lookup", "北京", "云量", "观测"],
+      "expected_tool_names": ["weather-lookup"],
+      "irrelevant_keywords": ["土星冲日", "近地小行星", "相机曝光参数"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "astrophoto_exposure_followup_002",
+      "description": "用户先询问天文摄影参数，随后追问刚才推荐的曝光参数",
+      "session_id": "eval_session_002",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "我用 135mm 镜头和赤道仪拍猎户座大星云，给我一套曝光参数。"},
+          {"role": "assistant", "content": "可以从 ISO 800、单张曝光 60 秒、光圈 f/2.8 开始，并拍摄暗场和平场。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "astrophoto-exposure-planner",
+            "tool_input": "{\"target\":\"M42\",\"focal_length_mm\":135,\"mount\":\"tracking\",\"camera\":\"APS-C\"}",
+            "raw_output": "{\"target\":\"M42 猎户座大星云\",\"recommended_exposure\":\"单张曝光 60 秒\",\"iso\":\"ISO 800\",\"aperture\":\"f/2.8\",\"sub_count\":\"80 张以上\",\"calibration\":\"暗场、平场、偏置场\",\"reason\":\"M42 核心很亮，建议增加一组 15 秒短曝光保护核心，高动态范围合成。\",\"sky_condition\":\"Bortle 5 assumed\",\"long_notes\":\"Use dithering every 3 frames, keep histogram peak away from left edge, check star trailing at 135mm, repeat exposure recommendation for compression: ISO 800 60 秒 f/2.8 ISO 800 60 秒 f/2.8 ISO 800 60 秒 f/2.8.\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "制定 M42 天文摄影曝光方案",
+          "active_constraints": ["135mm 镜头", "赤道仪跟踪", "需要曝光参数"],
+          "next_action": "解释曝光参数的取舍"
+        }
+      },
+      "followup_query": "刚才推荐的曝光参数为什么是 ISO 800 和 60 秒？",
+      "expected_relevant_keywords": ["astrophoto-exposure-planner", "M42", "ISO 800", "60 秒", "曝光"],
+      "expected_tool_names": ["astrophoto-exposure-planner"],
+      "irrelevant_keywords": ["天气", "近地小行星", "流星雨"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "deep_sky_equipment_followup_003",
+      "description": "深空目标观测指导后追问刚才那个目标用什么设备更合适",
+      "session_id": "eval_session_003",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "今晚想看 M31 仙女座星系，怎么找？"},
+          {"role": "assistant", "content": "从仙后座 W 形和飞马座大四边形定位 M31，暗夜环境下双筒镜很容易看到。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "deep-sky-target-advisor",
+            "tool_input": "{\"target\":\"M31\",\"site\":\"suburban\",\"observer_level\":\"beginner\"}",
+            "raw_output": "{\"target\":\"M31 仙女座星系\",\"surface_brightness\":\"较低但总亮度高\",\"recommended_equipment\":\"7x50 双筒镜或 80mm 短焦折射镜\",\"finder_method\":\"从 Mirach 向上跳星到 Mu And 再到 Nu And\",\"best_magnification\":\"低倍率 15x 到 30x\",\"field_of_view\":\"需要大视场\",\"observing_tip\":\"不要追求高倍率，M31 延展很大，双筒镜更容易看到整体。\",\"padding\":\"Synthetic long output for equipment reuse. M31 equipment binocular 7x50 80mm refractor low power wide field repeated for compression test M31 equipment binocular 7x50 80mm refractor low power wide field.\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "帮助用户观测 M31",
+          "active_constraints": ["初学者", "郊区环境", "需要大视场"],
+          "next_action": "推荐合适设备和倍率"
+        }
+      },
+      "followup_query": "刚才那个目标用什么设备更合适？",
+      "expected_relevant_keywords": ["deep-sky-target-advisor", "M31", "双筒镜", "80mm", "大视场"],
+      "expected_tool_names": ["deep-sky-target-advisor"],
+      "irrelevant_keywords": ["北京", "流星雨", "NEO"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "meteor_shower_time_followup_004",
+      "description": "天象事件查询后追问刚才说的流星雨什么时候看",
+      "session_id": "eval_session_004",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "最近有什么适合看的天象？"},
+          {"role": "assistant", "content": "我查到英仙座流星雨接近极大，可以关注后半夜。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "sky-event-calendar",
+            "tool_input": "{\"event_type\":\"meteor_shower\",\"location\":\"Shanghai\",\"month\":\"August\"}",
+            "raw_output": "{\"event\":\"英仙座流星雨\",\"peak_time\":\"8 月 12 日 22:00 到 8 月 13 日 04:00\",\"best_viewing\":\"8 月 13 日凌晨 02:00-04:00\",\"radiant\":\"英仙座东北方升高后\",\"moon_phase\":\"月光影响较小\",\"zhr\":\"理论 ZHR 80-100\",\"tips\":\"远离城市灯光，躺椅观测，视野朝东北到天顶。\",\"long_notes\":\"Perseid meteor shower timing synthetic output. Best viewing repeated: 8 月 13 日凌晨 02:00-04:00, radiant high, moon low, dark site recommended.\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "安排英仙座流星雨观测时间",
+          "active_constraints": ["需要避开城市灯光", "关注极大时间"],
+          "next_action": "说明最佳观测时段"
+        }
+      },
+      "followup_query": "刚才说的流星雨什么时候看最好？",
+      "expected_relevant_keywords": ["sky-event-calendar", "英仙座流星雨", "8 月 13 日", "凌晨", "观测"],
+      "expected_tool_names": ["sky-event-calendar"],
+      "irrelevant_keywords": ["曝光参数", "M31", "小行星"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "neo_priority_followup_005",
+      "description": "NEO 查询后追问刚才哪个小行星更值得关注",
+      "session_id": "eval_session_005",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "查一下未来一周近地小行星有没有值得关注的。"},
+          {"role": "assistant", "content": "我会比较距离、直径估计和相对速度，筛出需要关注的近地小行星。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "neo-feed",
+            "tool_input": "{\"start_date\":\"2026-05-11\",\"end_date\":\"2026-05-18\",\"hazardous\":true}",
+            "raw_output": "{\"objects\":[{\"name\":\"2026 AB1\",\"miss_distance_ld\":\"12.4\",\"diameter_m\":\"85\",\"relative_velocity_kps\":\"18.1\",\"hazardous\":false},{\"name\":\"2026 KQ2\",\"miss_distance_ld\":\"4.8\",\"diameter_m\":\"210\",\"relative_velocity_kps\":\"24.6\",\"hazardous\":true},{\"name\":\"2026 LM5\",\"miss_distance_ld\":\"19.2\",\"diameter_m\":\"45\",\"relative_velocity_kps\":\"11.3\",\"hazardous\":false}],\"priority\":\"2026 KQ2 更值得关注\",\"reason\":\"距离更近、估计直径更大且标记为 potentially hazardous asteroid\",\"notes\":\"Synthetic NEO feed with repeated priority 2026 KQ2 2026 KQ2 2026 KQ2 near earth object asteroid hazardous close approach.\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "筛选未来一周值得关注的近地小行星",
+          "active_constraints": ["比较近地点距离", "比较直径估计"],
+          "next_action": "解释优先关注对象"
+        }
+      },
+      "followup_query": "刚才哪个小行星更值得关注，为什么？",
+      "expected_relevant_keywords": ["neo-feed", "2026 KQ2", "近地小行星", "距离", "直径"],
+      "expected_tool_names": ["neo-feed"],
+      "irrelevant_keywords": ["M31", "英仙座流星雨", "北京天气"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "object_altitude_followup_006",
+      "description": "天体位置查询后追问刚才它几点升起以及高度如何",
+      "session_id": "eval_session_006",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "今晚上海能看土星吗？帮我查一下位置。"},
+          {"role": "assistant", "content": "我查询土星今晚在上海的升起时间、方位和高度。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "ephemeris-position",
+            "tool_input": "{\"object\":\"Saturn\",\"location\":\"Shanghai\",\"date\":\"2026-05-11\"}",
+            "raw_output": "{\"object\":\"土星\",\"location\":\"上海\",\"rise_time\":\"22:18\",\"transit_time\":\"03:42\",\"max_altitude\":\"48 度\",\"azimuth_at_23\":\"东南偏东\",\"altitude_at_23\":\"9 度\",\"visibility\":\"23 点后逐渐可观测，凌晨高度更好\",\"notes\":\"Synthetic ephemeris position output. Saturn rise time 22:18, max altitude 48 度, transit 03:42 repeated for compression and evidence reuse.\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "判断上海今晚土星可观测性",
+          "active_constraints": ["需要升起时间", "需要高度"],
+          "next_action": "给出推荐观测时段"
+        }
+      },
+      "followup_query": "刚才它几点升起？高度如何？",
+      "expected_relevant_keywords": ["ephemeris-position", "土星", "22:18", "48 度", "高度"],
+      "expected_tool_names": ["ephemeris-position"],
+      "irrelevant_keywords": ["M42", "英仙座流星雨", "近地小行星"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "irrelevant_history_filter_007",
+      "description": "混入大量无关历史消息，测试当前追问是否注入干扰信息",
+      "session_id": "eval_session_007",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "顺便记一下：土星冲日那天我可能去郊外。"},
+          {"role": "assistant", "content": "已记录土星冲日相关计划。"},
+          {"role": "user", "content": "另一个话题，近地小行星 2026 ZZ9 也可以之后再看。"},
+          {"role": "assistant", "content": "已记录近地小行星后续关注项。"},
+          {"role": "user", "content": "相机曝光参数我之前常用 ISO 1600 和 120 秒。"},
+          {"role": "assistant", "content": "已记录相机曝光参数偏好。"},
+          {"role": "user", "content": "回到 M31，今晚我只有 7x50 双筒镜。"},
+          {"role": "assistant", "content": "那就优先用 7x50 双筒镜低倍率大视场寻找 M31。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "deep-sky-target-advisor",
+            "tool_input": "{\"target\":\"M31\",\"equipment\":\"7x50 binocular\"}",
+            "raw_output": "{\"target\":\"M31\",\"recommended_equipment\":\"7x50 双筒镜\",\"method\":\"低倍率大视场，从仙后座和飞马座定位\",\"tip\":\"避开强光，先用余光观察星系核心\",\"padding\":\"M31 binocular wide field synthetic advisor output repeated M31 7x50 双筒镜 大视场.\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "今晚用 7x50 双筒镜寻找 M31",
+          "active_constraints": ["避免混入无关历史", "设备只有 7x50 双筒镜"],
+          "next_action": "给出 M31 查找建议"
+        }
+      },
+      "followup_query": "只说回 M31，我手头这副双筒镜够不够？",
+      "expected_relevant_keywords": ["M31", "7x50 双筒镜", "deep-sky-target-advisor", "大视场"],
+      "expected_tool_names": ["deep-sky-target-advisor"],
+      "irrelevant_keywords": ["土星冲日", "近地小行星", "相机曝光参数"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "long_tool_raw_compression_008",
+      "description": "长工具 raw_output，测试工具摘要压缩率和证据复用",
+      "session_id": "eval_session_008",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "帮我查一个详细的月面摄影规划。"},
+          {"role": "assistant", "content": "我会生成较长的月面摄影窗口、焦段和拍摄建议，然后压缩为上下文证据。"}
+        ],
+        "tool_calls": [
+          {
+            "tool_name": "lunar-photo-planner",
+            "tool_input": "{\"date\":\"2026-05-11\",\"target\":\"Moon terminator\",\"camera\":\"planetary\"}",
+            "raw_output": "{\"target\":\"月面晨昏线\",\"phase\":\"上弦附近\",\"recommended_focal_ratio\":\"f/10 到 f/15\",\"video_settings\":\"每段 90 秒，ROI 裁剪，增益中等\",\"best_window\":\"20:30-22:30\",\"seeing_requirement\":\"视宁度优先于透明度\",\"stacking\":\"AutoStakkert 取最佳 20% 帧\",\"sharpening\":\"RegiStax wavelet 轻度锐化\",\"mosaic\":\"建议 6 到 9 片拼接\",\"long_table\":\"row001 crater detail good; row002 crater detail good; row003 crater detail good; row004 crater detail good; row005 crater detail good; row006 crater detail good; row007 crater detail good; row008 crater detail good; row009 crater detail good; row010 crater detail good; row011 crater detail good; row012 crater detail good; row013 crater detail good; row014 crater detail good; row015 crater detail good; row016 crater detail good; row017 crater detail good; row018 crater detail good; row019 crater detail good; row020 crater detail good; row021 crater detail good; row022 crater detail good; row023 crater detail good; row024 crater detail good; row025 crater detail good; row026 crater detail good; row027 crater detail good; row028 crater detail good; row029 crater detail good; row030 crater detail good; row031 crater detail good; row032 crater detail good; row033 crater detail good; row034 crater detail good; row035 crater detail good; row036 crater detail good; row037 crater detail good; row038 crater detail good; row039 crater detail good; row040 crater detail good; row041 crater detail good; row042 crater detail good; row043 crater detail good; row044 crater detail good; row045 crater detail good; row046 crater detail good; row047 crater detail good; row048 crater detail good; row049 crater detail good; row050 crater detail good\"}",
+            "success": true
+          }
+        ],
+        "task_state_patch": {
+          "current_goal": "制定月面晨昏线摄影计划",
+          "active_constraints": ["使用行星相机", "需要压缩长工具输出"],
+          "next_action": "复用工具摘要给出拍摄窗口"
+        }
+      },
+      "followup_query": "刚才那个月面摄影计划里，最佳窗口和视频设置是什么？",
+      "expected_relevant_keywords": ["lunar-photo-planner", "月面晨昏线", "20:30-22:30", "90 秒"],
+      "expected_tool_names": ["lunar-photo-planner"],
+      "irrelevant_keywords": ["NEO", "M31", "北京"],
+      "requires_tool_evidence": true
+    },
+    {
+      "scenario_id": "task_state_context_009",
+      "description": "带 task_state_patch 的任务，测试任务状态是否进入 context",
+      "session_id": "eval_session_009",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "帮我规划一次儿童天文科普观测活动。"},
+          {"role": "assistant", "content": "我们先明确目标、约束和下一步，再安排月球、木星和亮星。"}
+        ],
+        "tool_calls": [],
+        "task_state_patch": {
+          "current_goal": "设计儿童天文科普观测活动",
+          "active_constraints": ["参与者是儿童", "需要低风险", "总时长 90 分钟"],
+          "pending_steps": ["确认场地安全", "选择月球和木星", "准备备用室内讲解"],
+          "next_action": "输出活动流程"
+        }
+      },
+      "followup_query": "下一步我们要做什么？记得考虑孩子和安全。",
+      "expected_relevant_keywords": ["儿童", "低风险", "90 分钟", "next_action", "活动流程"],
+      "expected_tool_names": [],
+      "irrelevant_keywords": ["小行星", "曝光", "M31"],
+      "requires_tool_evidence": false
+    },
+    {
+      "scenario_id": "message_only_followup_010",
+      "description": "没有工具调用的普通多轮问答，测试 message hit",
+      "session_id": "eval_session_010",
+      "setup": {
+        "messages": [
+          {"role": "user", "content": "我住在杭州，手头只有 8x42 双筒镜。"},
+          {"role": "assistant", "content": "已知条件是杭州和 8x42 双筒镜，建议选择月球、昴星团或明亮行星。"},
+          {"role": "user", "content": "我更想找昴星团，最好不需要复杂星图。"},
+          {"role": "assistant", "content": "可以从金牛座方向找昴星团，8x42 双筒镜足够，先找一小团蓝白色亮星。"}
+        ],
+        "tool_calls": []
+      },
+      "followup_query": "刚才我说自己在哪里、用什么设备？目标又是什么？",
+      "expected_relevant_keywords": ["杭州", "8x42 双筒镜", "昴星团"],
+      "expected_tool_names": [],
+      "irrelevant_keywords": ["流星雨", "月面晨昏线", "近地小行星"],
+      "requires_tool_evidence": false
+    }
+  ]
+}

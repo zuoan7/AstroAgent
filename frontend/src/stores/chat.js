@@ -46,7 +46,14 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function hydrateMessages(items) {
-    messages.value = (items || []).map((message, index) => normalizeMessage(message, index))
+    if (!Array.isArray(items)) {
+      return
+    }
+    if (!items.length && messages.value.length) {
+      streamingAnswer.value = ''
+      return
+    }
+    messages.value = items.map((message, index) => normalizeMessage(message, index))
     streamingAnswer.value = ''
     finalAnswer.value = null
   }

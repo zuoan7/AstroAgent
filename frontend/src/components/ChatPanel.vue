@@ -30,17 +30,19 @@
         <p v-if="message.transcription" class="message-meta">语音转写：{{ message.transcription }}</p>
         <p v-if="message.status === 'uploading'" class="message-meta">图片上传中...</p>
         <p v-else-if="message.status === 'failed'" class="message-meta error-text">图片上传失败</p>
-        <p>{{ message.content }}</p>
+        <MarkdownContent :content="message.content" />
       </article>
       <article v-if="streamingAnswer" class="message-card" data-role="assistant">
         <strong>Streaming</strong>
-        <p>{{ streamingAnswer }}</p>
+        <MarkdownContent :content="streamingAnswer" />
       </article>
     </div>
   </section>
 </template>
 
 <script setup>
+import MarkdownContent from './MarkdownContent.vue'
+
 defineProps({
   messages: { type: Array, default: () => [] },
   streamingAnswer: { type: String, default: '' },

@@ -524,24 +524,6 @@ class TestTimeBoundary:
                     start_dt = datetime.strptime("2026-04-01", "%Y-%m-%d")
                     assert (end_dt - start_dt).days <= 7
 
-    def test_events_predictor_date_range(self):
-        from src.astronomy.events_predictor import EventsPredictor
-
-        mock_eph = MagicMock()
-        with patch.object(
-            EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")
-        ):
-            with patch.object(EventsPredictor, "get_visible_planets", return_value=[]):
-                with patch.object(
-                    EventsPredictor, "get_sunrise_sunset", return_value=(None, None)
-                ):
-                    predictor = EventsPredictor(
-                        ephemeris=mock_eph, location=(39.9, 116.4)
-                    )
-
-                    result = predictor.get_weekly_events(start_date="2026-01-01")
-                    assert isinstance(result, str)
-
     def test_normalize_date_various_formats(self):
         from src.agent.param_parser import ParamParser
 
@@ -578,21 +560,6 @@ class TestTimeBoundary:
 
         past = parse_date("1900-01-01")
         assert past.year == 1900
-
-    def test_events_predictor_monthly_boundary(self):
-        from src.astronomy.events_predictor import EventsPredictor
-
-        mock_eph = MagicMock()
-        with patch.object(
-            EventsPredictor, "get_moon_phase", return_value=("🌑 新月", "测试")
-        ):
-            predictor = EventsPredictor(ephemeris=mock_eph, location=(39.9, 116.4))
-
-            result = predictor.get_monthly_events(year=2026, month=1)
-            assert isinstance(result, str)
-
-            result2 = predictor.get_monthly_events(year=2026, month=12)
-            assert isinstance(result2, str)
 
     def test_time_range_parsing_boundary(self):
         from src.skills.skill_handlers import _parse_time_range

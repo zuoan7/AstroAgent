@@ -83,6 +83,10 @@
         <PlanPanel :steps="plan.steps" :overview="trace.overview" />
         <TracePanel
           :items="trace.items"
+          :events="trace.events"
+          :event-type-counts="trace.eventTypeCounts"
+          :errors="trace.errors"
+          :final-report="trace.finalReport"
           :reasoning-summary="trace.reasoningSummary"
           :overview="trace.overview"
           :latency-metrics="trace.latencyMetrics"
@@ -264,6 +268,7 @@ async function handleModelChange(value) {
 }
 
 function handleEvent(event) {
+  trace.recordEvent?.(event)
   switch (event.type) {
     case 'plan_update':
       plan.applyPlanUpdate(event.steps)
@@ -298,6 +303,12 @@ function handleEvent(event) {
       break
     case 'text':
       chat.appendText(event.content)
+      break
+    case 'thinking':
+      break
+    case 'warning':
+    case 'error':
+      session.setError(event.content || event.meta?.message || event.type)
       break
     case 'image':
       chat.attachImageToLatestUserMessage(resolveAssetUrl(event.url))

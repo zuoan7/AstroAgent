@@ -94,11 +94,11 @@
           <p v-if="message.transcription" class="message-meta">语音转写：{{ message.transcription }}</p>
           <p v-if="message.status === 'uploading'" class="message-meta">图片上传中...</p>
           <p v-else-if="message.status === 'failed'" class="message-meta error-text">图片上传失败</p>
-          <p>{{ message.content }}</p>
+          <MarkdownContent :content="message.content" />
         </article>
         <article v-if="streamingAnswer" class="message-card" data-role="assistant">
           <strong>AstroAgent</strong>
-          <p>{{ streamingAnswer }}</p>
+          <MarkdownContent :content="streamingAnswer" />
         </article>
         <article v-if="!messages.length && !streamingAnswer" class="message-card empty-state" data-role="assistant">
           <strong>AstroAgent</strong>
@@ -217,6 +217,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import MarkdownContent from './MarkdownContent.vue'
 
 const imageInputRef = ref(null)
 const audioInputRef = ref(null)
