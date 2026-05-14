@@ -1,6 +1,7 @@
 import re
 from typing import Any, Dict, Optional
 
+from src.core.logger import logger
 from src.memory.api.dto import (
     AppendMessageRequest,
     AppendToolCallRequest,
@@ -109,7 +110,10 @@ class MemoryService:
 
     def append_message(self, request: AppendMessageRequest) -> Message:
         self._remember_session(request.session_id, request.user_id)
-        return self.write_service.append_message(request)
+        message = self.write_service.append_message(request)
+        if request.role == "assistant":
+            self._maybe_auto_summary_snapshot(request.session_id, role=request.role)
+        return message
 
     def append_tool_call(self, request: AppendToolCallRequest) -> ToolCallRecord:
         self._remember_session(request.session_id, request.user_id)
@@ -233,6 +237,29 @@ class MemoryService:
         if self.session_id:
             return self.session_id
         raise ValueError("MemoryService requires a session_id for this operation")
+
+    def _maybe_auto_summary_snapshot(self, session_id: str, role: str = "assistant") -> None:
+        try:
+            decision = self.maintenance_service.should_create_summary_snapshot(
+                session_id=session_id,
+            )
+            if not decision.should_create:
+                return
+            if decision.mode == "create":
+                self.maintenance_service.create_summary_snapshot(
+                    session_id=session_id,
+                    created_by_model="auto-trigger",
+                )
+            elif decision.mode == "rebase":
+                self.maintenance_service.rebase_summary_snapshot(
+                    session_id=session_id,
+                )
+        except Exception:
+            logger.exception(
+                "auto summary snapshot failed for session %s (role=%s)",
+                session_id,
+                role,
+            )
 
     def _estimate_tokens(self, text: str) -> int:
         if not text:

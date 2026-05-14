@@ -367,7 +367,7 @@ class TestMemoryModuleIntegration:
 
         assert extracted["preferences"]["response_style"] == "详细"
         assert "避免使用专业术语" in extracted["constraints"]
-        assert "火星" in extracted["habits"]["frequent_topics"]
+        # Phase 1: frequent_topics no longer auto-generated from general astronomy keywords
 
     def test_long_term_memory_format_for_prompt(self, temp_db_path):
         from src.memory.long_term_memory import LongTermMemoryService as LongTermMemory

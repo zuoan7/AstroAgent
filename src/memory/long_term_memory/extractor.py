@@ -88,26 +88,107 @@ class MemoryExtractor:
         self._explicit_patterns = [re.compile(p) for p in EXPLICIT_PATTERNS]
 
     def should_attempt_extraction(self, user_message: str) -> bool:
+        """Only trigger extraction when the user expresses a clear profile signal.
+
+        Disqualifying patterns:
+        - Generic astronomy questions (what, when, how, can I, is it)
+        - Bare celestial body names (Mars, Jupiter, nebula, etc.)
+        - Observation/topic keywords without explicit preference framing
+        """
         if not user_message or len(user_message.strip()) < 2:
             return False
-        if any(keyword in user_message for keyword in EXTRACTION_KEYWORDS):
-            return True
-        celestial_pattern = (
-            r"(火星|木星|土星|金星|月球|太阳|黑洞|星系|星云|星团|流星|彗星|"
-            r"望远镜|赤道仪|拍摄|摄影|观测)"
-        )
-        if re.search(celestial_pattern, user_message):
-            return True
-        preference_indicators = [
-            r"我[喜欢需要希望想]",
-            r"[不要别]\S*",
-            r"给我",
-            r"能不能",
-            r"可以吗",
-            r"怎么[样看做]",
-            r"什么[时候地方]",
+
+        msg = user_message
+
+        # Explicit memory / long-term preference signals
+        memory_signals = [
+            r"记住",
+            r"请记住",
+            r"以后",
+            r"以后都",
+            r"以后默认",
+            r"下次",
+            r"下回",
+            r"永远",
+            r"永远不要",
+            r"一直",
+            r"总是",
+            r"每次都",
         ]
-        return any(re.search(pattern, user_message) for pattern in preference_indicators)
+        if any(re.search(pattern, msg) for pattern in memory_signals):
+            return True
+
+        # Explicit user profile: preference / habit / constraint
+        profile_signals = [
+            r"我[喜欢偏好习惯希望要求]",
+            r"我不[喜欢想希望要]",
+            r"我[更较]喜欢",
+            r"我不太",
+            r"不要",
+            r"别[说给提]",
+            r"避免",
+            r"禁止",
+            r"请(用|以|按|根据|按照)",
+            r"[专通简详]",
+        ]
+        if any(re.search(pattern, msg) for pattern in profile_signals):
+            # Check it's not a one-off request disguised as a preference
+            if not self.is_temporary_request(msg):
+                return True
+            # Even temporary requests with explicit memory signals qualify
+            if any(re.search(p, msg) for p in memory_signals):
+                return True
+
+        # Explicit equipment / device mention
+        equipment_signals = [
+            r"我有一[台个架]",
+            r"我的[观测天]?[设备望远镜相机赤道仪]",
+            r"我用的[是]",
+            r"我用.{1,6}(望远镜|相机|赤道仪|镜头|目镜|CCD|CMOS)",
+            r"我.{1,6}(望远镜|相机|赤道仪)",
+            r"我主要[拍观测看]",
+        ]
+        if any(re.search(pattern, msg) for pattern in equipment_signals):
+            return True
+
+        # Explicit location declaration
+        location_signals = [
+            r"我在.{1,10}(观测|看|拍照)",
+            r"我的观测地[点址]",
+            r"观测地[点址][是在]",
+        ]
+        if any(re.search(pattern, msg) for pattern in location_signals):
+            return True
+
+        # Skill level declaration
+        skill_signals = [
+            r"我是(初学|新手|入门|刚开|有经|进阶|高级|专家|资深)",
+            r"我.{1,4}(初学|新手|入门|刚开|有经|进阶|高级|专家|资深)",
+        ]
+        if any(re.search(pattern, msg) for pattern in skill_signals):
+            return True
+
+        # City name + explicit context (only when combined with profile/equipment signal)
+        city_with_context = re.search(
+            r"(北京|上海|广州|深圳|杭州|苏州|成都|南京|武汉)",
+            msg,
+        )
+        if city_with_context and any(
+            cue in msg
+            for cue in [
+                "观测",
+                "拍照",
+                "拍摄",
+                "望远镜",
+                "设备",
+                "经纬度",
+                "地点",
+                "光害",
+            ]
+        ):
+            return True
+
+        return False
 
     def is_explicit_expression(self, text: str) -> bool:
         return any(pattern.search(text) for pattern in self._explicit_patterns)
@@ -122,9 +203,10 @@ class MemoryExtractor:
             from langchain_core.messages import HumanMessage, SystemMessage
 
             llm = build_chat_model(
-                model=settings.MODEL_NAME,
+                model=settings.LTM_EXTRACT_MODEL_NAME or settings.SMALL_MODEL_NAME,
                 temperature=0.0,
-                request_timeout=15,
+                request_timeout=settings.LTM_EXTRACT_TIMEOUT_SECONDS,
+                max_retries=settings.LTM_EXTRACT_MAX_RETRIES,
             )
             response = llm.invoke(
                 [
@@ -239,59 +321,57 @@ class MemoryExtractor:
                 is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
             ))
 
-        if "夜里" in user_message or "晚上" in user_message:
+        # Device / equipment: only extract when explicitly declared with ownership framing
+        equipment_match = re.search(
+            r"我(有|用|的).{0,10}(望远镜|相机|赤道仪|镜头|目镜|CCD|CMOS)",
+            user_message,
+        )
+        if equipment_match:
             results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.HABIT,
-                category="preferred_time", key="preferred_time", value="夜晚",
+                should_extract=True, memory_type=MemoryType.BACKGROUND,
+                category="device_info", key="device_info", value=equipment_match.group(0).strip(),
                 confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
                 is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
             ))
 
-        if any(token in user_message for token in ["摄影", "拍摄", "相机", "赤道仪"]):
+        # Location: only extract when explicitly declared
+        location_match = re.search(
+            r"(北京|上海|广州|深圳|杭州|苏州|成都|南京|武汉)",
+            user_message,
+        )
+        if location_match and any(
+            (cue in user_message)
+            for cue in ["观测", "拍照", "拍摄", "地点", "经纬度", "我家在", "我在"]
+        ):
             results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.HABIT,
-                category="observation_type", key="observation_type", value="摄影",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
-        elif "深空" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.HABIT,
-                category="observation_type", key="observation_type", value="深空",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
-        elif "行星" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.HABIT,
-                category="observation_type", key="observation_type", value="行星",
+                should_extract=True, memory_type=MemoryType.FACT,
+                category="location_info", key="location_info",
+                value=location_match.group(1),
                 confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
                 is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
             ))
 
-        found_topics = [topic for topic in TOPIC_KEYWORDS if topic in user_message or topic in assistant_message]
-        if found_topics:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.HABIT,
-                category="frequent_topics", key="frequent_topics", value=found_topics,
-                confidence=base_confidence * 0.8, source_type=SourceType.AUTO,
-                is_explicit=False, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
-
+        # Only return results for explicit profile expressions; ignore general topics.
+        # Equipment / location results from the conservative rules above are valid.
+        if not results:
+            return []
         return results
 
     def extract_from_conversation(
         self, user_message: str, assistant_message: str, conversation_id: Optional[str] = None
     ) -> List[ExtractionResult]:
+        if not settings.LTM_EXTRACT_ENABLED:
+            return []
         if not self.should_attempt_extraction(user_message):
             return []
 
-        if settings.DASHSCOPE_API_KEY:
+        if settings.LTM_LLM_EXTRACT_ENABLED and settings.DASHSCOPE_API_KEY:
             try:
                 return self.extract_with_llm(user_message, assistant_message, conversation_id)
             except Exception as exc:
                 logger.warning(f"LLM记忆提取失败，回退规则提取: {exc}")
 
+        # Conservative fallback: only extract from explicit expressions
         return self._fallback_keyword_extraction(user_message, assistant_message)
 
     def extract_legacy_format(

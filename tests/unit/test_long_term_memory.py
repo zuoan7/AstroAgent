@@ -476,7 +476,8 @@ class TestExtractor:
     def test_should_attempt(self):
         ext = MemoryExtractor()
         assert ext.should_attempt_extraction("我喜欢简短回答")
-        assert ext.should_attempt_extraction("火星什么时候观测最好？")
+        # Phase 1: general astronomy questions no longer trigger extraction
+        assert not ext.should_attempt_extraction("火星什么时候观测最好？")
         assert not ext.should_attempt_extraction("")
         assert not ext.should_attempt_extraction("a")
 

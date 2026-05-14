@@ -262,6 +262,13 @@ class MemoryConfig(BaseSettings):
         ),
         description="触发摘要的 token 数阈值",
     )
+    MEMORY_AUTO_SUMMARY_ENABLED: bool = Field(
+        True, description="是否启用短期记忆 summary snapshot 自动触发"
+    )
+    MEMORY_SUMMARY_MIN_NEW_EVENTS: int = Field(
+        6,
+        description="已有 summary snapshot 后，至少新增多少可摘要事件才允许 rebase",
+    )
     MEMORY_PERSISTENCE_ENABLED: bool = Field(
         True,
         validation_alias=AliasChoices(
@@ -310,6 +317,20 @@ class MemoryConfig(BaseSettings):
     LTM_CONSTRAINT_EXPIRY_DAYS: int = Field(365, description="约束记忆过期天数")
     LTM_FACT_EXPIRY_DAYS: int = Field(730, description="事实记忆过期天数")
     LTM_ARCHIVE_AFTER_DAYS_UNUSED: int = Field(90, description="未使用记忆归档天数")
+
+    LTM_EXTRACT_ENABLED: bool = Field(True, description="是否启用长期记忆提取总开关")
+    LTM_LLM_EXTRACT_ENABLED: bool = Field(
+        True, description="是否启用 LLM 长期记忆提取，测试环境可设为 False"
+    )
+    LTM_EXTRACT_TIMEOUT_SECONDS: float = Field(
+        6.0, description="长期记忆 LLM 抽取超时时间"
+    )
+    LTM_EXTRACT_MAX_RETRIES: int = Field(
+        0, description="长期记忆 LLM 抽取最大重试次数"
+    )
+    LTM_EXTRACT_MODEL_NAME: str = Field(
+        "qwen-plus", description="长期记忆抽取使用的轻量模型名称"
+    )
 
     RAG_ENABLED: bool = Field(True, description="是否启用 RAG 检索")
     VECTOR_DB_PATH: str = Field("./vector_db", description="向量数据库存储路径")
@@ -361,6 +382,39 @@ class AgentGovernanceConfig(BaseSettings):
     AGENT_MAX_CONTEXT_CHARS: int = Field(
         6000, description="单请求注入到模型的最大上下文字符数"
     )
+
+    PROMPT_BUDGET_ENABLED: bool = Field(
+        True, description="是否启用统一 prompt 预算治理"
+    )
+    PROMPT_MAX_INPUT_CHARS: int = Field(
+        6000, description="单次 LLM 调用 prompt 输入最大字符数"
+    )
+    PROMPT_RESERVED_OUTPUT_CHARS: int = Field(
+        1200, description="为模型输出预留的字符预算"
+    )
+    PROMPT_SECTION_MIN_CHARS: int = Field(
+        120, description="可裁剪 section 的最小保留字符数"
+    )
+    PROMPT_BUDGET_LOG_TRIMMED: bool = Field(
+        True, description="是否记录被裁剪或丢弃的 section"
+    )
+
+    TOOL_EVIDENCE_BUDGET_ENABLED: bool = Field(
+        True, description="是否启用工具证据预算治理"
+    )
+    TOOL_EVIDENCE_MAX_SINGLE_CHARS: int = Field(
+        800, description="单个工具结果摘要最大字符数"
+    )
+    TOOL_EVIDENCE_MAX_TOTAL_CHARS: int = Field(
+        3000, description="一轮最终合成 prompt 中工具证据总字符预算"
+    )
+    TOOL_EVIDENCE_ERROR_MAX_CHARS: int = Field(
+        300, description="失败工具结果最大保留字符数"
+    )
+    TOOL_EVIDENCE_COMPACTED_MAX_CHARS: int = Field(
+        1800, description="compacted tool evidence 目标最大字符数"
+    )
+
     AGENT_AUDIT_ENABLED: bool = Field(True, description="是否开启请求审计日志")
     AGENT_AUDIT_LOG_PATH: str = Field(
         "logs/agent_audit/requests.jsonl",

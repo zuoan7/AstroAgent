@@ -1,0 +1,352 @@
+"""Phase 1 unit tests for long-term memory extraction stability.
+
+Covers: trigger narrowing, LLM disable switch, LLM config, fallback conformance.
+"""
+
+from unittest import mock
+
+import pytest
+
+from src.memory.long_term_memory.extractor import MemoryExtractor
+from src.memory.long_term_memory.models import ExtractionResult, MemoryType, SourceType
+
+
+@pytest.fixture
+def extractor():
+    return MemoryExtractor()
+
+
+# ---------------------------------------------------------------------------
+# 1. General astronomy questions should NOT trigger extraction
+# ---------------------------------------------------------------------------
+
+GENERAL_ASTRONOMY_QUESTIONS = [
+    "今晚适合观测什么？",
+    "M31 怎么看？",
+    "火星什么时候升起？",
+    "帮我推荐深空目标",
+    "什么是黑洞？",
+    "木星有多大？",
+    "最近有什么流星雨？",
+    "今晚的月亮好看吗",
+    "土星环是怎么形成的",
+    "银河系中心在哪",
+    "望远镜应该怎么选？",
+    "拍摄深空需要什么设备",  # general equipment question, not ownership
+    "今晚能看到哪些行星？",
+    "彗星什么时候来？",
+    "星云是怎么分类的",
+]
+
+
+@pytest.mark.parametrize("question", GENERAL_ASTRONOMY_QUESTIONS)
+def test_general_astronomy_does_not_trigger(extractor, question):
+    assert extractor.should_attempt_extraction(question) is False, (
+        f"普通天文问题不应触发抽取: {question}"
+    )
+
+
+@pytest.mark.parametrize("question", GENERAL_ASTRONOMY_QUESTIONS)
+def test_general_astronomy_returns_empty_list(extractor, monkeypatch, question):
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_LLM_EXTRACT_ENABLED", False
+    )
+    result = extractor.extract_from_conversation(question, "助手回复")
+    assert result == [], f"普通天文问题 extract_from_conversation 应返回 []: {question}"
+
+
+# ---------------------------------------------------------------------------
+# 2. Explicit preferences SHOULD trigger extraction
+# ---------------------------------------------------------------------------
+
+EXPLICIT_PREFERENCE_MESSAGES = [
+    "以后请用简短一点的方式回答我",
+    "我喜欢用表格看观测建议",
+    "我不想看太多专业术语",
+    "记住，我喜欢详细的解释",
+    "请记住，我不喜欢太长的回答",
+    "以后默认用中文回答我",
+    "我希望你每次都给我观测建议",
+    "我偏好用通俗的方式讲解",
+    "不要给我太多数学公式",
+    "别跟我说太专业的术语",
+    "下次请直接给结论",
+    "永远不要用英文回答",
+    "我习惯在晚上观测",
+    "请总是优先推荐行星观测",
+    "以后都按这个格式输出",
+]
+
+
+@pytest.mark.parametrize("question", EXPLICIT_PREFERENCE_MESSAGES)
+def test_explicit_preference_triggers_extraction(extractor, question):
+    assert extractor.should_attempt_extraction(question) is True, (
+        f"明确偏好表达应触发抽取: {question}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3. Explicit equipment / location SHOULD trigger extraction
+# ---------------------------------------------------------------------------
+
+EXPLICIT_EQUIPMENT_LOCATION_MESSAGES = [
+    "我在北京观测",
+    "我的观测地点是上海",
+    "我有一台 80EQ 望远镜",
+    "我用佳能相机拍深空",
+    "我的望远镜是星特朗8SE",
+    "我在广州拍照",
+    "我主要拍摄深空天体",
+    "我的观测地点在杭州",
+    "我用的是信达小黑",
+    "我的设备是索尼A7M3",
+    "我有一架8寸道布森",
+    "我是初学者",
+    "我是有经验的天文爱好者",
+    "我刚入门天文摄影",
+    "我主要观测行星",
+]
+
+
+@pytest.mark.parametrize("question", EXPLICIT_EQUIPMENT_LOCATION_MESSAGES)
+def test_explicit_equipment_location_triggers(extractor, question):
+    assert extractor.should_attempt_extraction(question) is True, (
+        f"明确设备/地点/技能表达应触发抽取: {question}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4. Disable total switch (LTM_EXTRACT_ENABLED = False)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "user_msg,assistant_msg",
+    [
+        ("我喜欢简短的回答", "好的，我会简短回答"),
+        ("我在北京观测", "北京今晚天气不错"),
+        ("我有一台望远镜", "望远镜可以帮助观测"),
+    ],
+)
+def test_ltm_extract_disabled_returns_empty(
+    extractor, monkeypatch, user_msg, assistant_msg
+):
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", False
+    )
+    result = extractor.extract_from_conversation(user_msg, assistant_msg)
+    assert result == [], (
+        f"LTM_EXTRACT_ENABLED=False 时应返回 []: {user_msg}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5. Disable LLM extraction (LTM_LLM_EXTRACT_ENABLED = False)
+# ---------------------------------------------------------------------------
+
+def test_llm_extract_disabled_does_not_call_llm(extractor, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_LLM_EXTRACT_ENABLED", False
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.DASHSCOPE_API_KEY", "fake-key"
+    )
+
+    with mock.patch.object(
+        extractor, "extract_with_llm", wraps=extractor.extract_with_llm
+    ) as spy:
+        result = extractor.extract_from_conversation(
+            "我喜欢简短的回答", "好的助手回复"
+        )
+        spy.assert_not_called()
+
+    # Fallback should return conservative results for explicit preference
+    assert any(
+        r.key == "response_style" and r.value == "简短" for r in result
+    ), "LLM 禁用时 fallback 应对明确偏好返回保守结果"
+
+
+def test_llm_disabled_general_astronomy_returns_empty(extractor, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_LLM_EXTRACT_ENABLED", False
+    )
+    result = extractor.extract_from_conversation("今晚适合观测什么？", "助手回复")
+    assert result == [], "LLM 禁用时普通天文问题 fallback 应返回 []"
+
+
+# ---------------------------------------------------------------------------
+# 6. LLM config: lightweight model, timeout, retries
+# ---------------------------------------------------------------------------
+
+def test_extract_with_llm_uses_ltm_config(extractor, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_MODEL_NAME",
+        "qwen-plus",
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_TIMEOUT_SECONDS",
+        6.0,
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_MAX_RETRIES", 0
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.DASHSCOPE_API_KEY", "test-key"
+    )
+
+    with mock.patch(
+        "src.memory.long_term_memory.extractor.build_chat_model"
+    ) as mock_build:
+        mock_llm = mock.MagicMock()
+        mock_response = mock.MagicMock()
+        mock_response.content = '{"extractions": []}'
+        mock_llm.invoke.return_value = mock_response
+        mock_build.return_value = mock_llm
+
+        extractor.extract_with_llm("测试消息", "助手回复")
+
+        call_kwargs = mock_build.call_args.kwargs
+        assert call_kwargs["model"] == "qwen-plus", (
+            f"应使用 LTM_EXTRACT_MODEL_NAME(qwen-plus)，实际: {call_kwargs['model']}"
+        )
+        assert call_kwargs["request_timeout"] == 6.0, (
+            f"应使用 LTM_EXTRACT_TIMEOUT_SECONDS(6.0)，实际: {call_kwargs['request_timeout']}"
+        )
+        assert call_kwargs["max_retries"] == 0, (
+            f"应使用 LTM_EXTRACT_MAX_RETRIES(0)，实际: {call_kwargs['max_retries']}"
+        )
+
+
+def test_extract_with_llm_falls_back_to_small_model(extractor, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_MODEL_NAME", ""
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.SMALL_MODEL_NAME", "qwen-plus"
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.DASHSCOPE_API_KEY", "test-key"
+    )
+
+    with mock.patch(
+        "src.memory.long_term_memory.extractor.build_chat_model"
+    ) as mock_build:
+        mock_llm = mock.MagicMock()
+        mock_response = mock.MagicMock()
+        mock_response.content = '{"extractions": []}'
+        mock_llm.invoke.return_value = mock_response
+        mock_build.return_value = mock_llm
+
+        extractor.extract_with_llm("测试消息", "助手回复")
+
+        call_kwargs = mock_build.call_args.kwargs
+        assert call_kwargs["model"] == "qwen-plus", (
+            f"LTM_EXTRACT_MODEL_NAME 为空时应 fallback 到 SMALL_MODEL_NAME"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 7. Fallback does NOT generate frequent_topics from general astronomy
+# ---------------------------------------------------------------------------
+
+def test_fallback_no_frequent_topics_from_astronomy(extractor):
+    """普通天文主题不应在 fallback 中生成 frequent_topics habit."""
+    result = extractor._fallback_keyword_extraction(
+        "我想看看火星和木星", "火星和木星是太阳系行星"
+    )
+    frequent_topic_results = [
+        r for r in result
+        if r.memory_type == MemoryType.HABIT and r.key == "frequent_topics"
+    ]
+    assert len(frequent_topic_results) == 0, (
+        "fallback 不应从普通天文主题生成 frequent_topics"
+    )
+
+
+def test_fallback_no_observation_type_from_keywords(extractor):
+    """深空/行星/摄影等词不应自动生成 observation_type habit."""
+    for msg in ["我想拍深空天体", "行星观测有什么技巧", "怎么拍摄星空"]:
+        result = extractor._fallback_keyword_extraction(msg, "助手回复")
+        obs_type_results = [
+            r for r in result
+            if r.memory_type == MemoryType.HABIT and r.key == "observation_type"
+        ]
+        assert len(obs_type_results) == 0, (
+            f"fallback 不应从 '{msg}' 自动生成 observation_type"
+        )
+
+
+def test_fallback_still_extracts_explicit_signals(extractor):
+    """Fallback 仍应提取明确表达的偏好/约束/技能."""
+    # Explicit response style preference
+    result = extractor._fallback_keyword_extraction("请以后简短回答", "")
+    assert any(r.key == "response_style" and r.value == "简短" for r in result)
+
+    # Explicit knowledge level
+    result = extractor._fallback_keyword_extraction("请用专业术语解释", "")
+    assert any(r.key == "knowledge_level" and r.value == "专业" for r in result)
+
+    # Explicit constraint
+    result = extractor._fallback_keyword_extraction("不要使用术语解释", "")
+    assert any(r.key == "no_jargon" for r in result)
+
+    # Explicit skill level
+    result = extractor._fallback_keyword_extraction("我是初学者", "")
+    assert any(r.key == "skill_level" and r.value == "入门" for r in result)
+
+
+def test_fallback_extracts_device_with_ownership(extractor):
+    """Fallback 应在用户明确声明拥有设备时提取."""
+    result = extractor._fallback_keyword_extraction("我用星特朗8SE望远镜", "")
+    assert any(r.key == "device_info" for r in result), (
+        "fallback 应提取明确声明的设备信息"
+    )
+
+
+def test_fallback_extracts_location_with_context(extractor):
+    """Fallback 应在用户声明观测地点时提取."""
+    result = extractor._fallback_keyword_extraction("我在北京观测", "")
+    assert any(r.key == "location_info" for r in result), (
+        "fallback 应提取明确声明的观测位置"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 8. Edge cases
+# ---------------------------------------------------------------------------
+
+def test_empty_message_does_not_trigger(extractor):
+    assert extractor.should_attempt_extraction("") is False
+    assert extractor.should_attempt_extraction("  ") is False
+    assert extractor.should_attempt_extraction("a") is False
+
+
+def test_temporary_request_without_memory_signal(extractor):
+    """本轮临时要求（如'这次简短回答'）不应触发长期记忆抽取."""
+    assert extractor.should_attempt_extraction("这次简短回答一下") is False
+    assert extractor.should_attempt_extraction("本次请详细解释") is False
+
+
+def test_temporary_with_memory_signal_triggers(extractor):
+    """即使本轮临时要求，如包含'以后'等记忆信号仍应触发."""
+    assert extractor.should_attempt_extraction("以后都简短回答，这次也不例外") is True
+    assert extractor.should_attempt_extraction("这次也请记住，我喜欢表格") is True
+
+
+def test_city_without_context_does_not_trigger(extractor):
+    """仅提及城市名但不涉及观测/设备上下文不应触发."""
+    assert extractor.should_attempt_extraction("北京今天天气怎么样") is False
+
+
+def test_short_message_with_keyword_triggers(extractor):
+    """短消息但包含明确偏好的应触发."""
+    assert extractor.should_attempt_extraction("记住，我喜欢简短") is True
+    assert extractor.should_attempt_extraction("以后都要详细") is True

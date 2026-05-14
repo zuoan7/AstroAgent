@@ -78,10 +78,23 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 
 ### 4. 记忆系统
 
-- 短期记忆：由 `src/memory/short_term_memory/` 管理最近消息、工具调用摘要、上下文预算与持久化
-- 长期记忆：由 `src/memory/long_term_memory/` 管理用户偏好、事实、约束、事件与画像合并
+- 短期记忆：由 `src/memory/api/`、`src/memory/application/`、`src/memory/retrieval/`、`src/memory/infrastructure/`、`src/memory/domain/` 等分层模块管理，入口为 `MemoryService`
+- 长期记忆：由 `src/memory/long_term_memory/` 管理用户偏好、事实、约束、事件与画像合并，入口为 `LongTermMemoryService`
 - `src/memory/memory.py`：提供对旧调用方兼容的门面导出
 - 用户画像提取：优先通过 LLM 结构化抽取，失败时降级为关键词提取
+
+#### 记忆系统概览
+
+AstroAgent 的记忆系统采用**事件化短期记忆 + 长期用户画像**分层设计，不是简单的最近 N 轮对话缓存：
+
+- **短期记忆（事件溯源）**：消息和工具调用以 append-only 事件写入 EventStore（SQLite），工具结果原文落盘到 ArtifactStore，prompt 侧仅使用 output_digest 摘要。
+- **上下文构建（检索式组装）**：`build_context` 由 `RetrievalPlanner` 按 token budget 从 task state、summary snapshot、messages、salient facts、tool calls 中检索和排序，组装成结构化上下文文本。
+- **摘要快照自动触发**：assistant 消息写入后自动检查是否满足阈值，自动执行 create/rebase summary snapshot，长历史自动压缩为摘要，`build_context` 自动读取最新 snapshot。
+- **长期记忆精细化提取**：用户偏好、习惯、约束、背景、事实等由 `LongTermMemoryService` 管理。提取触发条件已收敛为仅针对明确用户画像表达（偏好/设备/地点/技能），普通天文问题不再触发抽取。支持 LLM 提取和规则 fallback 双路径。
+- **PromptBudgetManager 全局预算治理**：对 `DirectExecutor._run_simple_qa()` 和 `ResponseSynthesizer.synthesize()` 的关键 LLM 调用做统一的 prompt section 级预算裁剪。高优先级 section（query、instruction）优先保留，低优先级 section（chat_history、user_profile）超预算时被裁剪或丢弃。
+- **ToolEvidenceCompactor 工具结果预算**：多工具调用场景下，工具结果摘要先在 `ResponseSynthesizer` 中经过 `ToolEvidenceCompactor` 做预算压缩（单工具 cap、总预算 cap、成功工具优先、失败工具缩简），再进入 PromptBudgetManager，避免工具输出撑爆 prompt。
+
+详见 [Memory Current Design](docs/memory_current_design.md)、[Production Readiness](docs/production_readiness.md) 和 [Test Report](docs/test_report.md)。
 
 ### 5. 多模态交互
 
@@ -190,8 +203,8 @@ AstroAgent/
 | `src/api/main.py` | FastAPI 服务入口，暴露问答与记忆管理接口 |
 | `src/rag/online_retriever.py` | 三级混合检索主流程 |
 | `src/memory/memory.py` | 记忆兼容门面，复用新的短期/长期记忆实现 |
-| `src/memory/short_term_memory/manager.py` | 短期记忆主管理器，负责消息、工具记录、摘要与上下文预算 |
-| `src/memory/long_term_memory/manager.py` | 长期记忆主管理器，负责画像抽取、融合、查询与持久化 |
+| `src/memory/api/memory_service.py` | 短期记忆 facade，聚合 write/read/maintenance/retrieval/deletion |
+| `src/memory/long_term_memory/service.py` | 长期记忆主服务，负责画像抽取、融合、查询与持久化 |
 
 ## 核心实现逻辑
 
@@ -641,6 +654,53 @@ make check
 ```bash
 pytest tests/ -v
 ```
+
+## 生产化改进阶段
+
+本项目在完成核心功能开发后，经历了五个阶段的**生产稳定性收敛**：
+
+| 阶段 | 主题 | 关键产出 |
+| --- | --- | --- |
+| Phase 0 | 架构冻结与边界确认 | `docs/memory_current_design.md`，`docs/memory_refactor_boundary.md`，明确 12 个核心模块不可推倒重写 |
+| Phase 1 | 长期记忆提取收敛 | 重写 `should_attempt_extraction`，普通天文问题不再触发抽取；新增 LTM 抽取配置开关、轻量模型、短 timeout、0 retry |
+| Phase 2 | PromptBudgetManager 全局预算 | 新增 `PromptBudgetManager` 统一 prompt section 级预算治理，接入 `DirectExecutor._run_simple_qa()` 和 `ResponseSynthesizer.synthesize()` |
+| Phase 3 | Summary Snapshot 自动触发 | `MemoryService.append_message` 在 assistant 消息后自动检查阈值并 create/rebase summary snapshot |
+| Phase 4 | 工具结果预算治理 | 新增 `ToolEvidenceCompactor`，多工具结果先 compact 再进入 PromptBudgetManager，单工具 cap、总预算 cap、成功工具优先 |
+
+## 测试结果
+
+当前完整测试套件运行结果（`pytest -q`）：
+
+```
+752 passed, 1 skipped, 2 warnings
+```
+
+- **单元测试 (604)**：覆盖 PromptBudgetManager、ToolEvidenceCompactor、SummaryAutoTrigger、长期记忆提取器、MemoryService、DirectExecutor、ResponseSynthesizer 等
+- **集成测试 (148)**：覆盖 API 端点、MCP 服务、天文计算、记忆模块集成
+- **skipped (1)**：已知的 V1 评估套件，需外部 API key
+- **warnings (2)**：FastAPI `on_event` 弃用提示，已知，不影响功能
+
+详见 [Test Report](docs/test_report.md)。
+
+## 未来路线图
+
+### P1 — 核心稳定性
+
+- **ReAct scratchpad 压缩**：ReAct AgentExecutor 内部 scratchpad 无界增长，需要在 AgentExecutor 层面改造
+- **Token-level prompt budget**：当前为字符级预算，未来可升级为 tokenizer-based 精确预算
+- **线上可观测性与 tracing**：补充 token 使用监控、记忆命中率统计、LLM 调用耗时分布
+
+### P2 — 降级与细节完善
+
+- **Compact 失败丢弃旧 API round 重试**：多轮 ReAct 场景下系统性降级策略
+- **DirectExecutor 单工具摘要裁剪**：`_run_tool_task()` → `synthesize_direct()` 路径的轻量裁剪
+- **工具结果写入阶段 compacted evidence event**：在 MemoryWriteService 层做更早期的压缩
+
+### P3 — 体验与多租户
+
+- **记忆可视化管理界面**：前端支持查看/编辑/删除用户画像记忆
+- **多用户/多租户治理增强**：用户间记忆隔离、跨会话记忆继承
+- **更细粒度的记忆冲突解决**：长期记忆更新时的冲突检测与合并策略
 
 ## 贡献规范
 

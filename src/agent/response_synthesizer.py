@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 from src.agent.models.skill_result import SkillResult
 from src.agent.models.final_response import FinalResponse
 from src.agent.policies.budget_policy import RequestBudgetTracker
+from src.agent.policies.prompt_budget import PromptBudgetManager, PromptSection
+from src.agent.policies.tool_evidence_budget import ToolEvidenceCompactor
 from src.core.logger import logger
 from src.core.config import settings
 
@@ -61,21 +63,86 @@ class ResponseSynthesizer:
             if sr.success and sr.data:
                 structured_payload[sr.skill_name] = sr.data
 
-        prompt = (
-            "你是天文助手。请基于已经执行完成的计划步骤，为用户输出最终答案。\n"
-            "要求：\n"
-            "1. 先直接回答，再给出关键建议。\n"
-            "2. 明确说明哪些建议来自天气、天象、目标观测或摄影参数。\n"
-            "3. 不要虚构未提供的数据。\n\n"
-            f"任务类型：{task_type}\n"
-            f"输出Schema：{output_schema}\n"
-            f"用户画像：\n{user_profile[:400]}\n\n"
-            f"最近对话：\n{chat_history[:600]}\n\n"
-            f"用户问题：{query}\n\n"
-            "已完成步骤结果：\n"
-            f"{chr(10).join(collected_outputs)[:5000]}\n\n"
-            "请给出整合后的中文回答："
-        )
+        # Build compacted tool evidence for prompt injection
+        tool_outputs_text = chr(10).join(collected_outputs)
+        if settings.TOOL_EVIDENCE_BUDGET_ENABLED and skill_results:
+            try:
+                compactor = ToolEvidenceCompactor()
+                compact_result = compactor.compact_skill_results(skill_results)
+                tool_outputs_text = compact_result.text
+            except Exception:
+                logger.warning(
+                    "tool evidence compaction failed, falling back to raw collected_outputs"
+                )
+
+        if settings.PROMPT_BUDGET_ENABLED:
+            mgr = PromptBudgetManager()
+            sections = [
+                PromptSection(
+                    "instruction",
+                    "你是天文助手。请基于已经执行完成的计划步骤，为用户输出最终答案。\n"
+                    "要求：\n"
+                    "1. 先直接回答，再给出关键建议。\n"
+                    "2. 明确说明哪些建议来自天气、天象、目标观测或摄影参数。\n"
+                    "3. 不要虚构未提供的数据。",
+                    priority=100,
+                    required=True,
+                ),
+                PromptSection(
+                    "task_type",
+                    f"任务类型：{task_type}\n输出Schema：{output_schema}",
+                    priority=90,
+                    required=True,
+                ),
+                PromptSection(
+                    "user_profile",
+                    user_profile,
+                    priority=70,
+                    max_chars=800,
+                ),
+                PromptSection(
+                    "chat_history",
+                    chat_history,
+                    priority=60,
+                    max_chars=1000,
+                ),
+                PromptSection(
+                    "query",
+                    f"用户问题：{query}",
+                    priority=100,
+                    required=True,
+                ),
+                PromptSection(
+                    "tool_outputs",
+                    "已完成步骤结果：\n" + tool_outputs_text,
+                    priority=80,
+                    max_chars=4000,
+                ),
+                PromptSection(
+                    "closing",
+                    "请给出整合后的中文回答：",
+                    priority=100,
+                    required=True,
+                ),
+            ]
+            result = mgr.fit_sections(sections)
+            prompt = result.text
+        else:
+            prompt = (
+                "你是天文助手。请基于已经执行完成的计划步骤，为用户输出最终答案。\n"
+                "要求：\n"
+                "1. 先直接回答，再给出关键建议。\n"
+                "2. 明确说明哪些建议来自天气、天象、目标观测或摄影参数。\n"
+                "3. 不要虚构未提供的数据。\n\n"
+                f"任务类型：{task_type}\n"
+                f"输出Schema：{output_schema}\n"
+                f"用户画像：\n{user_profile[:400]}\n\n"
+                f"最近对话：\n{chat_history[:600]}\n\n"
+                f"用户问题：{query}\n\n"
+                "已完成步骤结果：\n"
+                f"{tool_outputs_text}\n\n"
+                "请给出整合后的中文回答："
+            )
 
         answer = self._invoke_llm(prompt)
         confidence = self._compute_confidence(skill_results)

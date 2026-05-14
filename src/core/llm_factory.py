@@ -14,6 +14,7 @@ def build_chat_model(
     temperature: float = 0.1,
     request_timeout: float | None = None,
     streaming: bool = False,
+    max_retries: int = 2,
 ):
     from langchain_openai import ChatOpenAI
 
@@ -26,5 +27,5 @@ def build_chat_model(
         temperature=temperature,
         timeout=request_timeout,
         streaming=streaming,
-        max_retries=2,
+        max_retries=max_retries,
     )
