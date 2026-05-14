@@ -31,28 +31,6 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 - [Streaming Event Bus](docs/streaming-event-bus.md)：流式输出统一事件总线、适配器接口、插件机制与兼容性说明
 - [Agent Compatibility Matrix](docs/agent_compatibility_matrix.md)：DAG Agent 重构后各兼容层、deprecated 接口、feature flags 与删除条件清单
 
-## 近期变更
-
-### 2026-04-15
-
-- 完成长短期记忆重构：记忆能力从单体 `src/memory/memory.py` 拆分为 `core / infrastructure / short_term_memory / long_term_memory` 分层结构，同时保留兼容门面。
-- 新增长期记忆管理链路：支持事件记录、候选筛选、质量控制、画像合并、Prompt 注入与备份相关模块。
-- 新增短期记忆上下文构建、摘要、持久化仓储等模块，统一短期记忆预算与上下文组织。
-- MCP 协议统一为 JSON envelope，技能注册与路由层同步重构，减少上层对底层返回形态的猜测。
-
-### 2026-04-16
-
-- 流式输出重构为统一内部事件总线：新增标准 `StreamEvent`、文本/JSON/SSE 适配器以及可插拔事件处理器。
-- FastAPI 的 `/query`、`/query_with_image`、`/query_with_audio` 现在通过统一 SSE 适配层输出，避免 API 层重复拼装流式事件。
-- 短期记忆中的工具结果摘要增加显式摘要/截断标记，避免上游把压缩内容误当完整原文。
-
-### 2026-04-17
-
-- 前端改为双版面：新增客户界面与调试工作台切换，客户界面支持账号选择、会话切换、新建会话、删除会话与清空当前会话。
-- 后端会话模型补全 `user_id + session_id` 语义，长期记忆按账号聚合，短期记忆按会话隔离，相关接口同步支持 `session_id`。
-- 前端可观测性增强：工作台支持展示总耗时、工具调用统计、证据数量、记忆命中与执行时间线。
-- 多模态交互补齐：前端已接入图片问答与语音问答接口，支持图片上传、本地图片预览、上传状态展示、音频文件上传与浏览器内录音。
-- 输入区交互优化：附件上传入口收敛为回形针菜单，录音入口改为麦克风图标按钮。
 
 ## 核心功能
 
@@ -555,49 +533,6 @@ data: {"type":"text","content":"今晚上海可以观测到木星..."}
 - 纯文本流、JSON 事件流和 SSE 流已收敛到同一底层事件序列，减少不同输出路径之间的逻辑漂移。
 - `final_answer` 事件当前会额外携带 `total_duration_sec`、`tool_count`、`tool_success_count`、`tool_error_count`、`evidence_count`、`memory_hit_count` 等前端可观测字段。
 
-### DAG Agent 主路径与兼容层
-
-当前 DAG Agent 主路径已经收口为：
-
-- `query -> TaskProfile`
-- `TaskProfile + ExecutionContext -> ExecutionDecision`
-- `ExecutionDecision -> ExecutionEngine.run(direct|planned|react)`
-- `Planner.plan_graph() -> WorkflowGraph`
-- `ExecutionEvent -> FrontendExecutionEventAdapter -> 旧前端 stream event`
-
-仍保留但已降级的兼容接口：
-
-- `RequestRouter.route(query)`：兼容输出 `RouteDecision`
-- `RouteDecision`：旧路由结果对象，仍供旧执行入口、旧事件透传和测试基线使用
-- `AgentExecutionPolicy.choose_path(route)`：兼容输出 `direct/planned/react` 字符串
-- `TaskOrchestrator.run()`：当 `ExecutionEngine` 未注入或显式关闭统一引擎时的回退门面
-- `TaskOrchestrator.build_execution_plan()`：legacy planned 展示/执行 helper
-- `Planner.plan()`：兼容输出 `ExecutionPlan`
-- `ExecutionPlan` / `StepExecutor`：旧 planned 表达与线性执行兼容层
-
-现存兼容层说明：
-
-- 旧接口兼容层：
-  - `RequestRouter.route()`、`RouteDecision`
-  - `AgentExecutionPolicy.choose_path()`
-  - `TaskOrchestrator.run()`、`TaskOrchestrator.build_execution_plan()`
-  - `Planner.plan()`
-- 旧 planned 表达兼容层：
-  - `ExecutionPlan`
-  - `StepExecutor`
-- 配置兼容层：
-  - `ENABLE_UNIFIED_EXECUTION_ENGINE`
-  - `ENABLE_WORKFLOW_GRAPH`
-  - `ENABLE_TASK_PROFILE`
-  - `ENABLE_EXECUTION_CONTEXT`
-  - `ENABLE_EXECUTION_DECISION`
-  - `ENABLE_UNIFIED_EXECUTION_TRACE`
-  - `ENABLE_UNIFIED_EXECUTION_EVENTS`
-- 前端协议兼容层：
-  - 旧事件名仍保持不变：`route_decision`、`plan_update`、`step_start`、`step_end`、`tool_start`、`tool_end`、`final_answer`
-  - 这些事件由 `FrontendExecutionEventAdapter` 从内部 `ExecutionEvent` / `ExecutionTraceEntry` 适配输出
-
-详细状态、测试覆盖与删除条件见 [Agent Compatibility Matrix](docs/agent_compatibility_matrix.md)。
 
 ### 3. 知识库接口
 
@@ -629,58 +564,7 @@ FastAPI 已内置 OpenAPI 文档：
 - Swagger UI: `http://localhost:8002/docs`
 - ReDoc: `http://localhost:8002/redoc`
 
-## 测试与质量保障
 
-### 测试目录
-
-- `tests/unit/`：单元测试
-- `tests/integration/`：集成测试
-- `tests/boundary/`：边界测试
-- `tests/performance/`：性能测试
-
-### 常用命令
-
-```bash
-make test
-make test-cov
-make lint
-make format
-make type-check
-make check
-```
-
-或直接使用 `pytest`：
-
-```bash
-pytest tests/ -v
-```
-
-## 生产化改进阶段
-
-本项目在完成核心功能开发后，经历了五个阶段的**生产稳定性收敛**：
-
-| 阶段 | 主题 | 关键产出 |
-| --- | --- | --- |
-| Phase 0 | 架构冻结与边界确认 | `docs/memory_current_design.md`，`docs/memory_refactor_boundary.md`，明确 12 个核心模块不可推倒重写 |
-| Phase 1 | 长期记忆提取收敛 | 重写 `should_attempt_extraction`，普通天文问题不再触发抽取；新增 LTM 抽取配置开关、轻量模型、短 timeout、0 retry |
-| Phase 2 | PromptBudgetManager 全局预算 | 新增 `PromptBudgetManager` 统一 prompt section 级预算治理，接入 `DirectExecutor._run_simple_qa()` 和 `ResponseSynthesizer.synthesize()` |
-| Phase 3 | Summary Snapshot 自动触发 | `MemoryService.append_message` 在 assistant 消息后自动检查阈值并 create/rebase summary snapshot |
-| Phase 4 | 工具结果预算治理 | 新增 `ToolEvidenceCompactor`，多工具结果先 compact 再进入 PromptBudgetManager，单工具 cap、总预算 cap、成功工具优先 |
-
-## 测试结果
-
-当前完整测试套件运行结果（`pytest -q`）：
-
-```
-752 passed, 1 skipped, 2 warnings
-```
-
-- **单元测试 (604)**：覆盖 PromptBudgetManager、ToolEvidenceCompactor、SummaryAutoTrigger、长期记忆提取器、MemoryService、DirectExecutor、ResponseSynthesizer 等
-- **集成测试 (148)**：覆盖 API 端点、MCP 服务、天文计算、记忆模块集成
-- **skipped (1)**：已知的 V1 评估套件，需外部 API key
-- **warnings (2)**：FastAPI `on_event` 弃用提示，已知，不影响功能
-
-详见 [Test Report](docs/test_report.md)。
 
 ## 未来路线图
 
@@ -702,34 +586,6 @@ pytest tests/ -v
 - **多用户/多租户治理增强**：用户间记忆隔离、跨会话记忆继承
 - **更细粒度的记忆冲突解决**：长期记忆更新时的冲突检测与合并策略
 
-## 贡献规范
-
-欢迎提交 Issue 和 Pull Request。建议遵循以下约定：
-
-1. 从主分支创建功能分支或修复分支
-2. 修改前先确认 README、配置和实现保持一致
-3. 新增能力时同步补充测试
-4. 如新增技能，需要同步更新：
-   - 新增 simple skill：`src/skills/registry.py`、`src/services/mcp_server.py`（如缺底层 MCP 工具）以及相关测试
-   - 新增 handler skill：`src/skills/registry.py`、`src/skills/skill_handlers.py`（或对应 handler 文件）、必要的 MCP 工具与相关测试
-   - `src/agent/skill_manager.py` 与 `src/skills/router.py` 默认会自动读取 registry，通常不需要手改
-5. 提交前运行至少一轮相关测试与格式化检查
-
-推荐本地开发流程：
-
-```bash
-pip install -e ".[dev]"
-pre-commit install
-make check
-```
-
-## 已知事项
-
-- README 以当前代码实现为准，修正了旧文档中的编码损坏问题
-- `.env.template` 的注释与实际加载路径存在差异，运行时请优先使用项目根目录 `.env`
-- `Makefile` 中的 `clean` 目标使用了 Unix 命令，在 Windows 原生环境可能不可直接执行
-- `start.sh` 明确面向 Unix-like 服务器/开发环境
-- 项目元数据中的仓库地址和维护者邮箱仍为占位信息，正式开源前建议替换为真实信息
 
 ## 许可证
 
