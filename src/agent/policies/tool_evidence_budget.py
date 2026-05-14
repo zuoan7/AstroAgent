@@ -53,6 +53,7 @@ class ToolEvidenceBudgetResult:
     text: str = ""
     total_chars_before: int = 0
     total_chars_after: int = 0
+    raw_total_chars_before: int = 0
     trimmed_tools: List[str] = field(default_factory=list)
     dropped_tools: List[str] = field(default_factory=list)
     tool_char_counts: Dict[str, int] = field(default_factory=dict)
@@ -130,7 +131,10 @@ class ToolEvidenceCompactor:
         )
         budget = max(budget, 1)
 
-        total_before = sum(item.raw_size_chars for item in items)
+        raw_total_before = sum(
+            (len(item.summary or "") + len(item.error_message or ""))
+            for item in items
+        )
         trimmed: List[str] = []
         dropped: List[str] = []
         counts: Dict[str, int] = {}
@@ -209,22 +213,25 @@ class ToolEvidenceCompactor:
                 if counts.get(item.tool_name, 0) > 0 and item.tool_name not in trimmed:
                     trimmed.append(item.tool_name)
 
-        if trimmed or dropped:
+        trimmed_dedup = list(dict.fromkeys(trimmed))
+        dropped_dedup = list(dict.fromkeys(dropped))
+        if trimmed_dedup or dropped_dedup:
             logger.debug(
                 "tool_evidence_compactor: trimmed=%s dropped=%s before=%d after=%d budget=%d",
-                trimmed,
-                dropped,
-                total_before,
+                trimmed_dedup,
+                dropped_dedup,
+                raw_total_before,
                 len(text),
                 budget,
             )
 
         return ToolEvidenceBudgetResult(
             text=text,
-            total_chars_before=total_before,
+            total_chars_before=raw_total_before,
             total_chars_after=len(text),
-            trimmed_tools=trimmed,
-            dropped_tools=dropped,
+            raw_total_chars_before=raw_total_before,
+            trimmed_tools=trimmed_dedup,
+            dropped_tools=dropped_dedup,
             tool_char_counts=counts,
         )
 

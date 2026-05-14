@@ -57,6 +57,7 @@ class PromptBudgetResult:
     text: str = ""
     total_chars_before: int = 0
     total_chars_after: int = 0
+    raw_total_chars_before: int = 0
     trimmed_sections: List[str] = field(default_factory=list)
     dropped_sections: List[str] = field(default_factory=list)
     section_char_counts: Dict[str, int] = field(default_factory=dict)
@@ -117,6 +118,7 @@ class PromptBudgetManager:
         budget = max(budget, 1)
 
         # --- step 1: per-section cap ---
+        raw_total_before = sum(len(sec.content or "") for sec in sections)
         capped: List[PromptSection] = []
         for sec in sections:
             content = sec.content or ""
@@ -248,8 +250,9 @@ class PromptBudgetManager:
             text=prompt_text,
             total_chars_before=total_before,
             total_chars_after=len(prompt_text),
-            trimmed_sections=trimmed,
-            dropped_sections=dropped,
+            raw_total_chars_before=raw_total_before,
+            trimmed_sections=list(dict.fromkeys(trimmed)),
+            dropped_sections=list(dict.fromkeys(dropped)),
             section_char_counts=final_sizes,
         )
 

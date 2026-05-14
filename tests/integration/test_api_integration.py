@@ -352,11 +352,12 @@ class TestStreamingServiceIntegration:
                 user_id="test_user",
             )
 
+            # Phase 1/5.1: use explicit preference message that triggers extraction
             service._extract_and_update_long_term_memory(
-                "请详细介绍一下火星", "火星是太阳系第四颗行星..."
+                "我喜欢详细的解释，记住以后要详细", "好的，我会详细解释火星..."
             )
             service._extract_and_update_long_term_memory(
-                "请详细介绍一下火星", "火星是太阳系第四颗行星..."
+                "我喜欢详细的解释，记住以后要详细", "好的，我会详细解释火星..."
             )
             if hasattr(ltm, "_extract_executor"):
                 ltm._extract_executor.shutdown(wait=True)

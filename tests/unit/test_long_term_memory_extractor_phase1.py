@@ -46,6 +46,43 @@ def test_general_astronomy_does_not_trigger(extractor, question):
     )
 
 
+ONE_OFF_STYLE_REQUESTS = [
+    "简单介绍一下黑洞",
+    "详细解释月食原理",
+    "通俗讲讲光污染",
+    "专业分析一下木星观测",
+    "请用表格说明今晚观测目标",
+    "别跟我说太专业的术语",
+    "简短讲一下今晚适合看什么",
+]
+
+
+@pytest.mark.parametrize("question", ONE_OFF_STYLE_REQUESTS)
+def test_one_off_style_request_does_not_trigger(extractor, question):
+    assert extractor.should_attempt_extraction(question) is False, (
+        f"无长期信号的本轮风格请求不应触发抽取: {question}"
+    )
+
+
+LONG_TERM_STYLE_REQUESTS = [
+    "以后请简短回答",
+    "我喜欢通俗解释",
+    "我偏好详细步骤",
+    "请记住我不喜欢太专业",
+    "下次默认用表格说明",
+    "以后详细一点",
+    "我希望你以后不要太专业",
+    "请记住我喜欢简洁回答",
+]
+
+
+@pytest.mark.parametrize("question", LONG_TERM_STYLE_REQUESTS)
+def test_long_term_style_request_does_trigger(extractor, question):
+    assert extractor.should_attempt_extraction(question) is True, (
+        f"长期风格偏好应触发抽取: {question}"
+    )
+
+
 @pytest.mark.parametrize("question", GENERAL_ASTRONOMY_QUESTIONS)
 def test_general_astronomy_returns_empty_list(extractor, monkeypatch, question):
     monkeypatch.setattr(
@@ -72,13 +109,17 @@ EXPLICIT_PREFERENCE_MESSAGES = [
     "我希望你每次都给我观测建议",
     "我偏好用通俗的方式讲解",
     "不要给我太多数学公式",
-    "别跟我说太专业的术语",
     "下次请直接给结论",
     "永远不要用英文回答",
     "我习惯在晚上观测",
     "请总是优先推荐行星观测",
     "以后都按这个格式输出",
+    "以后请简短回答",
+    "我偏好详细步骤",
+    "请记住我不喜欢太专业",
+    "我希望你以后通俗一点",
 ]
+
 
 
 @pytest.mark.parametrize("question", EXPLICIT_PREFERENCE_MESSAGES)

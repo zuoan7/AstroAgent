@@ -128,8 +128,6 @@ class MemoryExtractor:
             r"别[说给提]",
             r"避免",
             r"禁止",
-            r"请(用|以|按|根据|按照)",
-            r"[专通简详]",
         ]
         if any(re.search(pattern, msg) for pattern in profile_signals):
             # Check it's not a one-off request disguised as a preference
@@ -138,6 +136,11 @@ class MemoryExtractor:
             # Even temporary requests with explicit memory signals qualify
             if any(re.search(p, msg) for p in memory_signals):
                 return True
+
+        # Formatting-style signals (请用/请以/请按) only count with memory signal
+        formatting_signal = re.search(r"请(用|以|按|根据|按照)", msg)
+        if formatting_signal and any(re.search(p, msg) for p in memory_signals):
+            return True
 
         # Explicit equipment / device mention
         equipment_signals = [

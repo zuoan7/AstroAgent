@@ -1,5 +1,6 @@
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+from threading import Lock
+from typing import Any, Dict, List, Optional, Set
 
 from src.core.logger import logger
 from src.memory.config import get_long_term_memory_config
@@ -77,6 +78,9 @@ class LongTermMemoryService:
             max_workers=max(1, int(self.config["async_extract_workers"])),
             thread_name_prefix="ltm-extract",
         )
+        self._pending_extract_futures: Set[Future] = set()
+        self._futures_lock = Lock()
+        self._shutdown = False
 
     def add_memory(
         self,
@@ -209,6 +213,8 @@ class LongTermMemoryService:
         # in a background worker and failures are logged without affecting replies.
         if not self.extractor.should_attempt_extraction(user_message):
             return None
+        if self._shutdown:
+            return None
 
         def _run() -> List[MemoryItem]:
             try:
@@ -221,8 +227,14 @@ class LongTermMemoryService:
             except Exception:
                 logger.exception("长期记忆异步抽取失败: user_id=%s", user_id)
                 return []
+            finally:
+                with self._futures_lock:
+                    self._pending_extract_futures.discard(fut)
 
-        return self._extract_executor.submit(_run)
+        fut = self._extract_executor.submit(_run)
+        with self._futures_lock:
+            self._pending_extract_futures.add(fut)
+        return fut
 
     def store_extractions(
         self,
@@ -601,6 +613,50 @@ class LongTermMemoryService:
         if any(result.values()):
             logger.info("长期记忆维护完成 (user_id: %s): %s", user_id, result)
         return result
+
+    def shutdown(self, wait: bool = False, cancel_futures: bool = True) -> None:
+        """Shut down the background extraction executor.
+
+        Args:
+            wait: If True, wait for running futures to finish.
+            cancel_futures: If True, cancel pending futures.
+        """
+        if self._shutdown:
+            return
+        self._shutdown = True
+        try:
+            self._extract_executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+        except TypeError:
+            # Python < 3.9 does not support cancel_futures
+            self._extract_executor.shutdown(wait=wait)
+        with self._futures_lock:
+            self._pending_extract_futures.clear()
+
+    def flush_extractions(self, timeout: float = 5.0) -> None:
+        """Wait for all pending async extraction futures to complete.
+
+        Args:
+            timeout: Maximum total wait time in seconds.
+        """
+        import time
+        deadline = time.monotonic() + timeout
+        with self._futures_lock:
+            pending = list(self._pending_extract_futures)
+        for fut in pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                logger.warning("flush_extractions timeout: %d futures still pending",
+                               len([f for f in pending if not f.done()]))
+                break
+            try:
+                fut.result(timeout=max(0.1, remaining))
+            except Exception:
+                pass
+        # Clean up completed futures
+        with self._futures_lock:
+            self._pending_extract_futures = {
+                f for f in self._pending_extract_futures if not f.done()
+            }
 
     def get_stats(self, user_id: str) -> Dict[str, Any]:
         return self.repository.get_memory_stats(user_id)
