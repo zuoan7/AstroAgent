@@ -12,6 +12,11 @@ class PlanStep:
     description: str = ""
     skill: Optional[str] = None
     params: Dict[str, Any] = field(default_factory=dict)
+    purpose: str = ""
+    success_criteria: str = ""
+    fallback_strategy: str = ""
+    evidence_key: str = ""
+    planner_source: str = ""
     required: bool = True
     parallel_group: Optional[str] = None
     retry_policy: int = 0
@@ -26,6 +31,11 @@ class PlanStep:
             description=str(data.get("description", "")),
             skill=data.get("skill"),
             params=dict(data.get("params", {}) or {}),
+            purpose=str(data.get("purpose", "")),
+            success_criteria=str(data.get("success_criteria", "")),
+            fallback_strategy=str(data.get("fallback_strategy", "")),
+            evidence_key=str(data.get("evidence_key", "")),
+            planner_source=str(data.get("planner_source", "")),
             required=bool(data.get("required", True)),
             parallel_group=data.get("parallel_group"),
             retry_policy=int(data.get("retry_policy", 0) or 0),
@@ -40,6 +50,11 @@ class PlanStep:
             "description": self.description,
             "skill": self.skill,
             "params": dict(self.params),
+            "purpose": self.purpose,
+            "success_criteria": self.success_criteria,
+            "fallback_strategy": self.fallback_strategy,
+            "evidence_key": self.evidence_key,
+            "planner_source": self.planner_source,
             "required": self.required,
             "parallel_group": self.parallel_group,
             "retry_policy": self.retry_policy,
@@ -147,6 +162,7 @@ class ExecutionPlan:
                     title=node.title,
                     skill=node.skill,
                     params=dict(node.inputs or {}),
+                    planner_source=str(metadata.get("planner_type", "graph_native")),
                     required=not node.optional,
                     timeout_ms=node.timeout_ms,
                 )

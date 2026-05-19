@@ -12,6 +12,26 @@ from typing import Any, Dict, List, Optional
 from src.skills import registry
 
 
+DEFAULT_OBSERVER_CITY = "北京"
+
+KNOWN_CITIES = (
+    "北京",
+    "上海",
+    "广州",
+    "深圳",
+    "苏州",
+    "杭州",
+    "成都",
+    "南京",
+    "武汉",
+    "西安",
+    "重庆",
+    "天津",
+    "青岛",
+    "厦门",
+)
+
+
 class SkillParamBuilder:
     """根据 skill_name 和自然语言 query 构建调用参数。"""
 
@@ -26,12 +46,18 @@ class SkillParamBuilder:
             return self._finalize(skill_name, parsed)
 
         if skill_name == "weather-lookup":
-            return self._finalize(skill_name, {"city": query.strip()})
+            return self._finalize(
+                skill_name,
+                {
+                    "city": self._extract_location(query) or DEFAULT_OBSERVER_CITY,
+                    "extensions": "all",
+                },
+            )
         if skill_name == "observation-planner":
             return self._finalize(
                 skill_name,
                 {
-                    "location": self._extract_location(query) or query.strip(),
+                    "location": self._extract_location(query) or DEFAULT_OBSERVER_CITY,
                     "date": self._extract_date(query),
                 },
             )
@@ -59,10 +85,16 @@ class SkillParamBuilder:
             return self._finalize(
                 skill_name,
                 {
-                    "target": self._extract_target(query) or query.strip(),
+                    "target": self._extract_photo_target(query)
+                    or self._extract_target(query)
+                    or query.strip(),
                     "camera": self._extract_camera(query) or "未指定相机",
+                    "telescope": self._extract_telescope(query),
+                    "mount": self._extract_mount(query),
                     "location": self._extract_location(query),
                     "date": self._extract_date(query),
+                    "iso": self._extract_iso(query),
+                    "aperture": self._extract_aperture(query),
                 },
             )
         if skill_name == "celestial-position-calculator":
@@ -70,8 +102,9 @@ class SkillParamBuilder:
                 skill_name,
                 {
                     "target": self._extract_target(query) or query.strip(),
-                    "location": self._extract_location(query),
+                    "location": self._extract_location(query) or DEFAULT_OBSERVER_CITY,
                     "datetime": self._extract_datetime(query),
+                    "output_format": self._extract_output_format(query),
                 },
             )
 
@@ -103,23 +136,70 @@ class SkillParamBuilder:
         return normalized
 
     def _extract_location(self, query: str) -> Optional[str]:
-        for city in ("北京", "上海", "广州", "深圳", "苏州", "杭州", "成都", "南京", "武汉"):
+        for city in KNOWN_CITIES:
             if city in query:
                 return city
         return None
 
     def _extract_target(self, query: str) -> Optional[str]:
-        catalog_match = re.search(r"\b(M\d{1,3}|NGC\s?\d{1,4})\b", query, re.IGNORECASE)
+        catalog_match = re.search(
+            r"(?<![A-Za-z0-9])(M\s?\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})(?![A-Za-z0-9])",
+            query,
+            re.IGNORECASE,
+        )
         if catalog_match:
             return catalog_match.group(1).upper().replace(" ", "")
-        for target in ("木星", "土星", "火星", "金星", "月球", "太阳", "M31", "M42", "猎户座大星云"):
+        for target in (
+            "仙女座星系",
+            "猎户座大星云",
+            "北美洲星云",
+            "昴星团",
+            "银河",
+            "星野",
+            "星轨",
+            "木星",
+            "土星",
+            "火星",
+            "金星",
+            "水星",
+            "天王星",
+            "海王星",
+            "月球",
+            "月亮",
+            "太阳",
+        ):
             if target in query:
+                if target == "月亮":
+                    return "月球"
                 return target
         return None
 
+    def _extract_photo_target(self, query: str) -> Optional[str]:
+        for target in (
+            "银河",
+            "星野",
+            "星轨",
+            "星空",
+            "M31",
+            "M42",
+            "猎户座大星云",
+            "仙女座星系",
+            "月球",
+            "月亮",
+            "太阳",
+            "木星",
+            "土星",
+            "火星",
+        ):
+            if target in query:
+                return "月球" if target == "月亮" else target
+        return None
+
     def _extract_date(self, query: str) -> Optional[str]:
-        for token in ("今天", "明天", "今晚", "明晚", "本周末", "下周一"):
+        for token in ("今晚", "明晚", "今天", "明天", "本周末", "这个周末", "周末", "下周一"):
             if token in query:
+                if token in {"这个周末", "周末"}:
+                    return "本周末"
                 return token
         return None
 
@@ -159,7 +239,7 @@ class SkillParamBuilder:
         return self._extract_date(query)
 
     def _extract_equipment(self, query: str) -> Optional[str]:
-        for equipment in ("双筒", "双筒望远镜", "小折射镜", "8寸望远镜", "赤道仪", "三脚架"):
+        for equipment in ("双筒望远镜", "双筒", "小折射镜", "8寸望远镜", "赤道仪", "固定三脚架", "三脚架"):
             if equipment in query:
                 return equipment
         return None
@@ -168,6 +248,89 @@ class SkillParamBuilder:
         for camera in ("Sony", "Canon", "Nikon", "ZWO", "QHY", "相机"):
             if camera in query:
                 return camera
+        return None
+
+    def _extract_telescope(self, query: str) -> Optional[str]:
+        focal_match = re.search(
+            r"(\d{1,4})\s*(?:mm|毫米)\s*(?:镜头|焦距)?",
+            query,
+            re.IGNORECASE,
+        )
+        if focal_match:
+            return f"{focal_match.group(1)}mm 镜头"
+
+        lens_match = re.search(
+            r"(?:焦距|镜头)\s*(\d{1,4})\s*(?:mm|毫米)",
+            query,
+            re.IGNORECASE,
+        )
+        if lens_match:
+            return f"{lens_match.group(1)}mm 镜头"
+
+        for equipment in ("小折射镜", "8寸望远镜", "双筒望远镜", "双筒"):
+            if equipment in query:
+                return equipment
+        return None
+
+    def _extract_mount(self, query: str) -> Optional[str]:
+        if "固定三脚架" in query:
+            return "固定三脚架"
+        if "三脚架" in query:
+            return "三脚架"
+        if "赤道仪" in query:
+            return "赤道仪"
+        if any(token in query for token in ("跟踪", "导星")):
+            return "赤道仪/跟踪支架"
+        return None
+
+    def _extract_iso(self, query: str) -> Optional[str]:
+        match = re.search(r"\bISO\s*([0-9]{2,6})\b", query, re.IGNORECASE)
+        if match:
+            return f"ISO {match.group(1)}"
+        return None
+
+    def _extract_aperture(self, query: str) -> Optional[str]:
+        match = re.search(r"\bF/?\s*(\d+(?:\.\d+)?)\b", query, re.IGNORECASE)
+        if match:
+            return f"f/{match.group(1)}"
+        match = re.search(r"光圈\s*(\d+(?:\.\d+)?)", query)
+        if match:
+            return f"f/{match.group(1)}"
+        return None
+
+    def _extract_output_format(self, query: str) -> Optional[str]:
+        rise_set_terms = (
+            "升起",
+            "落下",
+            "升落",
+            "几点升",
+            "几点落",
+            "什么时候升",
+            "什么时候落",
+        )
+        if any(term in query for term in rise_set_terms):
+            return "rise_set"
+
+        altaz_terms = (
+            "方向",
+            "方位",
+            "方位角",
+            "高度角",
+            "地平高度",
+            "地平坐标",
+            "可见",
+            "能看到",
+            "能看见",
+            "在哪",
+            "哪里",
+            "altaz",
+        )
+        if any(term in query for term in altaz_terms):
+            return "altaz"
+
+        radec_terms = ("赤经", "赤纬", "RA", "Dec", "radec", "坐标")
+        if any(term in query for term in radec_terms):
+            return "radec"
         return None
 
     def _extract_event_type(self, query: str) -> Optional[str]:

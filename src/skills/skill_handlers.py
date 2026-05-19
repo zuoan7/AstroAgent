@@ -128,16 +128,60 @@ def _is_date_like(text: str) -> bool:
     t = text.strip()
     if not t:
         return False
-    if t in ("今天", "明天", "今日", "次日", "today", "tomorrow"):
+    if t in (
+        "今天",
+        "明天",
+        "今晚",
+        "明晚",
+        "本周末",
+        "这个周末",
+        "周末",
+        "今日",
+        "次日",
+        "today",
+        "tomorrow",
+    ):
         return True
     if re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", t):
         return True
     return False
 
 
+CITY_COORDS: Dict[str, tuple[float, float]] = {
+    "北京": (39.9, 116.4),
+    "上海": (31.23, 121.47),
+    "广州": (23.13, 113.26),
+    "深圳": (22.54, 114.06),
+    "苏州": (31.3, 120.58),
+    "杭州": (30.27, 120.16),
+    "成都": (30.57, 104.07),
+    "南京": (32.06, 118.79),
+    "武汉": (30.59, 114.3),
+    "西安": (34.34, 108.94),
+    "重庆": (29.56, 106.55),
+    "天津": (39.12, 117.2),
+    "青岛": (36.07, 120.38),
+    "厦门": (24.48, 118.09),
+}
+
+
+PLANET_NAME_ALIASES: Dict[str, str] = {
+    "水星": "mercury",
+    "金星": "venus",
+    "火星": "mars",
+    "木星": "jupiter",
+    "土星": "saturn",
+    "天王星": "uranus",
+    "海王星": "neptune",
+}
+
+
 def _parse_location(location: str) -> tuple[Optional[float], Optional[float]]:
     if not location:
         return None, None
+    text = str(location).strip()
+    if text in CITY_COORDS:
+        return CITY_COORDS[text]
     text = location.replace("，", ",")
     parts = [p.strip() for p in text.split(",") if p.strip()]
     if len(parts) != 2:
@@ -188,6 +232,8 @@ class ObservationPlannerHandler:
             if not _is_date_like(text):
                 location = text
                 date = None
+        if not location:
+            location = "北京"
 
         obs_date = ParamParser.parse_date(date)
 
@@ -445,7 +491,7 @@ class DeepSkyObservingGuideHandler:
                 "_key": "obj_info",
             },
         ]
-        if any(x in target.lower() for x in ["galaxy", "星系", "m31", "m33"]):
+        if self._is_galaxy_target(target):
             parallel_calls.append({
                 "tool_name": "get_galaxy_data",
                 "kwargs": {"galaxy_name": target},
@@ -516,6 +562,23 @@ class DeepSkyObservingGuideHandler:
             sources=sources,
             latency_ms=round(elapsed_ms, 2),
         )
+
+    def _is_galaxy_target(self, target: str) -> bool:
+        normalized = (target or "").strip().lower().replace(" ", "")
+        if "galaxy" in normalized or "星系" in normalized:
+            return True
+        return normalized in {
+            "m31",
+            "m33",
+            "m51",
+            "m81",
+            "m82",
+            "m87",
+            "m101",
+            "m104",
+            "ngc224",
+            "ngc598",
+        }
 
 
 class NeoTrackerHandler:
@@ -691,6 +754,8 @@ class AstrophotographyCalculatorHandler:
         mount: Optional[str] = None,
         location: Optional[str] = None,
         date: Optional[str] = None,
+        iso: Optional[str] = None,
+        aperture: Optional[str] = None,
     ) -> SkillResult:
         started = time.perf_counter()
         obs_date = ParamParser.parse_date(date) if date else datetime.now()
@@ -707,6 +772,10 @@ class AstrophotographyCalculatorHandler:
             lines.append(f"🗜 赤道仪/支架：{mount}")
         if location:
             lines.append(f"📍 拍摄地点：{location}")
+        if aperture:
+            lines.append(f"🔆 光圈：{aperture}")
+        if iso:
+            lines.append(f"🎚 ISO：{iso}")
 
         lines.append("\n一、曝光时间估算（星点不拖尾的经验值）")
         lines.append(
@@ -742,6 +811,8 @@ class AstrophotographyCalculatorHandler:
                 "mount": mount,
                 "location": location,
                 "obs_date": obs_date.strftime("%Y-%m-%d"),
+                "iso": iso,
+                "aperture": aperture,
             },
             summary="\n".join(lines),
             sources=[],
@@ -769,6 +840,8 @@ class CelestialPositionCalculatorHandler:
 
         import datetime as dt_mod
         obs_time = ParamParser.parse_date(datetime) if datetime else dt_mod.datetime.now()
+        fmt = (output_format or "radec").lower()
+        mcp_target = PLANET_NAME_ALIASES.get(target, target).lower()
 
         if location:
             lat, lon = _parse_location(location)
@@ -778,25 +851,40 @@ class CelestialPositionCalculatorHandler:
         if lat is None or lon is None:
             lat, lon = 39.9, 116.4
 
-        result_raw = mcp.call_tool(
-            "get_planet_position",
-            planet_name=target,
-            observation_time=obs_time.isoformat(),
-            latitude=lat,
-            longitude=lon,
-        )
+        if fmt in {"rise_set", "rise-set", "riseset"}:
+            tool_name = "get_rise_set_times"
+            result_raw = mcp.call_tool(
+                tool_name,
+                body_name=mcp_target,
+                date=obs_time.strftime("%Y-%m-%d"),
+                latitude=lat,
+                longitude=lon,
+            )
+        else:
+            tool_name = "get_altaz" if fmt == "altaz" else "get_planet_position"
+            result_raw = mcp.call_tool(
+                tool_name,
+                planet_name=mcp_target,
+                observation_time=obs_time.isoformat(),
+                latitude=lat,
+                longitude=lon,
+            )
         position_data, body = _extract_tool_payload_and_text(result_raw)
-        sources = [_tool_source_entry("get_planet_position", result_raw, snippet_text=body)]
+        sources = [_tool_source_entry(tool_name, result_raw, snippet_text=body)]
 
         body = ParamParser.shorten_text(body, 600)
-        fmt = (output_format or "radec").lower()
-
+        if fmt in {"rise_set", "rise-set", "riseset"}:
+            coordinate_label = "升起/落下时间"
+        elif fmt == "altaz":
+            coordinate_label = "地平坐标（高度角/方位角）"
+        else:
+            coordinate_label = "赤道坐标"
         header = (
             f"🪐 天体位置计算\n"
             f"- 目标：{target}\n"
             f"- 时间：{obs_time.isoformat()}\n"
             f"- 观测点：纬度 {lat}，经度 {lon}\n"
-            f"- 输出坐标系偏好：{fmt}（当前实现以赤道坐标为主，若需 altaz 请在最终回答中由 LLM 补充说明）\n"
+            f"- 输出坐标系：{coordinate_label}\n"
         )
         summary = header + "\n原始计算结果（来自底层工具）：\n" + body
 

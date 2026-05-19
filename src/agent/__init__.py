@@ -5,6 +5,7 @@ from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 
 from src.agent.fallback_service import FallbackService
+from src.agent.execution.engine import ExecutionEngine
 from src.agent.executor import StepExecutor
 from src.agent.governance import (
     AgentExecutionPolicy,
@@ -242,6 +243,8 @@ class AstroAgent:
         response_synthesizer = ResponseSynthesizer(llm=synth_llm)
         planner = Planner(llm=planner_llm)
         executor = StepExecutor(skill_manager=self.skill_manager)
+        fallback_policy = FallbackPolicy()
+        agent_executor_factory = lambda: self._get_or_create_agent_executor(llm=main_llm)
         task_orchestrator = TaskOrchestrator(
             skill_manager=self.skill_manager,
             rag_retriever=self.rag,
@@ -249,7 +252,16 @@ class AstroAgent:
             response_synthesizer=response_synthesizer,
             planner=planner,
             executor=executor,
-            fallback_policy=FallbackPolicy(),
+            fallback_policy=fallback_policy,
+        )
+        execution_engine = ExecutionEngine(
+            skill_manager=self.skill_manager,
+            rag_retriever=self.rag,
+            llm=main_llm,
+            synthesizer=response_synthesizer,
+            planner=planner,
+            fallback_policy=fallback_policy,
+            agent_executor_factory=agent_executor_factory,
         )
         streaming_service = StreamingService(
             agent_executor=None,
@@ -264,11 +276,13 @@ class AstroAgent:
             execution_policy=self.execution_policy,
             governance_metrics=self.governance_metrics,
             audit_logger=self.audit_logger,
-            agent_executor_factory=lambda: self._get_or_create_agent_executor(llm=main_llm),
+            agent_executor_factory=agent_executor_factory,
+            execution_engine=execution_engine,
         )
         return {
             "llm": main_llm,
             "task_orchestrator": task_orchestrator,
+            "execution_engine": execution_engine,
             "streaming_service": streaming_service,
             "agent_executor": None,
             **selection,

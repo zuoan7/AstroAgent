@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, Optional
 
+from src.agent.executor import _extract_mcp_tools_from_sources
 from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.final_response import FinalResponse
 from src.agent.policies.prompt_budget import PromptBudgetManager, PromptSection
@@ -44,6 +45,7 @@ class DirectExecutor:
             response = self._synthesizer.synthesize_smalltalk(
                 self._smalltalk_reply(query)
             )
+            self._attach_response_metadata(response, decision=decision)
             self._attach_execution_events(response)
             return response
 
@@ -54,6 +56,7 @@ class DirectExecutor:
             response = await self._run_simple_qa(
                 query, chat_history=chat_history, user_profile=user_profile
             )
+            self._attach_response_metadata(response, decision=decision)
             self._attach_execution_events(response)
             return response
 
@@ -76,6 +79,12 @@ class DirectExecutor:
             task_type=decision.task_type,
             skill_results=[result],
         )
+        self._attach_response_metadata(
+            response,
+            decision=decision,
+            param_builder_source="fallback_builder",
+            handler_mcp_tools_used=_extract_mcp_tools_from_sources(result.sources),
+        )
         self._attach_execution_events(
             response,
             tool_name=skill_name,
@@ -84,6 +93,29 @@ class DirectExecutor:
             tool_status="success" if result.success else "error",
         )
         return response
+
+    def _attach_response_metadata(
+        self,
+        response: FinalResponse,
+        *,
+        decision: RouteDecision,
+        param_builder_source: str = "",
+        handler_mcp_tools_used: Optional[list[str]] = None,
+    ) -> None:
+        route_meta = decision.to_meta()
+        response.route = decision.route
+        response.task_type = decision.task_type
+        response.route_decision = route_meta
+        response.audit_metadata = {
+            "router_source": route_meta.get("router_source"),
+            "rule_confidence": route_meta.get("rule_confidence"),
+            "llm_confidence": route_meta.get("llm_confidence"),
+            "planner_source": "",
+            "plan_steps_with_params": [],
+            "param_builder_source": param_builder_source,
+            "param_builder_sources": [param_builder_source] if param_builder_source else [],
+            "handler_mcp_tools_used": list(handler_mcp_tools_used or []),
+        }
 
     async def _run_simple_qa(
         self,

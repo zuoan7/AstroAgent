@@ -1629,6 +1629,11 @@ class BaseStreamingGenerator:
                     )
                 ):
                     yield processed
+            audit_metadata = (
+                final_resp_obj.audit_metadata
+                if final_resp_obj and final_resp_obj.audit_metadata
+                else {}
+            )
             async for processed in emit(
                 next_event(
                     "step_start",
@@ -1661,6 +1666,20 @@ class BaseStreamingGenerator:
                         ),
                         "route_decision": (
                             final_resp_obj.route_decision if final_resp_obj else None
+                        ),
+                        "audit_metadata": audit_metadata,
+                        "router_source": audit_metadata.get("router_source"),
+                        "rule_confidence": audit_metadata.get("rule_confidence"),
+                        "llm_confidence": audit_metadata.get("llm_confidence"),
+                        "planner_source": audit_metadata.get("planner_source"),
+                        "plan_steps_with_params": audit_metadata.get(
+                            "plan_steps_with_params", []
+                        ),
+                        "param_builder_source": audit_metadata.get(
+                            "param_builder_source"
+                        ),
+                        "handler_mcp_tools_used": audit_metadata.get(
+                            "handler_mcp_tools_used", []
                         ),
                         "budget_usage": (
                             final_resp_obj.budget_usage if final_resp_obj else None

@@ -15,6 +15,7 @@ from src.agent.request_router import RouteDecision
 from src.agent.models.skill_result import SkillResult
 from src.agent.models.final_response import FinalResponse
 from src.agent.response_synthesizer import ResponseSynthesizer
+from src.agent.skill_param_builder import SkillParamBuilder
 from src.core.config import settings
 from src.skills import registry
 
@@ -53,6 +54,7 @@ class TaskOrchestrator:
         self._planner = planner or Planner(llm=llm)
         self._executor = executor or StepExecutor(skill_manager=skill_manager)
         self._fallback_policy = fallback_policy or FallbackPolicy()
+        self._param_builder = SkillParamBuilder(skill_manager)
 
     async def run(
         self,
@@ -261,67 +263,7 @@ class TaskOrchestrator:
         return "你好，我可以帮你查询天象、观测条件、天体位置和天文知识。"
 
     def _build_skill_params(self, skill_name: str, query: str) -> Dict[str, Any]:
-        parsed = ParamParser.parse(query)
-        if self._is_structured_skill_payload(parsed, query):
-            return self._finalize_skill_params(skill_name, parsed)
-
-        if skill_name == "weather-lookup":
-            return self._finalize_skill_params(skill_name, {"city": query.strip()})
-        if skill_name == "observation-planner":
-            return self._finalize_skill_params(
-                skill_name,
-                {
-                    "location": self._extract_location(query) or query.strip(),
-                    "date": self._extract_date(query),
-                },
-            )
-        if skill_name == "deep-sky-observing-guide":
-            return self._finalize_skill_params(
-                skill_name,
-                {
-                    "target": self._extract_target(query) or query.strip(),
-                    "observer_location": self._extract_location(query),
-                    "date": self._extract_date(query),
-                    "equipment": self._extract_equipment(query),
-                },
-            )
-        if skill_name == "celestial-events-forecast":
-            start_date, end_date = self._extract_event_range(query)
-            return self._finalize_skill_params(
-                skill_name,
-                {
-                    "event_type": self._extract_event_type(query),
-                    "start_date": start_date,
-                    "end_date": end_date,
-                },
-            )
-        if skill_name == "astrophotography-calculator":
-            return self._finalize_skill_params(
-                skill_name,
-                {
-                    "target": self._extract_target(query) or query.strip(),
-                    "camera": self._extract_camera(query) or "未指定相机",
-                    "location": self._extract_location(query),
-                    "date": self._extract_date(query),
-                },
-            )
-        if skill_name == "celestial-position-calculator":
-            return self._finalize_skill_params(
-                skill_name,
-                {
-                    "target": self._extract_target(query) or query.strip(),
-                    "location": self._extract_location(query),
-                    "datetime": self._extract_datetime(query),
-                },
-            )
-
-        spec = registry.get_skill_spec(skill_name)
-        fallback = (
-            {spec.param_names[0]: query.strip()}
-            if len(spec.param_names) == 1
-            else {}
-        )
-        return self._finalize_skill_params(skill_name, fallback)
+        return self._param_builder.build(skill_name, query)
 
     def _is_structured_skill_payload(
         self,

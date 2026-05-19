@@ -116,10 +116,21 @@ _ASTRONOMY_SKILL_SPECS: tuple[SkillSpec, ...] = (
             "telescope（望远镜型号或焦距，可选），"
             "mount（赤道仪型号，可选），"
             "location（拍摄地点，可选），"
-            "date（拍摄日期，可选）。"
+            "date（拍摄日期，可选），"
+            "iso（感光度，可选），"
+            "aperture（光圈，可选）。"
         ),
         route_type="handler",
-        param_names=["target", "camera", "telescope", "mount", "location", "date"],
+        param_names=[
+            "target",
+            "camera",
+            "telescope",
+            "mount",
+            "location",
+            "date",
+            "iso",
+            "aperture",
+        ],
     ),
     SkillSpec(
         skill_name="celestial-position-calculator",
@@ -130,7 +141,7 @@ _ASTRONOMY_SKILL_SPECS: tuple[SkillSpec, ...] = (
             "参数：target（目标名称，如'mars''jupiter'等，必填），"
             "datetime（观测时间，建议YYYY-MM-DD HH:MM 格式，可选，默认当前时间），"
             "location（观测地点，经纬度'纬度,经度'形式，可选），"
-            "output_format（输出坐标格式，如'altaz''radec'，可选）。"
+            "output_format（输出格式，如'altaz''radec''rise_set'，可选）。"
         ),
         route_type="handler",
         param_names=["target", "datetime", "location", "output_format"],

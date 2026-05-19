@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -327,6 +328,33 @@ class TestFromExecutionPlan:
         assert node.optional is True
         assert node.output_key == "weather_context"
 
+    def test_plan_step_extended_fields_roundtrip(self):
+        original = ExecutionPlan(
+            task_type="observation_recommendation",
+            output_schema="observation_answer_v1",
+            steps=[
+                PlanStep(
+                    id="observation_plan",
+                    kind="tool",
+                    skill="observation-planner",
+                    params={"location": "北京", "date": "今晚"},
+                    purpose="生成观测计划",
+                    success_criteria="返回目标和时段建议",
+                    fallback_strategy="fallback_builder",
+                    evidence_key="observation_plan",
+                    planner_source="template",
+                )
+            ],
+        )
+
+        restored = ExecutionPlan.from_dict(original.to_dict())
+        assert restored.to_dict() == original.to_dict()
+
+        graph_restored = ExecutionPlan.from_workflow_graph(
+            WorkflowGraph.from_execution_plan(original)
+        )
+        assert graph_restored.to_dict() == original.to_dict()
+
 
 class TestPlannerGraphPlanning:
     def test_plan_graph_returns_valid_workflow_graph(self):
@@ -344,6 +372,8 @@ class TestPlannerGraphPlanning:
         assert graph.metadata.get("task_type") == "observation_recommendation"
         assert graph.node("weather_context") is not None
         assert graph.node("observation_plan") is not None
+        assert graph.node("observation_plan").inputs["location"] == "北京"
+        assert graph.node("observation_plan").inputs["date"] == "今晚"
 
     def test_plan_is_compat_wrapper_over_plan_graph(self, monkeypatch):
         planner = Planner()
@@ -392,6 +422,8 @@ class TestPlannerGraphPlanning:
         )
 
         assert [step.skill for step in plan.steps] == ["astrophotography-calculator"]
+        assert plan.steps[0].params["target"] == "银河"
+        assert plan.steps[0].params["telescope"] == "24mm 镜头"
 
     @pytest.mark.parametrize(
         "query",
@@ -474,6 +506,48 @@ class TestPlannerGraphPlanning:
         )
 
         assert plan.steps == []
+
+    def test_llm_planner_fallback_sanitizes_step_params(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.agent.planner.settings.ENABLE_LLM_PLANNER_FALLBACK",
+            True,
+            raising=False,
+        )
+        planner = Planner(
+            llm=_PlannerLLMStub(
+                json.dumps(
+                    {
+                        "steps": [
+                            {
+                                "skill": "weather-lookup",
+                                "required": True,
+                                "reason": "查云量",
+                                "params": {
+                                    "city": "北京",
+                                    "extensions": "all",
+                                    "made_up": "drop",
+                                },
+                            }
+                        ],
+                        "rationale": "params allowlist",
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        )
+
+        plan = planner.plan(
+            query="帮我做一个复杂云量判断",
+            route_decision=_route_decision(
+                task_type="unknown_complex_task",
+                matched_skills=[],
+                output_schema="generic_answer_v1",
+            ),
+        )
+
+        assert plan.planner_type == "llm_fallback"
+        assert plan.steps[0].params == {"city": "北京", "extensions": "all"}
+        assert plan.steps[0].planner_source == "llm_fallback"
 
     def test_execution_plan_from_workflow_graph_keeps_compatibility(self):
         planner = Planner()

@@ -14,6 +14,17 @@ EventCallback = Callable[[str, Dict[str, Any]], Awaitable[None] | None]
 ParamBuilder = Callable[[str, str], Dict[str, Any]]
 
 
+def _extract_mcp_tools_from_sources(sources: List[Dict[str, Any]]) -> List[str]:
+    tools: List[str] = []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        tool_name = source.get("tool")
+        if isinstance(tool_name, str) and tool_name.startswith("get_") and tool_name not in tools:
+            tools.append(tool_name)
+    return tools
+
+
 @dataclass
 class StepExecutionResult:
     step_id: str
@@ -22,6 +33,8 @@ class StepExecutionResult:
     status: str
     skill: Optional[str] = None
     input_params: Dict[str, Any] = field(default_factory=dict)
+    param_builder_source: str = ""
+    mcp_tools_used: List[str] = field(default_factory=list)
     attempts: int = 0
     required: bool = True
     latency_ms: Optional[float] = None
@@ -37,6 +50,8 @@ class StepExecutionResult:
             "status": self.status,
             "skill": self.skill,
             "input_params": dict(self.input_params),
+            "param_builder_source": self.param_builder_source,
+            "mcp_tools_used": list(self.mcp_tools_used),
             "attempts": self.attempts,
             "required": self.required,
             "latency_ms": self.latency_ms,
@@ -142,8 +157,14 @@ class StepExecutor:
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> tuple[StepExecutionResult, Optional[SkillResult]]:
         params = {}
+        param_builder_source = ""
         if step.skill:
-            params = dict(param_builder(step.skill, query))
+            if step.params:
+                params = dict(param_builder(step.skill, query))
+                param_builder_source = "plan"
+            else:
+                params = dict(param_builder(step.skill, query))
+                param_builder_source = "fallback_builder"
         if step.params:
             params.update(step.params)
 
@@ -208,6 +229,10 @@ class StepExecutor:
             status=status,
             skill=step.skill,
             input_params=params,
+            param_builder_source=param_builder_source,
+            mcp_tools_used=_extract_mcp_tools_from_sources(
+                list(skill_result.sources) if skill_result else []
+            ),
             attempts=attempts,
             required=step.required,
             latency_ms=latency_ms,

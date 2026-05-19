@@ -251,6 +251,9 @@ class RouteDecision:
     reason: str
     matched_skills: List[str] = field(default_factory=list)
     expected_output_schema: str = "generic_answer_v1"
+    router_source: str = "rule"
+    rule_confidence: Optional[float] = None
+    llm_confidence: Optional[float] = None
 
     def to_meta(self) -> Dict[str, object]:
         return {
@@ -260,6 +263,9 @@ class RouteDecision:
             "route_reason": self.reason,
             "matched_skills": list(self.matched_skills),
             "expected_output_schema": self.expected_output_schema,
+            "router_source": self.router_source,
+            "rule_confidence": self.rule_confidence,
+            "llm_confidence": self.llm_confidence,
         }
 
     @classmethod
@@ -272,6 +278,9 @@ class RouteDecision:
             reason=profile.reason,
             matched_skills=list(profile.matched_skills),
             expected_output_schema=profile.expected_output_schema,
+            router_source=getattr(profile, "router_source", "rule"),
+            rule_confidence=getattr(profile, "rule_confidence", None),
+            llm_confidence=getattr(profile, "llm_confidence", None),
         )
 
     @property
@@ -447,7 +456,7 @@ class RequestRouter:
         except Exception:
             return rule_profile
 
-        llm_profile = self._profile_from_llm_result(text, result)
+        llm_profile = self._profile_from_llm_result(text, result, rule_profile)
         return llm_profile or rule_profile
 
     def _should_consult_llm_fallback(
@@ -491,6 +500,7 @@ class RequestRouter:
         self,
         text: str,
         result: Any,
+        rule_profile: TaskProfile,
     ) -> Optional[TaskProfile]:
         if result is None:
             return None
@@ -536,12 +546,16 @@ class RequestRouter:
                     else "simple_qa"
                 )
 
+        normalized_confidence = min(max(confidence, 0.0), 0.95)
         return self._profile(
             task_type=normalized_task_type,
             legacy_route=normalized_route,
-            confidence=min(max(confidence, 0.0), 0.95),
+            confidence=normalized_confidence,
             reason=f"llm_intent_fallback:{reason}",
             matched_skills=skills,
+            router_source="llm_fallback",
+            rule_confidence=rule_profile.confidence,
+            llm_confidence=normalized_confidence,
         )
 
     def _profile(
@@ -552,6 +566,9 @@ class RequestRouter:
         confidence: float,
         reason: str,
         matched_skills: List[str] | None = None,
+        router_source: str = "rule",
+        rule_confidence: Optional[float] = None,
+        llm_confidence: Optional[float] = None,
     ) -> TaskProfile:
         return TaskProfile.from_legacy_route(
             route=legacy_route,
@@ -562,6 +579,13 @@ class RequestRouter:
             expected_output_schema=TASK_TYPE_TO_OUTPUT_SCHEMA.get(
                 task_type, "generic_answer_v1"
             ),
+            router_source=router_source,
+            rule_confidence=(
+                confidence
+                if rule_confidence is None and router_source == "rule"
+                else rule_confidence
+            ),
+            llm_confidence=llm_confidence,
         )
 
     def _is_smalltalk(self, text: str) -> bool:

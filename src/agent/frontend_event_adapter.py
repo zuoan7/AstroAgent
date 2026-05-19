@@ -122,6 +122,22 @@ class FrontendExecutionEventAdapter:
                         step_id,
                         "done" if status == "success" else "error",
                     )
+                skill_name = event.payload.get("skill")
+                if skill_name:
+                    tool_timeline.append(
+                        {
+                            "run_id": step_id,
+                            "tool": skill_name,
+                            "input": event.payload.get("input", {}),
+                            "output_summary": event.payload.get("output_summary", ""),
+                            "latency_ms": event.payload.get("latency_ms"),
+                            "status": status,
+                            "param_builder_source": event.payload.get(
+                                "param_builder_source", ""
+                            ),
+                            "mcp_tools_used": event.payload.get("mcp_tools_used", []),
+                        }
+                    )
                 async for processed in self.emit_execution_event(
                     event,
                     next_event_fn=next_event_fn,

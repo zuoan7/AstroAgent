@@ -14,6 +14,7 @@ from src.agent.executor import (
     ExecutionOutcome,
     ParamBuilder,
     StepExecutionResult,
+    _extract_mcp_tools_from_sources,
 )
 from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.models.skill_result import SkillResult
@@ -82,8 +83,14 @@ class WorkflowExecutor:
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> tuple[StepExecutionResult, Optional[SkillResult]]:
         params: Dict[str, Any] = {}
+        param_builder_source = ""
         if node.skill:
-            params = dict(param_builder(node.skill, query))
+            if node.inputs:
+                params = dict(param_builder(node.skill, query))
+                param_builder_source = "plan"
+            else:
+                params = dict(param_builder(node.skill, query))
+                param_builder_source = "fallback_builder"
         if node.inputs:
             params.update(node.inputs)
 
@@ -148,6 +155,10 @@ class WorkflowExecutor:
             status=status,
             skill=node.skill,
             input_params=params,
+            param_builder_source=param_builder_source,
+            mcp_tools_used=_extract_mcp_tools_from_sources(
+                list(skill_result.sources) if skill_result else []
+            ),
             attempts=1,
             required=not node.optional,
             latency_ms=latency_ms,

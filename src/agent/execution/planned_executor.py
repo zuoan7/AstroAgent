@@ -132,6 +132,11 @@ class PlannedExecutor:
                 budget_tracker.budget.policy_version if budget_tracker else "budget_v1"
             ),
         }
+        response.audit_metadata = self._build_observability_metadata(
+            decision=decision,
+            plan=plan,
+            execution_trace=response.execution_trace,
+        )
         response.execution_events = self._build_execution_events(
             response=response,
             fallback_decision=fallback_decision,
@@ -195,6 +200,53 @@ class PlannedExecutor:
             user_profile=user_profile,
         )
         return plan, WorkflowGraph.from_execution_plan(plan)
+
+    def _build_observability_metadata(
+        self,
+        *,
+        decision: RouteDecision,
+        plan: ExecutionPlan,
+        execution_trace: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        route_meta = decision.to_meta()
+        param_sources: list[str] = []
+        handler_mcp_tools: list[str] = []
+        for trace in execution_trace:
+            source = trace.get("param_builder_source")
+            if source and source not in param_sources:
+                param_sources.append(str(source))
+            for tool_name in trace.get("mcp_tools_used") or []:
+                if tool_name not in handler_mcp_tools:
+                    handler_mcp_tools.append(tool_name)
+
+        if len(param_sources) == 1:
+            param_builder_source = param_sources[0]
+        elif len(param_sources) > 1:
+            param_builder_source = "mixed"
+        else:
+            param_builder_source = ""
+
+        return {
+            "router_source": route_meta.get("router_source"),
+            "rule_confidence": route_meta.get("rule_confidence"),
+            "llm_confidence": route_meta.get("llm_confidence"),
+            "planner_source": plan.planner_type,
+            "plan_steps_with_params": [
+                {
+                    "id": step.id,
+                    "skill": step.skill,
+                    "params": dict(step.params),
+                    "planner_source": step.planner_source or plan.planner_type,
+                    "purpose": step.purpose,
+                    "success_criteria": step.success_criteria,
+                    "evidence_key": step.evidence_key,
+                }
+                for step in plan.steps
+            ],
+            "param_builder_source": param_builder_source,
+            "param_builder_sources": param_sources,
+            "handler_mcp_tools_used": handler_mcp_tools,
+        }
 
     def _build_execution_events(
         self,

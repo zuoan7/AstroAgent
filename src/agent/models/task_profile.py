@@ -28,6 +28,9 @@ class TaskProfile:
     reason: str = ""
     expected_output_schema: str = "generic_answer_v1"
     legacy_route: str = "fallback_react"
+    router_source: str = "rule"
+    rule_confidence: Optional[float] = None
+    llm_confidence: Optional[float] = None
 
     def to_dict(self) -> Dict:
         return {
@@ -40,6 +43,9 @@ class TaskProfile:
             "reason": self.reason,
             "expected_output_schema": self.expected_output_schema,
             "legacy_route": self.legacy_route,
+            "router_source": self.router_source,
+            "rule_confidence": self.rule_confidence,
+            "llm_confidence": self.llm_confidence,
         }
 
     def to_legacy_route_decision(self) -> "RouteDecision":
@@ -53,6 +59,9 @@ class TaskProfile:
             reason=self.reason,
             matched_skills=list(self.matched_skills),
             expected_output_schema=self.expected_output_schema,
+            router_source=self.router_source,
+            rule_confidence=self.rule_confidence,
+            llm_confidence=self.llm_confidence,
         )
 
     @classmethod
@@ -64,6 +73,9 @@ class TaskProfile:
         matched_skills: Optional[List[str]] = None,
         reason: str = "",
         expected_output_schema: str = "generic_answer_v1",
+        router_source: str = "rule",
+        rule_confidence: Optional[float] = None,
+        llm_confidence: Optional[float] = None,
     ) -> "TaskProfile":
         """从旧 RouteDecision 字段推断 TaskProfile，保证双向可转换。"""
         skills = list(matched_skills or [])
@@ -94,4 +106,7 @@ class TaskProfile:
             reason=reason,
             expected_output_schema=expected_output_schema,
             legacy_route=LEGACY_ROUTE_MAP.get(route, route),
+            router_source=router_source,
+            rule_confidence=confidence if rule_confidence is None and router_source == "rule" else rule_confidence,
+            llm_confidence=llm_confidence,
         )

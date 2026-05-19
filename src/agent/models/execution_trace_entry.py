@@ -25,6 +25,8 @@ class ExecutionTraceEntry:
     status: str
     skill: Optional[str] = None
     input_params: Dict[str, Any] = field(default_factory=dict)
+    param_builder_source: str = ""
+    mcp_tools_used: List[str] = field(default_factory=list)
     attempts: int = 0
     required: bool = True
     latency_ms: Optional[float] = None
@@ -45,6 +47,8 @@ class ExecutionTraceEntry:
             "status": self.status,
             "skill": self.skill,
             "input_params": dict(self.input_params),
+            "param_builder_source": self.param_builder_source,
+            "mcp_tools_used": list(self.mcp_tools_used),
             "attempts": self.attempts,
             "required": self.required,
             "latency_ms": self.latency_ms,
@@ -110,6 +114,11 @@ class ExecutionTraceEntry:
                     "title": self.title,
                     "status": self.status,
                     "skill": self.skill,
+                    "input": dict(self.input_params),
+                    "param_builder_source": self.param_builder_source,
+                    "mcp_tools_used": list(self.mcp_tools_used),
+                    "output_summary": self.summary,
+                    "sources": list(self.sources),
                     "latency_ms": self.latency_ms,
                     "error": self.error,
                 },
@@ -127,6 +136,8 @@ class ExecutionTraceEntry:
             status=step_result.status,
             skill=step_result.skill,
             input_params=dict(step_result.input_params),
+            param_builder_source=getattr(step_result, "param_builder_source", ""),
+            mcp_tools_used=list(getattr(step_result, "mcp_tools_used", []) or []),
             attempts=step_result.attempts,
             required=step_result.required,
             latency_ms=step_result.latency_ms,
@@ -145,6 +156,8 @@ class ExecutionTraceEntry:
             status=d.get("status", ""),
             skill=d.get("skill"),
             input_params=d.get("input_params", {}),
+            param_builder_source=d.get("param_builder_source", ""),
+            mcp_tools_used=d.get("mcp_tools_used", []),
             attempts=d.get("attempts", 0),
             required=d.get("required", True),
             latency_ms=d.get("latency_ms"),
