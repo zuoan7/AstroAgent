@@ -32,6 +32,7 @@ def test_celestial_position_direction_query_builds_altaz_params():
     assert params["location"] == "北京"
     assert params["datetime"] == "今晚"
     assert params["output_format"] == "altaz"
+    assert params["operation"] == "altaz"
 
 
 def test_celestial_position_rise_set_query_builds_rise_set_params():
@@ -41,6 +42,7 @@ def test_celestial_position_rise_set_query_builds_rise_set_params():
     assert params["location"] == "北京"
     assert params["datetime"] == "今晚"
     assert params["output_format"] == "rise_set"
+    assert params["operation"] == "rise_set"
 
 
 def test_celestial_position_height_query_builds_altaz_params():
@@ -50,6 +52,7 @@ def test_celestial_position_height_query_builds_altaz_params():
     assert params["location"] == "广州"
     assert params["datetime"] == "明晚"
     assert params["output_format"] == "altaz"
+    assert params["operation"] == "altaz"
 
 
 def test_sunset_darkness_query_builds_solar_rise_set_params():
@@ -59,6 +62,7 @@ def test_sunset_darkness_query_builds_solar_rise_set_params():
     assert params["location"] == "北京"
     assert params["datetime"] == "明天"
     assert params["output_format"] == "rise_set"
+    assert params["operation"] == "rise_set"
 
 
 def test_deep_sky_extracts_m31_and_ngc_catalog_targets():
@@ -110,5 +114,7 @@ def test_event_range_extracts_monthly_intent_for_general_public_events():
 
     assert this_month["start_date"] is not None
     assert this_month["end_date"] is not None
+    assert this_month["operation"] == "monthly"
     assert friend_events["start_date"] is not None
     assert friend_events["end_date"] is not None
+    assert friend_events["operation"] == "monthly"

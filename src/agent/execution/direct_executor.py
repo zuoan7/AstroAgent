@@ -137,6 +137,9 @@ class DirectExecutor:
             decision=decision,
             param_builder_source="fallback_builder",
             handler_mcp_tools_used=_extract_mcp_tools_from_sources(result.sources),
+            logical_skill=getattr(result, "logical_skill", None),
+            operation=getattr(result, "operation", None),
+            expected_mcp_tools=getattr(result, "expected_mcp_tools", []),
         )
         self._attach_execution_events(
             response,
@@ -154,6 +157,9 @@ class DirectExecutor:
         decision: RouteDecision,
         param_builder_source: str = "",
         handler_mcp_tools_used: Optional[list[str]] = None,
+        logical_skill: Optional[str] = None,
+        operation: Optional[str] = None,
+        expected_mcp_tools: Optional[list[str]] = None,
     ) -> None:
         route_meta = decision.to_meta()
         response.route = decision.route
@@ -182,6 +188,9 @@ class DirectExecutor:
             "param_builder_source": param_builder_source,
             "param_builder_sources": [param_builder_source] if param_builder_source else [],
             "handler_mcp_tools_used": list(handler_mcp_tools_used or []),
+            "logical_skill": logical_skill,
+            "operation": operation,
+            "expected_mcp_tools": list(expected_mcp_tools or []),
         }
 
     async def _run_simple_qa(

@@ -79,6 +79,7 @@ class SkillParamBuilder:
                     "event_type": self._extract_event_type(query),
                     "start_date": start_date,
                     "end_date": end_date,
+                    "operation": self._extract_event_operation(query, start_date, end_date),
                 },
             )
         if skill_name == "astrophotography-calculator":
@@ -105,6 +106,7 @@ class SkillParamBuilder:
                     "location": self._extract_location(query) or DEFAULT_OBSERVER_CITY,
                     "datetime": self._extract_datetime(query),
                     "output_format": self._extract_output_format(query),
+                    "operation": self._extract_position_operation(query),
                 },
             )
 
@@ -352,4 +354,30 @@ class SkillParamBuilder:
         for event_type in ("流星雨", "月食", "日食", "行星合月", "冲日", "掩星"):
             if event_type in query:
                 return event_type
+        return None
+
+    def _extract_event_operation(
+        self,
+        query: str,
+        start_date: Optional[str],
+        end_date: Optional[str],
+    ) -> Optional[str]:
+        if end_date:
+            return "monthly"
+        if any(token in query for token in ("本月", "这个月", "适合普通人", "带朋友")):
+            return "monthly"
+        if any(token in query for token in ("未来一周", "未来7天", "本周", "这周", "一周")):
+            return "weekly"
+        return None
+
+    def _extract_position_operation(self, query: str) -> Optional[str]:
+        output_format = self._extract_output_format(query)
+        if output_format == "altaz":
+            return "altaz"
+        if output_format == "rise_set":
+            return "rise_set"
+        if any(token in query for token in ("当前天空", "现在天空", "今晚天空", "有哪些目标")):
+            return "current_sky"
+        if output_format == "radec":
+            return "planet_position"
         return None

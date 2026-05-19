@@ -14,6 +14,11 @@ class SkillResult:
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     latency_ms: Optional[float] = None
+    logical_skill: Optional[str] = None
+    operation: Optional[str] = None
+    expected_mcp_tools: List[str] = field(default_factory=list)
+    allowed_child_tools: List[str] = field(default_factory=list)
+    forbidden_child_tools: List[str] = field(default_factory=list)
 
     def to_legacy_str(self) -> str:
         if not self.success and self.error_message:
@@ -30,6 +35,11 @@ class SkillResult:
             "error_code": self.error_code,
             "error_message": self.error_message,
             "latency_ms": self.latency_ms,
+            "logical_skill": self.logical_skill,
+            "operation": self.operation,
+            "expected_mcp_tools": list(self.expected_mcp_tools),
+            "allowed_child_tools": list(self.allowed_child_tools),
+            "forbidden_child_tools": list(self.forbidden_child_tools),
         }
 
     def to_tool_timeline_entry(self, run_id: Optional[str] = None) -> Dict[str, Any]:
@@ -40,6 +50,9 @@ class SkillResult:
             "output_summary": self.summary[:240],
             "status": "success" if self.success else "error",
             "latency_ms": self.latency_ms,
+            "logical_skill": self.logical_skill or self.skill_name,
+            "operation": self.operation,
+            "expected_mcp_tools": list(self.expected_mcp_tools),
         }
 
     def to_evidence_entry(self, run_id: Optional[str] = None) -> Dict[str, Any]:

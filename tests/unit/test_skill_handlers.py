@@ -7,6 +7,7 @@ from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 
 from src.skills.skill_handlers import (  # noqa: E402
+    CelestialEventsForecastHandler,
     CelestialPositionCalculatorHandler,
     DeepSkyObservingGuideHandler,
     ObservationPlannerHandler,
@@ -66,6 +67,26 @@ def test_celestial_position_altaz_branch_uses_get_altaz():
     assert mcp.calls[0][1]["planet_name"] == "jupiter"
     assert mcp.calls[0][1]["latitude"] == 39.9
     assert result.sources[0]["tool"] == "get_altaz"
+    assert result.logical_skill == "celestial-position-calculator"
+    assert result.operation == "altaz"
+    assert result.expected_mcp_tools == ["get_altaz"]
+
+
+def test_celestial_position_operation_overrides_output_format():
+    mcp = _FakeMCP()
+
+    result = CelestialPositionCalculatorHandler()(
+        mcp,
+        target="火星",
+        datetime="明晚",
+        location="广州",
+        output_format="radec",
+        operation="altaz",
+    )
+
+    assert result.success is True
+    assert mcp.calls[0][0] == "get_altaz"
+    assert result.operation == "altaz"
 
 
 def test_celestial_position_radec_branch_uses_get_planet_position():
@@ -98,6 +119,40 @@ def test_celestial_position_rise_set_branch_uses_get_rise_set_times():
     assert mcp.calls[0][0] == "get_rise_set_times"
     assert mcp.calls[0][1]["body_name"] == "jupiter"
     assert mcp.calls[0][1]["latitude"] == 39.9
+    assert result.operation == "rise_set"
+
+
+def test_celestial_events_monthly_operation_uses_get_monthly_events():
+    mcp = _FakeMCP()
+
+    result = CelestialEventsForecastHandler()(
+        mcp,
+        start_date="2026-05-01",
+        end_date="2026-05-31",
+        operation="monthly",
+    )
+
+    assert result.success is True
+    tool_names = [call["tool_name"] for call in mcp.parallel_calls[0]]
+    assert tool_names == ["get_monthly_events"]
+    assert result.logical_skill == "celestial-events-forecast"
+    assert result.operation == "monthly"
+    assert result.expected_mcp_tools == ["get_monthly_events"]
+
+
+def test_celestial_events_weekly_operation_uses_get_weekly_events():
+    mcp = _FakeMCP()
+
+    result = CelestialEventsForecastHandler()(
+        mcp,
+        start_date="2026-05-19",
+        operation="weekly",
+    )
+
+    assert result.success is True
+    assert mcp.calls[0][0] == "get_weekly_events"
+    assert result.operation == "weekly"
+    assert result.expected_mcp_tools == ["get_weekly_events"]
 
 
 def test_deep_sky_m31_branch_fetches_object_info_and_galaxy_data():

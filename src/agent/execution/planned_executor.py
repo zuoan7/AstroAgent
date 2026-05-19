@@ -211,6 +211,8 @@ class PlannedExecutor:
         route_meta = decision.to_meta()
         param_sources: list[str] = []
         handler_mcp_tools: list[str] = []
+        operations: list[dict[str, Any]] = []
+        expected_mcp_tools: list[str] = []
         for trace in execution_trace:
             source = trace.get("param_builder_source")
             if source and source not in param_sources:
@@ -218,6 +220,21 @@ class PlannedExecutor:
             for tool_name in trace.get("mcp_tools_used") or []:
                 if tool_name not in handler_mcp_tools:
                     handler_mcp_tools.append(tool_name)
+            for tool_name in trace.get("expected_mcp_tools") or []:
+                if tool_name not in expected_mcp_tools:
+                    expected_mcp_tools.append(tool_name)
+            if trace.get("operation"):
+                operations.append(
+                    {
+                        "step_id": trace.get("step_id"),
+                        "logical_skill": trace.get("logical_skill") or trace.get("skill"),
+                        "operation": trace.get("operation"),
+                        "expected_mcp_tools": list(
+                            trace.get("expected_mcp_tools") or []
+                        ),
+                        "actual_mcp_tools": list(trace.get("mcp_tools_used") or []),
+                    }
+                )
 
         if len(param_sources) == 1:
             param_builder_source = param_sources[0]
@@ -260,6 +277,8 @@ class PlannedExecutor:
             "param_builder_source": param_builder_source,
             "param_builder_sources": param_sources,
             "handler_mcp_tools_used": handler_mcp_tools,
+            "operations": operations,
+            "expected_mcp_tools": expected_mcp_tools,
         }
 
     def _build_execution_events(

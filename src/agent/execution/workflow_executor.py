@@ -159,6 +159,15 @@ class WorkflowExecutor:
             mcp_tools_used=_extract_mcp_tools_from_sources(
                 list(skill_result.sources) if skill_result else []
             ),
+            logical_skill=getattr(skill_result, "logical_skill", None)
+            if skill_result
+            else None,
+            operation=getattr(skill_result, "operation", None) if skill_result else None,
+            expected_mcp_tools=list(
+                getattr(skill_result, "expected_mcp_tools", []) or []
+            )
+            if skill_result
+            else [],
             attempts=1,
             required=not node.optional,
             latency_ms=latency_ms,

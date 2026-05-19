@@ -35,6 +35,9 @@ class StepExecutionResult:
     input_params: Dict[str, Any] = field(default_factory=dict)
     param_builder_source: str = ""
     mcp_tools_used: List[str] = field(default_factory=list)
+    logical_skill: Optional[str] = None
+    operation: Optional[str] = None
+    expected_mcp_tools: List[str] = field(default_factory=list)
     attempts: int = 0
     required: bool = True
     latency_ms: Optional[float] = None
@@ -52,6 +55,9 @@ class StepExecutionResult:
             "input_params": dict(self.input_params),
             "param_builder_source": self.param_builder_source,
             "mcp_tools_used": list(self.mcp_tools_used),
+            "logical_skill": self.logical_skill,
+            "operation": self.operation,
+            "expected_mcp_tools": list(self.expected_mcp_tools),
             "attempts": self.attempts,
             "required": self.required,
             "latency_ms": self.latency_ms,
@@ -233,6 +239,15 @@ class StepExecutor:
             mcp_tools_used=_extract_mcp_tools_from_sources(
                 list(skill_result.sources) if skill_result else []
             ),
+            logical_skill=getattr(skill_result, "logical_skill", None)
+            if skill_result
+            else None,
+            operation=getattr(skill_result, "operation", None) if skill_result else None,
+            expected_mcp_tools=list(
+                getattr(skill_result, "expected_mcp_tools", []) or []
+            )
+            if skill_result
+            else [],
             attempts=attempts,
             required=step.required,
             latency_ms=latency_ms,

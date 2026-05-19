@@ -27,6 +27,9 @@ class ExecutionTraceEntry:
     input_params: Dict[str, Any] = field(default_factory=dict)
     param_builder_source: str = ""
     mcp_tools_used: List[str] = field(default_factory=list)
+    logical_skill: Optional[str] = None
+    operation: Optional[str] = None
+    expected_mcp_tools: List[str] = field(default_factory=list)
     attempts: int = 0
     required: bool = True
     latency_ms: Optional[float] = None
@@ -49,6 +52,9 @@ class ExecutionTraceEntry:
             "input_params": dict(self.input_params),
             "param_builder_source": self.param_builder_source,
             "mcp_tools_used": list(self.mcp_tools_used),
+            "logical_skill": self.logical_skill,
+            "operation": self.operation,
+            "expected_mcp_tools": list(self.expected_mcp_tools),
             "attempts": self.attempts,
             "required": self.required,
             "latency_ms": self.latency_ms,
@@ -117,6 +123,9 @@ class ExecutionTraceEntry:
                     "input": dict(self.input_params),
                     "param_builder_source": self.param_builder_source,
                     "mcp_tools_used": list(self.mcp_tools_used),
+                    "logical_skill": self.logical_skill,
+                    "operation": self.operation,
+                    "expected_mcp_tools": list(self.expected_mcp_tools),
                     "output_summary": self.summary,
                     "sources": list(self.sources),
                     "latency_ms": self.latency_ms,
@@ -138,6 +147,11 @@ class ExecutionTraceEntry:
             input_params=dict(step_result.input_params),
             param_builder_source=getattr(step_result, "param_builder_source", ""),
             mcp_tools_used=list(getattr(step_result, "mcp_tools_used", []) or []),
+            logical_skill=getattr(step_result, "logical_skill", None),
+            operation=getattr(step_result, "operation", None),
+            expected_mcp_tools=list(
+                getattr(step_result, "expected_mcp_tools", []) or []
+            ),
             attempts=step_result.attempts,
             required=step_result.required,
             latency_ms=step_result.latency_ms,
@@ -158,6 +172,9 @@ class ExecutionTraceEntry:
             input_params=d.get("input_params", {}),
             param_builder_source=d.get("param_builder_source", ""),
             mcp_tools_used=d.get("mcp_tools_used", []),
+            logical_skill=d.get("logical_skill"),
+            operation=d.get("operation"),
+            expected_mcp_tools=d.get("expected_mcp_tools", []),
             attempts=d.get("attempts", 0),
             required=d.get("required", True),
             latency_ms=d.get("latency_ms"),

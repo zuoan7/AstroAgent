@@ -12,6 +12,7 @@ from src.core.mcp_protocol import extract_tool_data, is_tool_error, parse_tool_r
 from src.core.logger import logger
 from src.agent.param_parser import ParamParser
 from src.agent.models.skill_result import SkillResult
+from src.skills import registry
 from src.skills.mcp_client import MCPClient
 
 
@@ -357,6 +358,7 @@ class CelestialEventsForecastHandler:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         event_type: Optional[str] = None,
+        operation: Optional[str] = None,
     ) -> SkillResult:
         started = time.perf_counter()
         sources = []
@@ -392,30 +394,40 @@ class CelestialEventsForecastHandler:
         if event_type:
             description_prefix.append(f"用户关心的事件类型：{event_type}（当前版本为软筛选，仅供解释用）")
 
-        use_weekly = False
-        if end_dt:
-            try:
-                days = (end_dt - start_dt).days
-                use_weekly = days <= 7
-            except Exception:
-                use_weekly = False
+        operation_name = (operation or "").strip().lower()
+        if operation_name not in {"weekly", "monthly"}:
+            use_weekly = False
+            if end_dt:
+                try:
+                    days = (end_dt - start_dt).days
+                    use_weekly = days <= 7
+                except Exception:
+                    use_weekly = False
+            else:
+                use_weekly = True
+            operation_name = "weekly" if use_weekly else "monthly"
         else:
-            use_weekly = True
+            use_weekly = operation_name == "weekly"
+
+        operation_spec = registry.get_operation_spec(
+            "celestial-events-forecast",
+            operation_name,
+        )
 
         if use_weekly:
             body_raw = mcp.call_tool(
-                "get_weekly_events",
+                operation_spec.atomic_tool_name,
                 start_date=start_dt.strftime("%Y-%m-%d"),
             )
             body_data, body = _extract_tool_payload_and_text(body_raw)
-            sources.append(_tool_source_entry("get_weekly_events", body_raw, snippet_text=body))
+            sources.append(_tool_source_entry(operation_spec.atomic_tool_name, body_raw, snippet_text=body))
         else:
             if end_dt:
                 current_dt = start_dt
                 monthly_calls = []
                 while current_dt <= end_dt:
                     monthly_calls.append({
-                        "tool_name": "get_monthly_events",
+                        "tool_name": operation_spec.atomic_tool_name,
                         "kwargs": {"year": current_dt.year, "month": current_dt.month},
                     })
                     if current_dt.month == 12:
@@ -431,17 +443,17 @@ class CelestialEventsForecastHandler:
                     monthly_texts.append(text)
                 body_data = monthly_payloads
                 body = "\n".join(text for text in monthly_texts if text)
-                sources.append(_tool_source_entry("get_monthly_events", body, snippet_text=body))
+                sources.append(_tool_source_entry(operation_spec.atomic_tool_name, body, snippet_text=body))
             else:
                 year = start_dt.year
                 month = start_dt.month
                 body_raw = mcp.call_tool(
-                    "get_monthly_events",
+                    operation_spec.atomic_tool_name,
                     year=year,
                     month=month,
                 )
                 body_data, body = _extract_tool_payload_and_text(body_raw)
-                sources.append(_tool_source_entry("get_monthly_events", body_raw, snippet_text=body))
+                sources.append(_tool_source_entry(operation_spec.atomic_tool_name, body_raw, snippet_text=body))
 
         description_prefix.append("\n下面是为你整理的天象预报：\n")
         description_prefix.append(ParamParser.shorten_text(body, 1200))
@@ -455,11 +467,17 @@ class CelestialEventsForecastHandler:
                 "start_date": start_dt.strftime("%Y-%m-%d"),
                 "end_date": end_dt.strftime("%Y-%m-%d") if end_dt else None,
                 "event_type": event_type,
+                "operation": operation_name,
                 "events_body": body_data if 'body_data' in locals() else body,
             },
             summary=summary,
             sources=sources,
             latency_ms=round(elapsed_ms, 2),
+            logical_skill="celestial-events-forecast",
+            operation=operation_name,
+            expected_mcp_tools=[operation_spec.atomic_tool_name],
+            allowed_child_tools=list(operation_spec.allowed_child_tools),
+            forbidden_child_tools=list(operation_spec.forbidden_child_tools),
         )
 
 
@@ -824,14 +842,16 @@ class CelestialPositionCalculatorHandler:
     def __call__(
         self,
         mcp: MCPClient,
-        target: str,
+        target: str = "",
         datetime: Optional[str] = None,
         location: Optional[str] = None,
         output_format: Optional[str] = None,
+        operation: Optional[str] = None,
     ) -> SkillResult:
         started = time.perf_counter()
 
-        if not target:
+        requested_operation = (operation or "").strip().lower()
+        if not target and requested_operation != "current_sky":
             return SkillResult.from_error(
                 skill_name="celestial-position-calculator",
                 error_code="VALIDATION_ERROR",
@@ -843,6 +863,19 @@ class CelestialPositionCalculatorHandler:
         fmt = (output_format or "radec").lower()
         mcp_target = PLANET_NAME_ALIASES.get(target, target).lower()
 
+        operation_name = requested_operation
+        if operation_name not in {"altaz", "rise_set", "planet_position", "current_sky"}:
+            if fmt in {"rise_set", "rise-set", "riseset"}:
+                operation_name = "rise_set"
+            elif fmt == "altaz":
+                operation_name = "altaz"
+            else:
+                operation_name = "planet_position"
+        operation_spec = registry.get_operation_spec(
+            "celestial-position-calculator",
+            operation_name,
+        )
+
         if location:
             lat, lon = _parse_location(location)
         else:
@@ -851,8 +884,16 @@ class CelestialPositionCalculatorHandler:
         if lat is None or lon is None:
             lat, lon = 39.9, 116.4
 
-        if fmt in {"rise_set", "rise-set", "riseset"}:
-            tool_name = "get_rise_set_times"
+        if operation_name == "current_sky":
+            tool_name = operation_spec.atomic_tool_name
+            result_raw = mcp.call_tool(
+                tool_name,
+                latitude=lat,
+                longitude=lon,
+                date=obs_time.strftime("%Y-%m-%d"),
+            )
+        elif operation_name == "rise_set":
+            tool_name = operation_spec.atomic_tool_name
             result_raw = mcp.call_tool(
                 tool_name,
                 body_name=mcp_target,
@@ -861,7 +902,7 @@ class CelestialPositionCalculatorHandler:
                 longitude=lon,
             )
         else:
-            tool_name = "get_altaz" if fmt == "altaz" else "get_planet_position"
+            tool_name = operation_spec.atomic_tool_name
             result_raw = mcp.call_tool(
                 tool_name,
                 planet_name=mcp_target,
@@ -873,10 +914,12 @@ class CelestialPositionCalculatorHandler:
         sources = [_tool_source_entry(tool_name, result_raw, snippet_text=body)]
 
         body = ParamParser.shorten_text(body, 600)
-        if fmt in {"rise_set", "rise-set", "riseset"}:
+        if operation_name == "rise_set":
             coordinate_label = "升起/落下时间"
-        elif fmt == "altaz":
+        elif operation_name == "altaz":
             coordinate_label = "地平坐标（高度角/方位角）"
+        elif operation_name == "current_sky":
+            coordinate_label = "当前天空目标"
         else:
             coordinate_label = "赤道坐标"
         header = (
@@ -901,11 +944,17 @@ class CelestialPositionCalculatorHandler:
                 "latitude": lat,
                 "longitude": lon,
                 "output_format": fmt,
+                "operation": operation_name,
                 "position": position_data,
             },
             summary=summary,
             sources=sources,
             latency_ms=round(elapsed_ms, 2),
+            logical_skill="celestial-position-calculator",
+            operation=operation_name,
+            expected_mcp_tools=[operation_spec.atomic_tool_name],
+            allowed_child_tools=list(operation_spec.allowed_child_tools),
+            forbidden_child_tools=list(operation_spec.forbidden_child_tools),
         )
 
 

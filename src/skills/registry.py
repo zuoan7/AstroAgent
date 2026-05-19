@@ -22,6 +22,17 @@ class SkillSpec:
     special_handling: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
 
 
+@dataclass(frozen=True)
+class OperationSpec:
+    logical_skill: str
+    operation: str
+    atomic_tool_name: str
+    trigger_summary: str
+    required_params: List[str] = field(default_factory=list)
+    allowed_child_tools: List[str] = field(default_factory=list)
+    forbidden_child_tools: List[str] = field(default_factory=list)
+
+
 def normalize_weather_params(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     """天气查询的特殊处理：合并 city 和 location 参数"""
     normalized = dict(kwargs)
@@ -71,10 +82,11 @@ _ASTRONOMY_SKILL_SPECS: tuple[SkillSpec, ...] = (
             "查询指定时间段的天象事件（skill: celestial-events-forecast）。\n"
             "参数：start_date（开始日期YYYY-MM-DD，可选），"
             "end_date（结束日期YYYY-MM-DD，可选），"
-            "event_type（事件类型，如'流星雨''行星合月''月食'，可选，用于意图说明）。"
+            "event_type（事件类型，如'流星雨''行星合月''月食'，可选，用于意图说明），"
+            "operation（weekly 或 monthly，可选，用于约束底层 MCP 工具）。"
         ),
         route_type="handler",
-        param_names=["start_date", "end_date", "event_type"],
+        param_names=["start_date", "end_date", "event_type", "operation"],
     ),
     SkillSpec(
         skill_name="deep-sky-observing-guide",
@@ -141,10 +153,77 @@ _ASTRONOMY_SKILL_SPECS: tuple[SkillSpec, ...] = (
             "参数：target（目标名称，如'mars''jupiter'等，必填），"
             "datetime（观测时间，建议YYYY-MM-DD HH:MM 格式，可选，默认当前时间），"
             "location（观测地点，经纬度'纬度,经度'形式，可选），"
-            "output_format（输出格式，如'altaz''radec''rise_set'，可选）。"
+            "output_format（输出格式，如'altaz''radec''rise_set'，可选），"
+            "operation（altaz、rise_set、planet_position 或 current_sky，可选，用于约束底层 MCP 工具）。"
         ),
         route_type="handler",
-        param_names=["target", "datetime", "location", "output_format"],
+        param_names=["target", "datetime", "location", "output_format", "operation"],
+    ),
+)
+
+
+_OPERATION_SPECS: tuple[OperationSpec, ...] = (
+    OperationSpec(
+        logical_skill="celestial-position-calculator",
+        operation="altaz",
+        atomic_tool_name="get_altaz",
+        trigger_summary="目标在指定时间地点的高度角、方位角或可见性判断",
+        required_params=["target", "datetime", "location"],
+        allowed_child_tools=["get_altaz"],
+        forbidden_child_tools=[
+            "get_planet_position",
+            "get_rise_set_times",
+            "get_current_sky_objects",
+        ],
+    ),
+    OperationSpec(
+        logical_skill="celestial-position-calculator",
+        operation="rise_set",
+        atomic_tool_name="get_rise_set_times",
+        trigger_summary="目标升起、落下、日落或与地平相关的时间判断",
+        required_params=["target", "datetime", "location"],
+        allowed_child_tools=["get_rise_set_times"],
+        forbidden_child_tools=[
+            "get_altaz",
+            "get_planet_position",
+            "get_current_sky_objects",
+        ],
+    ),
+    OperationSpec(
+        logical_skill="celestial-position-calculator",
+        operation="planet_position",
+        atomic_tool_name="get_planet_position",
+        trigger_summary="行星赤道坐标或通用位置查询",
+        required_params=["target", "datetime", "location"],
+        allowed_child_tools=["get_planet_position"],
+        forbidden_child_tools=["get_altaz", "get_rise_set_times"],
+    ),
+    OperationSpec(
+        logical_skill="celestial-position-calculator",
+        operation="current_sky",
+        atomic_tool_name="get_current_sky_objects",
+        trigger_summary="指定时间地点当前可见天空目标列表",
+        required_params=["datetime", "location"],
+        allowed_child_tools=["get_current_sky_objects"],
+        forbidden_child_tools=["get_altaz", "get_planet_position", "get_rise_set_times"],
+    ),
+    OperationSpec(
+        logical_skill="celestial-events-forecast",
+        operation="weekly",
+        atomic_tool_name="get_weekly_events",
+        trigger_summary="未来一周或不超过 7 天的天象事件",
+        required_params=["start_date"],
+        allowed_child_tools=["get_weekly_events"],
+        forbidden_child_tools=["get_monthly_events"],
+    ),
+    OperationSpec(
+        logical_skill="celestial-events-forecast",
+        operation="monthly",
+        atomic_tool_name="get_monthly_events",
+        trigger_summary="本月、这个月或面向普通人的月度天象筛选",
+        required_params=["start_date", "end_date"],
+        allowed_child_tools=["get_monthly_events"],
+        forbidden_child_tools=["get_weekly_events"],
     ),
 )
 
@@ -158,6 +237,21 @@ def get_skill_spec(skill_name: str) -> SkillSpec:
         if spec.skill_name == skill_name:
             return spec
     raise KeyError(f"未知技能：{skill_name}")
+
+
+def get_operation_specs() -> List[OperationSpec]:
+    return list(_OPERATION_SPECS)
+
+
+def get_operation_spec(logical_skill: str, operation: str) -> OperationSpec:
+    for spec in get_operation_specs():
+        if spec.logical_skill == logical_skill and spec.operation == operation:
+            return spec
+    raise KeyError(f"未知 operation：{logical_skill}.{operation}")
+
+
+def list_operations_for_skill(logical_skill: str) -> List[OperationSpec]:
+    return [spec for spec in get_operation_specs() if spec.logical_skill == logical_skill]
 
 
 def list_skill_descriptions() -> Dict[str, str]:
