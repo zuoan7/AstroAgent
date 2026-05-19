@@ -12,6 +12,7 @@ from src.agent.governance import (
     evaluate_router_benchmark,
     load_phase0_benchmark_cases,
 )
+from src.agent.llm_intent_classifier import LLMIntentClassifier
 from src.agent.audit import RequestAuditLogger
 from src.agent.output_parser import LenientReActSingleInputOutputParser
 from src.agent.planner import Planner
@@ -225,6 +226,19 @@ class AstroAgent:
             planner_selection.provider,
             planner_selection.model_name,
         )
+        if getattr(settings, "ENABLE_LLM_INTENT_FALLBACK", False):
+            self.request_router.configure_llm_fallback(
+                LLMIntentClassifier(
+                    planner_llm,
+                    min_accept_confidence=float(
+                        getattr(settings, "LLM_INTENT_MIN_ACCEPT_CONFIDENCE", 0.55)
+                    ),
+                ),
+                enabled=True,
+                confidence_threshold=float(
+                    getattr(settings, "LLM_INTENT_CONFIDENCE_THRESHOLD", 0.8)
+                ),
+            )
         response_synthesizer = ResponseSynthesizer(llm=synth_llm)
         planner = Planner(llm=planner_llm)
         executor = StepExecutor(skill_manager=self.skill_manager)

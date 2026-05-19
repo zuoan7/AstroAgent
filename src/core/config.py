@@ -421,6 +421,22 @@ class AgentGovernanceConfig(BaseSettings):
         description="请求审计日志路径（相对于项目根目录）",
     )
     ROUTER_POLICY_VERSION: str = Field("router_v1", description="路由策略版本")
+    ENABLE_LLM_INTENT_FALLBACK: bool = Field(
+        False,
+        description="是否在规则路由低置信或天文边界场景启用 LLM 意图分类兜底",
+    )
+    ENABLE_LLM_PLANNER_FALLBACK: bool = Field(
+        False,
+        description="是否在 Planner 模板和规则无法生成步骤时启用 LLM 计划兜底",
+    )
+    LLM_INTENT_CONFIDENCE_THRESHOLD: float = Field(
+        0.8,
+        description="规则路由低于该置信度时可触发 LLM 意图分类兜底",
+    )
+    LLM_INTENT_MIN_ACCEPT_CONFIDENCE: float = Field(
+        0.55,
+        description="LLM 意图分类结果低于该置信度时丢弃",
+    )
     PLANNER_VERSION: str = Field("planner_v2", description="Planner 版本")
     SCHEMA_VERSION: str = Field("schema_v2", description="输出契约版本")
     SYNTH_PROMPT_VERSION: str = Field(

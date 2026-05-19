@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from tests.mock_deps import mock_heavy_dependencies
@@ -20,6 +22,16 @@ from src.agent.request_router import RouteDecision
 # ─────────────────────────────────────────────────────────────────
 # 辅助工厂
 # ─────────────────────────────────────────────────────────────────
+
+class _PlannerLLMStub:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.prompts: list[str] = []
+
+    def invoke(self, prompt: str):
+        self.prompts.append(prompt)
+        return SimpleNamespace(content=self.content)
+
 
 def _simple_plan(task_type: str = "observation_recommendation") -> ExecutionPlan:
     return ExecutionPlan(
@@ -403,6 +415,65 @@ class TestPlannerGraphPlanning:
             "astrophotography-calculator",
             "weather-lookup",
         ]
+
+    def test_llm_planner_fallback_builds_valid_steps_when_templates_empty(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.agent.planner.settings.ENABLE_LLM_PLANNER_FALLBACK",
+            True,
+            raising=False,
+        )
+        llm = _PlannerLLMStub(
+            """```json
+            {
+              "steps": [
+                {"skill": "weather-lookup", "required": true, "reason": "查云量"},
+                {"skill": "observation-planner", "required": true, "reason": "生成安排"}
+              ],
+              "rationale": "需要先看条件，再安排目标"
+            }
+            ```"""
+        )
+        planner = Planner(llm=llm)
+
+        plan = planner.plan(
+            query="帮我做一个兼顾云量和月相的家庭观测安排",
+            route_decision=_route_decision(
+                task_type="unknown_complex_task",
+                matched_skills=[],
+                output_schema="generic_answer_v1",
+            ),
+        )
+
+        assert plan.planner_type == "llm_fallback"
+        assert [step.skill for step in plan.steps] == [
+            "weather-lookup",
+            "observation-planner",
+        ]
+        assert "weather-lookup" in llm.prompts[0]
+
+    def test_llm_planner_fallback_rejects_unknown_skills(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.agent.planner.settings.ENABLE_LLM_PLANNER_FALLBACK",
+            True,
+            raising=False,
+        )
+        planner = Planner(
+            llm=_PlannerLLMStub(
+                '{"steps": [{"skill": "made-up-tool", "required": true}], '
+                '"rationale": "bad"}'
+            )
+        )
+
+        plan = planner.plan(
+            query="帮我做一个复杂观测安排",
+            route_decision=_route_decision(
+                task_type="unknown_complex_task",
+                matched_skills=[],
+                output_schema="generic_answer_v1",
+            ),
+        )
+
+        assert plan.steps == []
 
     def test_execution_plan_from_workflow_graph_keeps_compatibility(self):
         planner = Planner()

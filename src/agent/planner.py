@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import re
 from typing import Any, List, Optional
 
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.workflow_graph import WorkflowGraph
 from src.core.config import settings
+from src.skills import registry
 
 
 class Planner:
@@ -83,7 +86,7 @@ class Planner:
         if plan.steps:
             return plan
 
-        return self._build_generic_plan(
+        generic_plan = self._build_generic_plan(
             query=query,
             task_type=task_type,
             output_schema=output_schema,
@@ -91,6 +94,17 @@ class Planner:
             chat_history=chat_history,
             user_profile=user_profile,
         )
+        if generic_plan.steps:
+            return generic_plan
+
+        llm_plan = self._build_llm_fallback_plan(
+            query=query,
+            task_type=task_type,
+            output_schema=output_schema,
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
+        return llm_plan or generic_plan
 
     def _build_template_plan(
         self,
@@ -271,6 +285,114 @@ class Planner:
                 getattr(settings, "BUDGET_POLICY_VERSION", "budget_v1")
             ),
         )
+
+    def _build_llm_fallback_plan(
+        self,
+        *,
+        query: str,
+        task_type: str,
+        output_schema: str,
+        chat_history: str,
+        user_profile: str,
+    ) -> Optional[ExecutionPlan]:
+        if not getattr(settings, "ENABLE_LLM_PLANNER_FALLBACK", False) or self._llm is None:
+            return None
+
+        skill_specs = registry.get_skill_specs()
+        allowed_skills = {spec.skill_name for spec in skill_specs}
+        skills_text = "\n".join(
+            f"- {spec.skill_name}: {spec.summary}" for spec in skill_specs
+        )
+        prompt = (
+            "你是 AstroAgent 的结构化计划生成器。只输出 JSON 对象，不要输出解释文字。\n"
+            "仅当用户问题确实需要工具时选择步骤；只能使用给定 skills，禁止发明工具。\n"
+            "输出最多 4 个步骤，按执行顺序排列。\n\n"
+            f"task_type: {task_type}\n"
+            f"可用 skills:\n{skills_text}\n\n"
+            "输出 JSON schema:\n"
+            "{\n"
+            '  "steps": [\n'
+            '    {"skill": "weather-lookup", "required": true, "reason": "查询云量"}\n'
+            "  ],\n"
+            '  "rationale": "简短计划理由"\n'
+            "}\n\n"
+            f"用户画像可用性: {bool(user_profile)}\n"
+            f"历史对话可用性: {bool(chat_history)}\n"
+            f"用户问题: {query}\n"
+        )
+
+        try:
+            raw = self._invoke_llm(prompt)
+            payload = self._extract_json_object(raw)
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        steps_payload = payload.get("steps") or []
+        if not isinstance(steps_payload, list):
+            return None
+
+        steps: list[PlanStep] = []
+        seen_skills: set[str] = set()
+        for index, item in enumerate(steps_payload[:4], start=1):
+            if not isinstance(item, dict):
+                continue
+            skill = str(item.get("skill") or "").strip()
+            if skill not in allowed_skills or skill in seen_skills:
+                continue
+            seen_skills.add(skill)
+            steps.append(
+                PlanStep(
+                    id=f"llm_tool_{index}",
+                    kind="tool",
+                    title=f"执行 {skill}",
+                    description=str(item.get("reason") or f"调用 {skill} 获取信息"),
+                    skill=skill,
+                    required=bool(item.get("required", True)),
+                    retry_policy=1,
+                    timeout_ms=12000,
+                )
+            )
+
+        if not steps:
+            return None
+
+        return ExecutionPlan(
+            task_type=task_type,
+            output_schema=output_schema,
+            steps=steps,
+            planner_type="llm_fallback",
+            rationale=str(payload.get("rationale") or "LLM fallback generated plan."),
+            planner_version=str(getattr(settings, "PLANNER_VERSION", "planner_v2")),
+            schema_version=str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
+            budget_policy_version=str(
+                getattr(settings, "BUDGET_POLICY_VERSION", "budget_v1")
+            ),
+        )
+
+    def _invoke_llm(self, prompt: str) -> str:
+        result = self._llm.invoke(prompt)
+        return getattr(result, "content", None) or str(result)
+
+    @staticmethod
+    def _extract_json_object(raw: str) -> Optional[dict[str, Any]]:
+        text = (raw or "").strip()
+        if not text:
+            return None
+        fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if fence:
+            text = fence.group(1).strip()
+        elif not text.startswith("{"):
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                text = text[start : end + 1]
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None
 
     def _photography_weather_relevant(self, query: str, skill_set: set[str]) -> bool:
         if "weather-lookup" in skill_set:
