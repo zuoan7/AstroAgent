@@ -73,7 +73,12 @@ class PlannedExecutor:
             graph,
             plan,
             query=query,
-            param_builder=self._param_builder.build,
+            param_builder=lambda skill_name, prompt: self._param_builder.build(
+                skill_name,
+                prompt,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            ),
             event_callback=event_callback,
             budget_tracker=budget_tracker,
         )
@@ -82,6 +87,21 @@ class PlannedExecutor:
             outcome=outcome,
             plan=plan,
         )
+
+        versions_payload = {
+            "router_policy_version": str(
+                getattr(settings, "ROUTER_POLICY_VERSION", "router_v1")
+            ),
+            "planner_version": str(getattr(settings, "PLANNER_VERSION", "planner_v2")),
+            "schema_version": str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
+            "synth_prompt_version": str(
+                getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v2")
+            ),
+            "fallback_policy_version": self._fallback_policy.version,
+            "budget_policy_version": (
+                budget_tracker.budget.policy_version if budget_tracker else "budget_v1"
+            ),
+        }
 
         response = self._synthesizer.synthesize(
             query=query,
@@ -96,20 +116,7 @@ class PlannedExecutor:
             route_decision=decision.to_meta(),
             fallback_path=[fallback_decision.to_dict()] if fallback_decision else [],
             budget_usage=budget_tracker.snapshot() if budget_tracker else None,
-            versions={
-                "router_policy_version": str(
-                    getattr(settings, "ROUTER_POLICY_VERSION", "router_v1")
-                ),
-                "planner_version": str(getattr(settings, "PLANNER_VERSION", "planner_v2")),
-                "schema_version": str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
-                "synth_prompt_version": str(
-                    getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v2")
-                ),
-                "fallback_policy_version": self._fallback_policy.version,
-                "budget_policy_version": (
-                    budget_tracker.budget.policy_version if budget_tracker else "budget_v1"
-                ),
-            },
+            versions=versions_payload,
         )
         response.route = decision.route
         response.task_type = decision.task_type
@@ -118,20 +125,7 @@ class PlannedExecutor:
         response.route_decision = decision.to_meta()
         response.fallback_path = [fallback_decision.to_dict()] if fallback_decision else []
         response.budget_usage = budget_tracker.snapshot() if budget_tracker else None
-        response.versions = {
-            "router_policy_version": str(
-                getattr(settings, "ROUTER_POLICY_VERSION", "router_v1")
-            ),
-            "planner_version": str(getattr(settings, "PLANNER_VERSION", "planner_v2")),
-            "schema_version": str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
-            "synth_prompt_version": str(
-                getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v2")
-            ),
-            "fallback_policy_version": self._fallback_policy.version,
-            "budget_policy_version": (
-                budget_tracker.budget.policy_version if budget_tracker else "budget_v1"
-            ),
-        }
+        response.versions = response.versions or versions_payload
         response.audit_metadata = self._build_observability_metadata(
             decision=decision,
             plan=plan,

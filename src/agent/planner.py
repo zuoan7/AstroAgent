@@ -84,6 +84,8 @@ class Planner:
             task_type=task_type,
             output_schema=output_schema,
             matched_skills=matched_skills,
+            chat_history=chat_history,
+            user_profile=user_profile,
         )
         if plan.steps:
             return plan
@@ -115,17 +117,26 @@ class Planner:
         task_type: str,
         output_schema: str,
         matched_skills: List[str],
+        chat_history: str = "",
+        user_profile: str = "",
     ) -> ExecutionPlan:
         skill_set = set(matched_skills)
         steps: List[PlanStep] = []
         rationale = ""
 
+        def make_step(**kwargs: Any) -> PlanStep:
+            return self._make_step(
+                query=query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+                **kwargs,
+            )
+
         if task_type == "observation_recommendation":
             rationale = "观测推荐以 observation-planner 为聚合入口；按目标约束补充事件、深空或位置证据。"
             if self._observation_plan_needs_event_step(query):
                 steps.append(
-                    self._make_step(
-                        query=query,
+                    make_step(
                         planner_source="template",
                         id="event_context",
                         title="查询天象事件",
@@ -139,8 +150,7 @@ class Planner:
                     )
                 )
             steps.append(
-                self._make_step(
-                    query=query,
+                make_step(
                     planner_source="template",
                     id="observation_plan",
                     title="生成观测计划",
@@ -155,8 +165,7 @@ class Planner:
             )
             if self._observation_plan_needs_deep_sky_step(query):
                 steps.append(
-                    self._make_step(
-                        query=query,
+                    make_step(
                         planner_source="template",
                         id="deep_sky_context",
                         title="补充深空目标资料",
@@ -168,11 +177,10 @@ class Planner:
                         retry_policy=1,
                         timeout_ms=15000,
                     )
-                )
+            )
             if self._observation_plan_needs_position_step(query):
                 steps.append(
-                    self._make_step(
-                        query=query,
+                    make_step(
                         planner_source="template",
                         id="position_context",
                         title="补充天体位置",
@@ -188,8 +196,7 @@ class Planner:
         elif task_type == "celestial_event_analysis":
             rationale = "天象分析以天象事件检索为核心，必要时补充观测条件。"
             steps.append(
-                self._make_step(
-                    query=query,
+                make_step(
                     planner_source="template",
                     id="event_forecast",
                     title="查询天象事件",
@@ -204,8 +211,7 @@ class Planner:
             )
             if "weather-lookup" in skill_set or "天气" in query:
                 steps.append(
-                    self._make_step(
-                        query=query,
+                    make_step(
                         planner_source="template",
                         id="event_weather",
                         title="补充天气条件",
@@ -222,8 +228,7 @@ class Planner:
         elif task_type == "deep_sky_guidance":
             rationale = "深空指导以目标资料为核心；涉及今晚可见性或目标比较时补充位置计算。"
             steps.append(
-                self._make_step(
-                    query=query,
+                make_step(
                     planner_source="template",
                     id="deep_sky_guide",
                     title="生成深空观测指导",
@@ -238,8 +243,7 @@ class Planner:
             )
             if self._deep_sky_needs_position_step(query):
                 steps.append(
-                    self._make_step(
-                        query=query,
+                    make_step(
                         planner_source="template",
                         id="deep_sky_position",
                         title="补充可见性计算",
@@ -257,8 +261,7 @@ class Planner:
             weather_relevant = self._photography_weather_relevant(query, skill_set)
             parallel_group = "imaging_context" if weather_relevant else None
             steps.append(
-                self._make_step(
-                    query=query,
+                make_step(
                     planner_source="template",
                     id="photo_settings",
                     title="计算摄影参数",
@@ -274,8 +277,7 @@ class Planner:
             )
             if self._photography_needs_deep_sky_context(query):
                 steps.append(
-                    self._make_step(
-                        query=query,
+                    make_step(
                         planner_source="template",
                         id="photo_target_context",
                         title="补充拍摄目标资料",
@@ -291,8 +293,7 @@ class Planner:
                 )
             if weather_relevant:
                 steps.append(
-                    self._make_step(
-                        query=query,
+                    make_step(
                         planner_source="template",
                         id="photo_weather",
                         title="查询摄影天气",
@@ -336,6 +337,8 @@ class Planner:
             steps.append(
                 self._make_step(
                     query=query,
+                    chat_history=chat_history,
+                    user_profile=user_profile,
                     planner_source="generic",
                     id=f"tool_{index}",
                     title=f"执行 {skill_name}",
@@ -489,6 +492,8 @@ class Planner:
         self,
         *,
         query: str,
+        chat_history: str = "",
+        user_profile: str = "",
         planner_source: str,
         id: str,
         title: str,
@@ -507,7 +512,12 @@ class Planner:
         step_params = (
             self._sanitize_step_params(skill, params)
             if params is not None
-            else self._build_step_params(skill, query)
+            else self._build_step_params(
+                skill,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
         )
         return PlanStep(
             id=id,
@@ -527,9 +537,21 @@ class Planner:
             timeout_ms=timeout_ms,
         )
 
-    def _build_step_params(self, skill_name: str, query: str) -> dict[str, Any]:
+    def _build_step_params(
+        self,
+        skill_name: str,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> dict[str, Any]:
         try:
-            return self._param_builder.build(skill_name, query)
+            return self._param_builder.build(
+                skill_name,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
         except Exception:
             return {}
 

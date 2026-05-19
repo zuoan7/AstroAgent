@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from src.agent.executor import EventCallback, StepExecutor
+from src.agent.fast_answers import stable_knowledge_answer
 from src.agent.planner import Planner
 from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.param_parser import ParamParser
@@ -123,7 +124,11 @@ class TaskOrchestrator:
             )
 
         if decision.task_type == "direct_answer_no_tool":
-            answer = getattr(decision, "answer_hint", "") or self._direct_no_tool_reply(query)
+            answer = (
+                getattr(decision, "answer_hint", "")
+                or stable_knowledge_answer(query)
+                or self._direct_no_tool_reply(query)
+            )
             return FinalResponse(
                 answer=answer,
                 summary=answer[:200] if len(answer) > 200 else answer,
@@ -133,7 +138,12 @@ class TaskOrchestrator:
             )
 
         if decision.task_type == "single_tool_lookup":
-            return await self._run_tool_task(decision, query)
+            return await self._run_tool_task(
+                decision,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
 
         if decision.task_type == "simple_qa":
             return await self._run_simple_qa(
@@ -165,7 +175,12 @@ class TaskOrchestrator:
         outcome = await self._executor.execute(
             plan,
             query=query,
-            param_builder=self._build_skill_params,
+            param_builder=lambda skill_name, prompt: self._build_skill_params(
+                skill_name,
+                prompt,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            ),
             event_callback=event_callback,
             budget_tracker=budget_tracker,
         )
@@ -234,6 +249,15 @@ class TaskOrchestrator:
         chat_history: str,
         user_profile: str,
     ) -> FinalResponse:
+        fast_answer = stable_knowledge_answer(query)
+        if fast_answer:
+            return self._synthesizer.synthesize_qa(
+                query=query,
+                answer=fast_answer,
+                rag_context="",
+                retrieval={"source": "stable_knowledge_fast_answer"},
+            )
+
         retrieval = self._rag.retrieve(query, fast_mode=True)
         context = retrieval.get("context", "")
         prompt = (
@@ -254,9 +278,21 @@ class TaskOrchestrator:
         )
         return response
 
-    async def _run_tool_task(self, decision: RouteDecision, query: str) -> FinalResponse:
+    async def _run_tool_task(
+        self,
+        decision: RouteDecision,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> FinalResponse:
         skill_name = decision.matched_skills[0]
-        params = self._build_skill_params(skill_name, query)
+        params = self._build_skill_params(
+            skill_name,
+            query,
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
         result: SkillResult = await asyncio.to_thread(
             self._skill_manager.call_skill,
             skill_name,
@@ -293,8 +329,20 @@ class TaskOrchestrator:
         )
         return self._invoke_llm(prompt)
 
-    def _build_skill_params(self, skill_name: str, query: str) -> Dict[str, Any]:
-        return self._param_builder.build(skill_name, query)
+    def _build_skill_params(
+        self,
+        skill_name: str,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> Dict[str, Any]:
+        return self._param_builder.build(
+            skill_name,
+            query,
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
 
     def _is_structured_skill_payload(
         self,

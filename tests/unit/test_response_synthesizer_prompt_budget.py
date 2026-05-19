@@ -192,3 +192,27 @@ def test_budget_disabled_uses_legacy_prompt(monkeypatch):
         skill_results=[_make_fake_sr("test", "R" * 10000)],
     )
     assert response2.answer == "这是测试回答。"
+
+
+def test_observation_planned_result_uses_deterministic_synthesis(monkeypatch):
+    class FailingLLM:
+        def invoke(self, prompt):
+            raise AssertionError("planned deterministic synthesis should not call LLM")
+
+    monkeypatch.setattr(
+        "src.agent.response_synthesizer.settings.ENABLE_DETERMINISTIC_TOOL_SYNTHESIS",
+        True,
+        raising=False,
+    )
+    synth = ResponseSynthesizer(llm=FailingLLM())
+    sr = _make_fake_sr("observation-planner", "今晚优先看木星，其次看月面。")
+
+    response = synth.synthesize(
+        query="今晚北京最值得看什么？",
+        task_type="observation_recommendation",
+        output_schema="observation_answer_v1",
+        skill_results=[sr],
+    )
+
+    assert response.answer == "今晚优先看木星，其次看月面。"
+    assert response.versions["synthesis_mode"] == "deterministic_tool_summary"

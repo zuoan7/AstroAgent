@@ -118,7 +118,7 @@ def test_router_keeps_high_confidence_rule_result_without_llm_call():
     assert profile.matched_skills == ["weather-lookup"]
 
 
-def test_router_keeps_stable_knowledge_simple_qa_without_llm_call():
+def test_router_keeps_stable_knowledge_fast_answer_without_llm_call():
     classifier = _FakeClassifier(
         LLMIntentResult(
             requires_tool=True,
@@ -137,7 +137,7 @@ def test_router_keeps_stable_knowledge_simple_qa_without_llm_call():
     profile = router.profile("赤经是什么？")
 
     assert classifier.calls == []
-    assert profile.task_type == "simple_qa"
+    assert profile.task_type == "direct_answer_no_tool"
     assert profile.matched_skills == []
 
 

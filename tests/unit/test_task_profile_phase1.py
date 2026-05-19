@@ -251,7 +251,7 @@ class TestRequestRouterProfile:
 
     def test_simple_qa_profile_low_complexity_no_tools(self):
         p = self.router.profile("赤经是什么？")
-        assert p.task_type == "simple_qa"
+        assert p.task_type == "direct_answer_no_tool"
         assert p.complexity == "low"
         assert p.openness == "low"
         assert p.tool_need == "none"
@@ -329,7 +329,7 @@ class TestRequestRouterProfile:
         [
             ("你好", "direct_task", "smalltalk"),
             ("北京天气怎么样", "direct_task", "single_tool_lookup"),
-            ("赤经是什么", "direct_task", "simple_qa"),
+            ("赤经是什么", "direct_task", "direct_answer_no_tool"),
             ("请比较双筒和赤道仪观测方案并给出步骤", "planned_task", "observation_recommendation"),
             ("帮我写一篇关于宇宙的科幻小说", "fallback_react", "open_domain_reasoning"),
         ],

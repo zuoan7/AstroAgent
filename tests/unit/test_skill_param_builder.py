@@ -47,6 +47,25 @@ def test_celestial_position_rise_set_query_builds_rise_set_params():
     assert params["operation"] == "rise_set"
 
 
+def test_celestial_position_uses_latest_context_location_when_query_omits_city():
+    chat_history = (
+        "用户: 我在上海，今晚想看木星。\n"
+        "助手: 已记下：观测地点按上海处理，今晚关注木星。\n"
+        "用户: 不对，我临时改到杭州了。\n"
+        "助手: 已更新：后续按杭州作为你的观测地点。"
+    )
+
+    params = _builder().build(
+        "celestial-position-calculator",
+        "那现在木星在哪个方向？",
+        chat_history=chat_history,
+    )
+
+    assert params["target"] == "木星"
+    assert params["location"] == "杭州"
+    assert params["output_format"] == "altaz"
+
+
 def test_celestial_position_height_query_builds_altaz_params():
     params = _builder().build("celestial-position-calculator", "明晚广州看火星，高度会不会太低？")
 

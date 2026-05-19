@@ -46,7 +46,7 @@ class _MemoryStub:
     [
         ("你好", "direct_task", "smalltalk"),
         ("北京天气怎么样", "direct_task", "single_tool_lookup"),
-        ("赤经是什么", "direct_task", "simple_qa"),
+        ("赤经是什么", "direct_task", "direct_answer_no_tool"),
         (
             "请比较双筒和赤道仪观测方案并给出步骤",
             "planned_task",

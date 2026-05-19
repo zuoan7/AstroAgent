@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Literal
 
+from src.agent.fast_answers import build_context_update_answer, stable_knowledge_answer
+
 
 ToolNecessityAction = Literal["use_tool", "clarify", "answer_without_tool"]
 
@@ -50,6 +52,10 @@ class ToolNecessityGate:
         clarification = self._clarification_decision(text)
         if clarification is not None:
             return clarification
+
+        context_update = self._context_update_decision(text)
+        if context_update is not None:
+            return context_update
 
         hard_no_tool = self._pre_tool_no_tool_decision(text)
         if hard_no_tool is not None:
@@ -277,6 +283,24 @@ class ToolNecessityGate:
         if pre_tool_no_tool is not None:
             return pre_tool_no_tool
 
+        stable_answer = stable_knowledge_answer(text)
+        if stable_answer:
+            return ToolNecessityDecision(
+                action="answer_without_tool",
+                confidence=0.92,
+                reason="stable_knowledge_fast_answer",
+                answer_hint=stable_answer,
+                forbidden_skill_hints=[
+                    "weather-lookup",
+                    "observation-planner",
+                    "celestial-events-forecast",
+                    "deep-sky-observing-guide",
+                    "neo-tracker",
+                    "astrophotography-calculator",
+                    "celestial-position-calculator",
+                ],
+            )
+
         stable_answers = [
             (
                 self._contains_all(text, ("星云", "星系", "区别")),
@@ -337,6 +361,28 @@ class ToolNecessityGate:
             )
 
         return None
+
+    @staticmethod
+    def _context_update_decision(text: str) -> ToolNecessityDecision | None:
+        result = build_context_update_answer(text)
+        if result is None:
+            return None
+        answer, reason = result
+        return ToolNecessityDecision(
+            action="answer_without_tool",
+            confidence=0.94,
+            reason=reason,
+            answer_hint=answer,
+            forbidden_skill_hints=[
+                "weather-lookup",
+                "observation-planner",
+                "celestial-events-forecast",
+                "deep-sky-observing-guide",
+                "neo-tracker",
+                "astrophotography-calculator",
+                "celestial-position-calculator",
+            ],
+        )
 
     def _tool_allow_decision(self, text: str) -> ToolNecessityDecision | None:
         if self._is_apod_lookup_request(text):

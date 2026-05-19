@@ -63,6 +63,29 @@ class ResponseSynthesizer:
             if sr.success and sr.data:
                 structured_payload[sr.skill_name] = sr.data
 
+        if self._should_use_deterministic_tool_synthesis(task_type, skill_results):
+            answer = self._build_deterministic_tool_answer(query, skill_results)
+            confidence = self._compute_confidence(skill_results)
+            return FinalResponse(
+                answer=answer,
+                summary=answer[:200] if len(answer) > 200 else answer,
+                sources=sources,
+                tools_used=tools_used,
+                confidence=confidence,
+                structured_payload=structured_payload if structured_payload else None,
+                route=route,
+                task_type=task_type,
+                execution_plan=execution_plan,
+                execution_trace=list(execution_trace or []),
+                route_decision=route_decision,
+                fallback_path=list(fallback_path or []),
+                budget_usage=budget_usage,
+                versions=self._versions_with_synthesis_mode(
+                    versions,
+                    "deterministic_tool_summary",
+                ),
+            )
+
         # Build compacted tool evidence for prompt injection
         tool_outputs_text = chr(10).join(collected_outputs)
         if settings.TOOL_EVIDENCE_BUDGET_ENABLED and skill_results:
@@ -282,3 +305,90 @@ class ResponseSynthesizer:
         if total_sources > 0:
             confidence += 0.1
         return min(round(confidence, 2), 0.95)
+
+    def _should_use_deterministic_tool_synthesis(
+        self,
+        task_type: str,
+        skill_results: List[SkillResult],
+    ) -> bool:
+        if not bool(getattr(settings, "ENABLE_DETERMINISTIC_TOOL_SYNTHESIS", True)):
+            return False
+        if not skill_results:
+            return False
+        allowed_task_types = {
+            "observation_recommendation",
+            "celestial_event_analysis",
+            "deep_sky_guidance",
+            "astrophotography_advice",
+        }
+        if task_type not in allowed_task_types:
+            return False
+        allowed_skills = {
+            "observation-planner",
+            "celestial-events-forecast",
+            "deep-sky-observing-guide",
+            "astrophotography-calculator",
+            "celestial-position-calculator",
+            "weather-lookup",
+        }
+        if any(sr.skill_name not in allowed_skills for sr in skill_results):
+            return False
+        return any((sr.summary or "").strip() for sr in skill_results)
+
+    def _build_deterministic_tool_answer(
+        self,
+        query: str,
+        skill_results: List[SkillResult],
+    ) -> str:
+        successful = [
+            sr for sr in skill_results if sr.success and (sr.summary or "").strip()
+        ]
+        failed = [sr for sr in skill_results if not sr.success]
+        selected = successful or [
+            sr for sr in skill_results if (sr.summary or "").strip()
+        ]
+
+        parts: list[str] = []
+        if len(selected) == 1:
+            parts.append(self._clean_tool_summary(selected[0].summary))
+        else:
+            parts.append(f"根据已获取的信息，针对「{query}」整理如下：")
+            for sr in selected:
+                title = self._display_skill_name(sr.skill_name)
+                summary = self._clean_tool_summary(sr.summary)
+                if summary:
+                    parts.append(f"\n{title}\n{summary}")
+
+        if failed:
+            failed_names = "、".join(self._display_skill_name(sr.skill_name) for sr in failed)
+            parts.append(f"\n部分信息暂时不可用：{failed_names}。以上建议仅基于已成功返回的数据。")
+
+        return "\n".join(part for part in parts if part).strip()
+
+    @staticmethod
+    def _clean_tool_summary(summary: str) -> str:
+        text = (summary or "").strip()
+        if len(text) <= 3500:
+            return text
+        return text[:3500].rstrip() + "\n...（工具结果较长，已截断）"
+
+    @staticmethod
+    def _display_skill_name(skill_name: str) -> str:
+        names = {
+            "observation-planner": "观测计划",
+            "celestial-events-forecast": "天象预报",
+            "deep-sky-observing-guide": "深空目标资料",
+            "astrophotography-calculator": "摄影参数",
+            "celestial-position-calculator": "位置计算",
+            "weather-lookup": "天气条件",
+        }
+        return names.get(skill_name, skill_name)
+
+    def _versions_with_synthesis_mode(
+        self,
+        versions: Optional[Dict[str, Any]],
+        mode: str,
+    ) -> Dict[str, Any]:
+        payload = dict(versions or self._default_versions())
+        payload["synthesis_mode"] = mode
+        return payload

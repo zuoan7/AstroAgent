@@ -43,6 +43,21 @@ from src.agent.tool_necessity_gate import ToolNecessityGate
             "answer_without_tool",
             "stable_knowledge_nebula_galaxy_difference",
         ),
+        (
+            "什么是天球？",
+            "answer_without_tool",
+            "stable_knowledge_fast_answer",
+        ),
+        (
+            "我在上海，今晚想看木星。",
+            "answer_without_tool",
+            "context_update_fast_path",
+        ),
+        (
+            "不对，我临时改到杭州了。",
+            "answer_without_tool",
+            "context_correction_fast_path",
+        ),
     ],
 )
 def test_gate_blocks_no_tool_and_clarification_golden_cases(

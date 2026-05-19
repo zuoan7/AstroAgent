@@ -14,6 +14,9 @@ from src.agent.request_router import RequestRouter
         ("天象预报说可见，我在城市里也能看到吗？", "direct_answer_no_tool"),
         ("为什么会有流星雨？", "direct_answer_no_tool"),
         ("APOD 是什么意思？", "direct_answer_no_tool"),
+        ("什么是天球？", "direct_answer_no_tool"),
+        ("我在北京。", "direct_answer_no_tool"),
+        ("不对，我临时改到杭州了。", "direct_answer_no_tool"),
     ],
 )
 def test_router_gate_blocks_no_tool_cases_before_skill_matching(

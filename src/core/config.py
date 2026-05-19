@@ -414,6 +414,10 @@ class AgentGovernanceConfig(BaseSettings):
     TOOL_EVIDENCE_COMPACTED_MAX_CHARS: int = Field(
         1800, description="compacted tool evidence 目标最大字符数"
     )
+    ENABLE_DETERMINISTIC_TOOL_SYNTHESIS: bool = Field(
+        True,
+        description="是否对结构化工具计划结果启用确定性答案合成，避免最终 LLM 调用",
+    )
 
     AGENT_AUDIT_ENABLED: bool = Field(True, description="是否开启请求审计日志")
     AGENT_AUDIT_LOG_PATH: str = Field(

@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from src.agent.fast_answers import extract_latest_location, extract_latest_target
 from src.skills import registry
 
 
@@ -38,8 +39,21 @@ class SkillParamBuilder:
     def __init__(self, skill_manager: Any) -> None:
         self._skill_manager = skill_manager
 
-    def build(self, skill_name: str, query: str) -> Dict[str, Any]:
+    def build(
+        self,
+        skill_name: str,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> Dict[str, Any]:
         from src.agent.param_parser import ParamParser
+
+        context_text = self._context_text(chat_history, user_profile)
+        query_location = self._extract_location(query)
+        context_location = extract_latest_location(context_text)
+        query_target = self._extract_target(query)
+        context_target = extract_latest_target(context_text)
 
         parsed = ParamParser.parse(query)
         if self._is_structured_skill_payload(parsed, query):
@@ -65,7 +79,7 @@ class SkillParamBuilder:
             return self._finalize(
                 skill_name,
                 {
-                    "city": self._extract_location(query) or DEFAULT_OBSERVER_CITY,
+                    "city": query_location or context_location or DEFAULT_OBSERVER_CITY,
                     "extensions": "all",
                 },
             )
@@ -73,7 +87,7 @@ class SkillParamBuilder:
             return self._finalize(
                 skill_name,
                 {
-                    "location": self._extract_location(query) or DEFAULT_OBSERVER_CITY,
+                    "location": query_location or context_location or DEFAULT_OBSERVER_CITY,
                     "date": self._extract_date(query),
                 },
             )
@@ -81,8 +95,8 @@ class SkillParamBuilder:
             return self._finalize(
                 skill_name,
                 {
-                    "target": self._extract_target(query) or query.strip(),
-                    "observer_location": self._extract_location(query),
+                    "target": query_target or context_target or query.strip(),
+                    "observer_location": query_location or context_location,
                     "date": self._extract_date(query),
                     "equipment": self._extract_equipment(query),
                 },
@@ -113,12 +127,13 @@ class SkillParamBuilder:
                 skill_name,
                 {
                     "target": self._extract_photo_target(query)
-                    or self._extract_target(query)
+                    or query_target
+                    or context_target
                     or query.strip(),
                     "camera": self._extract_camera(query) or "未指定相机",
                     "telescope": self._extract_telescope(query),
                     "mount": self._extract_mount(query),
-                    "location": self._extract_location(query),
+                    "location": query_location or context_location,
                     "date": self._extract_date(query),
                     "iso": self._extract_iso(query),
                     "aperture": self._extract_aperture(query),
@@ -129,8 +144,8 @@ class SkillParamBuilder:
             return self._finalize(
                 skill_name,
                 {
-                    "target": self._extract_target(query) or query.strip(),
-                    "location": self._extract_location(query) or DEFAULT_OBSERVER_CITY,
+                    "target": query_target or context_target or query.strip(),
+                    "location": query_location or context_location or DEFAULT_OBSERVER_CITY,
                     "datetime": self._extract_datetime(query),
                     "output_format": self._extract_output_format(query),
                     "operation": self._extract_position_operation(query),
@@ -148,6 +163,10 @@ class SkillParamBuilder:
             else {}
         )
         return self._finalize(skill_name, fallback)
+
+    @staticmethod
+    def _context_text(chat_history: str, user_profile: str) -> str:
+        return "\n".join(part for part in (chat_history, user_profile) if part)
 
     def _is_structured_skill_payload(self, parsed: Dict[str, Any], query: str) -> bool:
         if not isinstance(parsed, dict) or not parsed:

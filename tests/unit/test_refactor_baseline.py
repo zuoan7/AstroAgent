@@ -82,7 +82,7 @@ class TestRequestRouterBaseline:
         assert decision.task_type == "smalltalk"
 
     def test_simple_qa_routes_to_direct_task(self):
-        decision = self.router.route("黑洞是什么")
+        decision = self.router.route("恒星是什么")
         assert decision.route == "direct_task"
         assert decision.task_type == "simple_qa"
 
