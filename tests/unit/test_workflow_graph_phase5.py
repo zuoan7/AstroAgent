@@ -368,6 +368,42 @@ class TestPlannerGraphPlanning:
         assert isinstance(plan, ExecutionPlan)
         assert len(plan.steps) >= 1
 
+    def test_astrophotography_parameter_plan_does_not_add_weather_by_default(self):
+        planner = Planner()
+        plan = planner.plan(
+            query="用 24mm 镜头拍银河，单张曝光多久比较稳？",
+            route_decision=_route_decision(
+                task_type="astrophotography_advice",
+                matched_skills=["astrophotography-calculator"],
+                output_schema="astrophotography_answer_v1",
+            ),
+        )
+
+        assert [step.skill for step in plan.steps] == ["astrophotography-calculator"]
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "今晚北京适合拍银河吗？",
+            "明晚上海拍星野天气和云量怎么样？",
+        ],
+    )
+    def test_astrophotography_observability_plan_adds_weather_when_relevant(self, query):
+        planner = Planner()
+        plan = planner.plan(
+            query=query,
+            route_decision=_route_decision(
+                task_type="astrophotography_advice",
+                matched_skills=["astrophotography-calculator"],
+                output_schema="astrophotography_answer_v1",
+            ),
+        )
+
+        assert [step.skill for step in plan.steps] == [
+            "astrophotography-calculator",
+            "weather-lookup",
+        ]
+
     def test_execution_plan_from_workflow_graph_keeps_compatibility(self):
         planner = Planner()
         graph = planner.plan_graph(

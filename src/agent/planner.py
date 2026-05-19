@@ -182,19 +182,23 @@ class Planner:
                     )
                 )
         elif task_type == "astrophotography_advice":
-            rationale = "摄影建议通常可并行获取拍摄参数与天气条件。"
-            steps.extend(
-                [
-                    PlanStep(
-                        id="photo_settings",
-                        kind="tool",
-                        title="计算摄影参数",
-                        description="根据目标和器材估算拍摄参数",
-                        skill="astrophotography-calculator",
-                        parallel_group="imaging_context",
-                        retry_policy=1,
-                        timeout_ms=15000,
-                    ),
+            rationale = "摄影建议先计算拍摄参数；用户关心拍摄可行性或天气时再补充条件。"
+            weather_relevant = self._photography_weather_relevant(query, skill_set)
+            parallel_group = "imaging_context" if weather_relevant else None
+            steps.append(
+                PlanStep(
+                    id="photo_settings",
+                    kind="tool",
+                    title="计算摄影参数",
+                    description="根据目标和器材估算拍摄参数",
+                    skill="astrophotography-calculator",
+                    parallel_group=parallel_group,
+                    retry_policy=1,
+                    timeout_ms=15000,
+                )
+            )
+            if weather_relevant:
+                steps.append(
                     PlanStep(
                         id="photo_weather",
                         kind="tool",
@@ -205,9 +209,8 @@ class Planner:
                         required=False,
                         retry_policy=1,
                         timeout_ms=8000,
-                    ),
-                ]
-            )
+                    )
+                )
 
         return ExecutionPlan(
             task_type=task_type,
@@ -267,4 +270,60 @@ class Planner:
             budget_policy_version=str(
                 getattr(settings, "BUDGET_POLICY_VERSION", "budget_v1")
             ),
+        )
+
+    def _photography_weather_relevant(self, query: str, skill_set: set[str]) -> bool:
+        if "weather-lookup" in skill_set:
+            return True
+
+        weather_terms = (
+            "天气",
+            "云量",
+            "云多",
+            "多云",
+            "晴",
+            "雨",
+            "风",
+            "湿度",
+            "雾霾",
+            "透明度",
+            "视宁度",
+            "结露",
+            "露水",
+        )
+        if any(term in query for term in weather_terms):
+            return True
+
+        observability_terms = (
+            "适合拍",
+            "能拍",
+            "能不能拍",
+            "好不好拍",
+            "拍摄条件",
+            "出片",
+        )
+        time_terms = (
+            "今晚",
+            "明晚",
+            "今天",
+            "明天",
+            "本周末",
+            "周末",
+        )
+        location_terms = (
+            "北京",
+            "上海",
+            "广州",
+            "深圳",
+            "苏州",
+            "杭州",
+            "成都",
+            "南京",
+            "武汉",
+        )
+        has_explicit_when_or_where = any(term in query for term in time_terms) or any(
+            term in query for term in location_terms
+        )
+        return has_explicit_when_or_where and any(
+            term in query for term in observability_terms
         )

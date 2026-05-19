@@ -56,6 +56,132 @@ OPEN_ENDED_HINTS = (
     "不限",
 )
 
+WEATHER_HINTS = (
+    "天气",
+    "云量",
+    "云多",
+    "多云",
+    "晴不晴",
+    "晴吗",
+    "下雨",
+    "降雨",
+    "降水",
+    "风大",
+    "大风",
+    "风力",
+    "风速",
+    "湿度",
+    "温度",
+    "气温",
+    "雾霾",
+    "能见度",
+    "透明度",
+    "视宁度",
+    "结露",
+    "露水",
+)
+
+OBSERVATION_RECOMMENDATION_HINTS = (
+    "观测计划",
+    "观测建议",
+    "观测推荐",
+    "观测目标",
+    "今晚看什么",
+    "今晚观测什么",
+    "今晚能看什么",
+    "今晚适合看什么",
+    "适合看什么",
+    "最值得看什么",
+    "值得看什么",
+    "看什么",
+    "观测什么",
+    "推荐观测",
+    "推荐看",
+)
+
+CELESTIAL_EVENT_HINTS = (
+    "天象",
+    "流星雨",
+    "月食",
+    "日食",
+    "合月",
+    "冲日",
+    "掩星",
+    "凌日",
+    "食甚",
+    "极大",
+)
+
+DEEP_SKY_HINTS = (
+    "深空",
+    "星云",
+    "星系",
+    "星团",
+    "仙女座星系",
+    "猎户座大星云",
+    "昴星团",
+)
+
+NEO_HINTS = (
+    "近地天体",
+    "近地小行星",
+    "小行星",
+    "neo",
+    "飞掠",
+    "潜在威胁",
+    "撞击风险",
+)
+
+ASTROPHOTOGRAPHY_HINTS = (
+    "摄影",
+    "拍摄",
+    "曝光",
+    "叠加",
+    "相机",
+    "镜头",
+    "焦距",
+    "快门",
+    "iso",
+    "ISO",
+    "光圈",
+    "导星",
+    "固定三脚架",
+    "星野",
+    "星轨",
+)
+
+POSITION_HINTS = (
+    "位置",
+    "坐标",
+    "升起",
+    "落下",
+    "方向",
+    "方位",
+    "方位角",
+    "高度角",
+    "地平高度",
+    "altaz",
+    "在哪",
+    "哪里",
+    "可见",
+    "能看到",
+)
+
+CELESTIAL_TARGET_HINTS = (
+    "木星",
+    "土星",
+    "火星",
+    "金星",
+    "水星",
+    "天王星",
+    "海王星",
+    "月球",
+    "月亮",
+    "太阳",
+    "彗星",
+    "银河",
+)
+
 TASK_TYPE_TO_OUTPUT_SCHEMA = {
     "smalltalk": "chat_answer_v1",
     "simple_qa": "qa_answer_v1",
@@ -171,12 +297,33 @@ class RequestRouter:
 
         matched_skills = self._match_skills(text, lowered)
         if matched_skills:
+            if matched_skills == ["observation-planner"]:
+                return self._profile(
+                    task_type="observation_recommendation",
+                    legacy_route="planned_task",
+                    confidence=0.78,
+                    reason="matched_observation_recommendation_intent",
+                    matched_skills=matched_skills,
+                )
+
             if len(matched_skills) == 1 and not self._is_complex(text):
                 return self._profile(
                     task_type="single_tool_lookup",
                     legacy_route="direct_task",
                     confidence=0.9,
                     reason="matched_single_skill",
+                    matched_skills=matched_skills,
+                )
+
+            if (
+                len(matched_skills) == 1
+                and self._should_keep_single_skill_direct(matched_skills[0], text)
+            ):
+                return self._profile(
+                    task_type="single_tool_lookup",
+                    legacy_route="direct_task",
+                    confidence=0.88,
+                    reason="matched_single_skill_direct_intent",
                     matched_skills=matched_skills,
                 )
 
@@ -268,11 +415,11 @@ class RequestRouter:
         if "astrophotography-calculator" in skill_set or "摄影" in text:
             return "astrophotography_advice"
         if "deep-sky-observing-guide" in skill_set or any(
-            word in text for word in ("深空", "星云", "星系", "星团")
+            word in text for word in DEEP_SKY_HINTS
         ):
             return "deep_sky_guidance"
         if "celestial-events-forecast" in skill_set or any(
-            word in text for word in ("天象", "流星雨", "月食", "日食")
+            word in text for word in CELESTIAL_EVENT_HINTS
         ):
             return "celestial_event_analysis"
         return "observation_recommendation"
@@ -283,17 +430,17 @@ class RequestRouter:
             return matched
 
         inferred: List[str] = []
-        if any(word in text for word in ("天气", "云量", "湿度")):
+        if self._is_weather_intent(text):
             inferred.append("weather-lookup")
-        if any(word in text for word in ("观测", "今晚看什么", "观测计划")):
+        if self._is_observation_recommendation_intent(text):
             inferred.append("observation-planner")
-        if any(word in text for word in ("天象", "流星雨", "月食", "日食")):
+        if any(word in text for word in CELESTIAL_EVENT_HINTS):
             inferred.append("celestial-events-forecast")
-        if any(word in text for word in ("深空", "星云", "星系", "星团")):
+        if self._is_deep_sky_intent(text):
             inferred.append("deep-sky-observing-guide")
-        if any(word in text for word in ("摄影", "曝光", "相机")):
+        if self._is_astrophotography_intent(text):
             inferred.append("astrophotography-calculator")
-        if any(word in text for word in ("位置", "坐标", "升起", "落下")):
+        if self._is_position_intent(text):
             inferred.append("celestial-position-calculator")
         return inferred
 
@@ -310,33 +457,95 @@ class RequestRouter:
                 continue
 
             skill_name = spec.skill_name
-            if skill_name == "weather-lookup" and any(
-                word in text for word in ("天气", "云量", "湿度")
-            ):
+            if skill_name == "weather-lookup" and self._is_weather_intent(text):
                 matched.append(skill_name)
-            elif skill_name == "observation-planner" and any(
-                word in text for word in ("观测计划", "观测建议", "今晚看什么", "适合看什么")
+            elif (
+                skill_name == "observation-planner"
+                and self._is_observation_recommendation_intent(text)
             ):
                 matched.append(skill_name)
             elif skill_name == "celestial-events-forecast" and any(
-                word in text for word in ("天象", "流星雨", "月食", "日食")
+                word in text for word in CELESTIAL_EVENT_HINTS
             ):
                 matched.append(skill_name)
-            elif skill_name == "deep-sky-observing-guide" and any(
-                word in text for word in ("深空", "星云", "星系", "星团")
+            elif (
+                skill_name == "deep-sky-observing-guide"
+                and self._is_deep_sky_intent(text)
             ):
                 matched.append(skill_name)
             elif skill_name == "neo-tracker" and any(
-                word in text for word in ("近地天体", "小行星", "neo")
+                word in lowered for word in NEO_HINTS
             ):
                 matched.append(skill_name)
-            elif skill_name == "astrophotography-calculator" and any(
-                word in text for word in ("摄影", "曝光", "叠加", "相机")
+            elif (
+                skill_name == "astrophotography-calculator"
+                and self._is_astrophotography_intent(text)
             ):
                 matched.append(skill_name)
-            elif skill_name == "celestial-position-calculator" and any(
-                word in text for word in ("位置", "坐标", "升起", "落下")
+            elif (
+                skill_name == "celestial-position-calculator"
+                and self._is_position_intent(text)
             ):
                 matched.append(skill_name)
 
         return list(dict.fromkeys(matched))
+
+    def _is_weather_intent(self, text: str) -> bool:
+        return any(word in text for word in WEATHER_HINTS)
+
+    def _is_observation_recommendation_intent(self, text: str) -> bool:
+        if any(word in text for word in OBSERVATION_RECOMMENDATION_HINTS):
+            return True
+        return any(
+            re.search(pattern, text)
+            for pattern in (
+                r"(今晚|明晚|今天|明天|本周|周末).*(观测|看).*(目标|推荐|什么|哪些)",
+                r"(推荐|安排|规划).*(观测|看).*(目标|清单|列表)?",
+            )
+        )
+
+    def _is_deep_sky_intent(self, text: str) -> bool:
+        return any(word in text for word in DEEP_SKY_HINTS) or bool(
+            re.search(
+                r"\b(M\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b",
+                text,
+                re.IGNORECASE,
+            )
+        )
+
+    def _is_astrophotography_intent(self, text: str) -> bool:
+        if any(word in text for word in ASTROPHOTOGRAPHY_HINTS):
+            return True
+        return bool(
+            re.search(
+                r"拍(银河|星野|星轨|星空|月亮|月球|太阳|木星|土星|火星|星云|星系|星团|彗星)",
+                text,
+            )
+        )
+
+    def _is_position_intent(self, text: str) -> bool:
+        return self._has_celestial_target(text) and any(
+            word in text for word in POSITION_HINTS
+        )
+
+    def _has_celestial_target(self, text: str) -> bool:
+        return any(
+            word in text for word in CELESTIAL_TARGET_HINTS
+        ) or self._is_deep_sky_intent(text)
+
+    def _should_keep_single_skill_direct(self, skill_name: str, text: str) -> bool:
+        if skill_name != "astrophotography-calculator":
+            return False
+
+        if self._is_weather_intent(text):
+            return False
+        if any(
+            word in text
+            for word in ("方案", "计划", "分析", "步骤", "分阶段", "同时", "并且", "对比")
+        ):
+            return False
+        if "比较" in text and not any(
+            phrase in text for phrase in ("比较稳", "比较好", "比较合适", "比较安全")
+        ):
+            return False
+        return True

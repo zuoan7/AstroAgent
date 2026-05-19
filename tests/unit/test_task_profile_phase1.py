@@ -169,6 +169,83 @@ class TestRequestRouterProfile:
         else:
             assert p.tool_need in ("single", "multi")
 
+    @pytest.mark.parametrize(
+        ("query", "expected_skill", "expected_route", "expected_task_type"),
+        [
+            (
+                "今晚北京能在什么方向看到木星？",
+                "celestial-position-calculator",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+            (
+                "明晚上海土星高度角大概多少？",
+                "celestial-position-calculator",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+            (
+                "北京今晚云多吗？",
+                "weather-lookup",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+            (
+                "今晚风大会不会影响架望远镜？",
+                "weather-lookup",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+            (
+                "今晚北京最值得看什么？",
+                "observation-planner",
+                "planned_task",
+                "observation_recommendation",
+            ),
+            (
+                "本周末杭州推荐观测哪些目标？",
+                "observation-planner",
+                "planned_task",
+                "observation_recommendation",
+            ),
+            (
+                "M31 适合怎么观测？",
+                "deep-sky-observing-guide",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+            (
+                "NGC 7000 用双筒能看吗？",
+                "deep-sky-observing-guide",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+            (
+                "用 24mm 镜头拍银河，单张曝光多久比较稳？",
+                "astrophotography-calculator",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+            (
+                "固定三脚架拍星野 ISO 和快门怎么设？",
+                "astrophotography-calculator",
+                "direct_task",
+                "single_tool_lookup",
+            ),
+        ],
+    )
+    def test_observing_intent_rules_cover_general_phrasings(
+        self,
+        query,
+        expected_skill,
+        expected_route,
+        expected_task_type,
+    ):
+        p = self.router.profile(query)
+        assert expected_skill in p.matched_skills
+        assert p.legacy_route == expected_route
+        assert p.task_type == expected_task_type
+
     def test_simple_qa_profile_low_complexity_no_tools(self):
         p = self.router.profile("赤经是什么？")
         assert p.task_type == "simple_qa"
