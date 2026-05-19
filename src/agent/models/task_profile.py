@@ -31,6 +31,14 @@ class TaskProfile:
     router_source: str = "rule"
     rule_confidence: Optional[float] = None
     llm_confidence: Optional[float] = None
+    tool_necessity_action: str = ""
+    tool_necessity_reason: str = ""
+    tool_necessity_confidence: Optional[float] = None
+    answer_hint: str = ""
+    clarification_prompt: str = ""
+    tool_necessity_missing_params: List[str] = field(default_factory=list)
+    tool_necessity_allowed_skill_hints: List[str] = field(default_factory=list)
+    tool_necessity_forbidden_skill_hints: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict:
         return {
@@ -46,6 +54,18 @@ class TaskProfile:
             "router_source": self.router_source,
             "rule_confidence": self.rule_confidence,
             "llm_confidence": self.llm_confidence,
+            "tool_necessity_action": self.tool_necessity_action,
+            "tool_necessity_reason": self.tool_necessity_reason,
+            "tool_necessity_confidence": self.tool_necessity_confidence,
+            "answer_hint": self.answer_hint,
+            "clarification_prompt": self.clarification_prompt,
+            "tool_necessity_missing_params": list(self.tool_necessity_missing_params),
+            "tool_necessity_allowed_skill_hints": list(
+                self.tool_necessity_allowed_skill_hints
+            ),
+            "tool_necessity_forbidden_skill_hints": list(
+                self.tool_necessity_forbidden_skill_hints
+            ),
         }
 
     def to_legacy_route_decision(self) -> "RouteDecision":
@@ -62,6 +82,18 @@ class TaskProfile:
             router_source=self.router_source,
             rule_confidence=self.rule_confidence,
             llm_confidence=self.llm_confidence,
+            tool_necessity_action=self.tool_necessity_action,
+            tool_necessity_reason=self.tool_necessity_reason,
+            tool_necessity_confidence=self.tool_necessity_confidence,
+            answer_hint=self.answer_hint,
+            clarification_prompt=self.clarification_prompt,
+            tool_necessity_missing_params=list(self.tool_necessity_missing_params),
+            tool_necessity_allowed_skill_hints=list(
+                self.tool_necessity_allowed_skill_hints
+            ),
+            tool_necessity_forbidden_skill_hints=list(
+                self.tool_necessity_forbidden_skill_hints
+            ),
         )
 
     @classmethod
@@ -76,6 +108,14 @@ class TaskProfile:
         router_source: str = "rule",
         rule_confidence: Optional[float] = None,
         llm_confidence: Optional[float] = None,
+        tool_necessity_action: str = "",
+        tool_necessity_reason: str = "",
+        tool_necessity_confidence: Optional[float] = None,
+        answer_hint: str = "",
+        clarification_prompt: str = "",
+        tool_necessity_missing_params: Optional[List[str]] = None,
+        tool_necessity_allowed_skill_hints: Optional[List[str]] = None,
+        tool_necessity_forbidden_skill_hints: Optional[List[str]] = None,
     ) -> "TaskProfile":
         """从旧 RouteDecision 字段推断 TaskProfile，保证双向可转换。"""
         skills = list(matched_skills or [])
@@ -83,6 +123,11 @@ class TaskProfile:
         if route == "direct_task" and task_type == "smalltalk":
             complexity, openness, tool_need = "low", "low", "none"
         elif route == "direct_task" and task_type == "simple_qa":
+            complexity, openness, tool_need = "low", "low", "none"
+        elif route == "direct_task" and task_type in {
+            "clarification",
+            "direct_answer_no_tool",
+        }:
             complexity, openness, tool_need = "low", "low", "none"
         elif route == "direct_task" and task_type == "single_tool_lookup":
             complexity, openness, tool_need = "low", "low", "single"
@@ -109,4 +154,16 @@ class TaskProfile:
             router_source=router_source,
             rule_confidence=confidence if rule_confidence is None and router_source == "rule" else rule_confidence,
             llm_confidence=llm_confidence,
+            tool_necessity_action=tool_necessity_action,
+            tool_necessity_reason=tool_necessity_reason,
+            tool_necessity_confidence=tool_necessity_confidence,
+            answer_hint=answer_hint,
+            clarification_prompt=clarification_prompt,
+            tool_necessity_missing_params=list(tool_necessity_missing_params or []),
+            tool_necessity_allowed_skill_hints=list(
+                tool_necessity_allowed_skill_hints or []
+            ),
+            tool_necessity_forbidden_skill_hints=list(
+                tool_necessity_forbidden_skill_hints or []
+            ),
         )

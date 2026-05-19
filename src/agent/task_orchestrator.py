@@ -109,6 +109,29 @@ class TaskOrchestrator:
                 self._smalltalk_reply(query)
             )
 
+        if decision.task_type == "clarification":
+            answer = (
+                getattr(decision, "clarification_prompt", "")
+                or "这个请求还缺少关键信息。请补充目标、时间、地点或器材参数后我再继续。"
+            )
+            return FinalResponse(
+                answer=answer,
+                summary=answer[:200] if len(answer) > 200 else answer,
+                route=decision.route,
+                task_type=decision.task_type,
+                confidence=decision.confidence,
+            )
+
+        if decision.task_type == "direct_answer_no_tool":
+            answer = getattr(decision, "answer_hint", "") or self._direct_no_tool_reply(query)
+            return FinalResponse(
+                answer=answer,
+                summary=answer[:200] if len(answer) > 200 else answer,
+                route=decision.route,
+                task_type=decision.task_type,
+                confidence=decision.confidence,
+            )
+
         if decision.task_type == "single_tool_lookup":
             return await self._run_tool_task(decision, query)
 
@@ -261,6 +284,14 @@ class TaskOrchestrator:
         if "在吗" in query:
             return "在。可以直接问我天文知识、今晚观测目标、天气或观测计划。"
         return "你好，我可以帮你查询天象、观测条件、天体位置和天文知识。"
+
+    def _direct_no_tool_reply(self, query: str) -> str:
+        prompt = (
+            "你是天文助手。请不用任何外部工具，直接回答这个稳定知识或经验判断问题。"
+            "如果问题缺少实时数据，要明确说明只能给一般性判断。\n\n"
+            f"问题：{query}\n\n回答："
+        )
+        return self._invoke_llm(prompt)
 
     def _build_skill_params(self, skill_name: str, query: str) -> Dict[str, Any]:
         return self._param_builder.build(skill_name, query)

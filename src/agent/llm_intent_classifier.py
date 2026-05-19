@@ -12,6 +12,8 @@ VALID_ROUTES = {"direct_task", "planned_task", "fallback_react"}
 VALID_TASK_TYPES = {
     "smalltalk",
     "simple_qa",
+    "clarification",
+    "direct_answer_no_tool",
     "single_tool_lookup",
     "observation_recommendation",
     "celestial_event_analysis",

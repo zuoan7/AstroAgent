@@ -43,6 +43,24 @@ def test_celestial_position_rise_set_query_builds_rise_set_params():
     assert params["output_format"] == "rise_set"
 
 
+def test_celestial_position_height_query_builds_altaz_params():
+    params = _builder().build("celestial-position-calculator", "明晚广州看火星，高度会不会太低？")
+
+    assert params["target"] == "火星"
+    assert params["location"] == "广州"
+    assert params["datetime"] == "明晚"
+    assert params["output_format"] == "altaz"
+
+
+def test_sunset_darkness_query_builds_solar_rise_set_params():
+    params = _builder().build("celestial-position-calculator", "明天北京日落后多久天会比较黑？")
+
+    assert params["target"] == "太阳"
+    assert params["location"] == "北京"
+    assert params["datetime"] == "明天"
+    assert params["output_format"] == "rise_set"
+
+
 def test_deep_sky_extracts_m31_and_ngc_catalog_targets():
     builder = _builder()
 
@@ -79,3 +97,18 @@ def test_astrophotography_extracts_mount_iso_and_aperture():
     assert params["mount"] == "固定三脚架"
     assert params["iso"] == "ISO 1600"
     assert params["aperture"] == "f/2.8"
+
+
+def test_event_range_extracts_monthly_intent_for_general_public_events():
+    builder = _builder()
+
+    this_month = builder.build("celestial-events-forecast", "这个月有什么比较重要的天象？")
+    friend_events = builder.build(
+        "celestial-events-forecast",
+        "我想带朋友看天象，有没有适合普通人看的？",
+    )
+
+    assert this_month["start_date"] is not None
+    assert this_month["end_date"] is not None
+    assert friend_events["start_date"] is not None
+    assert friend_events["end_date"] is not None

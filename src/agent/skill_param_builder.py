@@ -172,6 +172,8 @@ class SkillParamBuilder:
                 if target == "月亮":
                     return "月球"
                 return target
+        if "日落" in query or "天黑" in query:
+            return "太阳"
         return None
 
     def _extract_photo_target(self, query: str) -> Optional[str]:
@@ -215,7 +217,16 @@ class SkillParamBuilder:
                 end = datetime(year, month + 1, 1) - timedelta(days=1)
             return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
-        if "本月" in query:
+        if "本月" in query or "这个月" in query:
+            today = datetime.now()
+            start = today.replace(day=1)
+            if start.month == 12:
+                end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+        if any(token in query for token in ("适合普通人", "带朋友看天象", "月内天象")):
             today = datetime.now()
             start = today.replace(day=1)
             if start.month == 12:
@@ -315,6 +326,7 @@ class SkillParamBuilder:
             "方向",
             "方位",
             "方位角",
+            "高度",
             "高度角",
             "地平高度",
             "地平坐标",
@@ -327,6 +339,9 @@ class SkillParamBuilder:
         )
         if any(term in query for term in altaz_terms):
             return "altaz"
+
+        if "日落" in query or "天黑" in query:
+            return "rise_set"
 
         radec_terms = ("赤经", "赤纬", "RA", "Dec", "radec", "坐标")
         if any(term in query for term in radec_terms):

@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from src.core.config import settings
 from src.skills.registry import get_skill_specs
 from src.agent.models.task_profile import TaskProfile
+from src.agent.tool_necessity_gate import ToolNecessityDecision, ToolNecessityGate
 
 
 SMALLTALK_PATTERNS = (
@@ -221,6 +222,8 @@ DYNAMIC_CONTEXT_HINTS = (
 TASK_TYPE_TO_OUTPUT_SCHEMA = {
     "smalltalk": "chat_answer_v1",
     "simple_qa": "qa_answer_v1",
+    "clarification": "clarification_answer_v1",
+    "direct_answer_no_tool": "qa_answer_v1",
     "single_tool_lookup": "tool_answer_v1",
     "observation_recommendation": "observation_answer_v1",
     "celestial_event_analysis": "event_analysis_answer_v1",
@@ -254,6 +257,14 @@ class RouteDecision:
     router_source: str = "rule"
     rule_confidence: Optional[float] = None
     llm_confidence: Optional[float] = None
+    tool_necessity_action: str = ""
+    tool_necessity_reason: str = ""
+    tool_necessity_confidence: Optional[float] = None
+    answer_hint: str = ""
+    clarification_prompt: str = ""
+    tool_necessity_missing_params: List[str] = field(default_factory=list)
+    tool_necessity_allowed_skill_hints: List[str] = field(default_factory=list)
+    tool_necessity_forbidden_skill_hints: List[str] = field(default_factory=list)
 
     def to_meta(self) -> Dict[str, object]:
         return {
@@ -266,6 +277,16 @@ class RouteDecision:
             "router_source": self.router_source,
             "rule_confidence": self.rule_confidence,
             "llm_confidence": self.llm_confidence,
+            "tool_necessity_action": self.tool_necessity_action,
+            "tool_necessity_reason": self.tool_necessity_reason,
+            "tool_necessity_confidence": self.tool_necessity_confidence,
+            "tool_necessity_missing_params": list(self.tool_necessity_missing_params),
+            "tool_necessity_allowed_skill_hints": list(
+                self.tool_necessity_allowed_skill_hints
+            ),
+            "tool_necessity_forbidden_skill_hints": list(
+                self.tool_necessity_forbidden_skill_hints
+            ),
         }
 
     @classmethod
@@ -281,6 +302,22 @@ class RouteDecision:
             router_source=getattr(profile, "router_source", "rule"),
             rule_confidence=getattr(profile, "rule_confidence", None),
             llm_confidence=getattr(profile, "llm_confidence", None),
+            tool_necessity_action=getattr(profile, "tool_necessity_action", ""),
+            tool_necessity_reason=getattr(profile, "tool_necessity_reason", ""),
+            tool_necessity_confidence=getattr(
+                profile, "tool_necessity_confidence", None
+            ),
+            answer_hint=getattr(profile, "answer_hint", ""),
+            clarification_prompt=getattr(profile, "clarification_prompt", ""),
+            tool_necessity_missing_params=list(
+                getattr(profile, "tool_necessity_missing_params", []) or []
+            ),
+            tool_necessity_allowed_skill_hints=list(
+                getattr(profile, "tool_necessity_allowed_skill_hints", []) or []
+            ),
+            tool_necessity_forbidden_skill_hints=list(
+                getattr(profile, "tool_necessity_forbidden_skill_hints", []) or []
+            ),
         )
 
     @property
@@ -303,9 +340,11 @@ class RequestRouter:
         *,
         enable_llm_fallback: Optional[bool] = None,
         llm_confidence_threshold: Optional[float] = None,
+        tool_necessity_gate: Optional[ToolNecessityGate] = None,
     ) -> None:
         self._skill_specs = get_skill_specs()
         self._llm_intent_classifier = llm_intent_classifier
+        self._tool_necessity_gate = tool_necessity_gate or ToolNecessityGate()
         self._enable_llm_fallback = (
             bool(getattr(settings, "ENABLE_LLM_INTENT_FALLBACK", False))
             if enable_llm_fallback is None
@@ -351,8 +390,122 @@ class RequestRouter:
 
         ENABLE_TASK_PROFILE 配置位仅为历史兼容保留，不再切换该主路径。
         """
+        gate_decision = self._tool_necessity_gate.evaluate(query)
+        if gate_decision.action in {"clarify", "answer_without_tool"}:
+            return self._profile_from_gate_decision(gate_decision)
+
         rule_profile = self._rule_profile(query)
-        return self._apply_llm_fallback(query, rule_profile)
+        profile = self._apply_llm_fallback(query, rule_profile)
+        profile = self._apply_tool_necessity_hints(query, profile, gate_decision)
+
+        route_gate_decision = self._tool_necessity_gate.validate_tool_route(
+            query,
+            list(profile.matched_skills),
+        )
+        if route_gate_decision.action in {"clarify", "answer_without_tool"}:
+            return self._profile_from_gate_decision(route_gate_decision)
+        if route_gate_decision.reason == "route_allowed":
+            return profile
+
+        return self._apply_tool_necessity_hints(query, profile, route_gate_decision)
+
+    def _profile_from_gate_decision(
+        self,
+        gate_decision: ToolNecessityDecision,
+    ) -> TaskProfile:
+        task_type = (
+            "clarification"
+            if gate_decision.action == "clarify"
+            else "direct_answer_no_tool"
+        )
+        return self._profile(
+            task_type=task_type,
+            legacy_route="direct_task",
+            confidence=gate_decision.confidence,
+            reason=f"tool_necessity_gate:{gate_decision.reason}",
+            matched_skills=[],
+            router_source=f"tool_necessity_gate:{gate_decision.source}",
+            gate_decision=gate_decision,
+        )
+
+    def _apply_tool_necessity_hints(
+        self,
+        query: str,
+        profile: TaskProfile,
+        gate_decision: ToolNecessityDecision,
+    ) -> TaskProfile:
+        if gate_decision.action != "use_tool":
+            return profile
+
+        allowed = list(gate_decision.allowed_skill_hints or [])
+        forbidden = set(gate_decision.forbidden_skill_hints or [])
+        if not allowed and not forbidden:
+            if gate_decision.reason == "no_high_confidence_gate_rule":
+                return profile
+            return self._with_gate_decision(profile, gate_decision)
+
+        skills = [
+            skill
+            for skill in (allowed or list(profile.matched_skills))
+            if skill not in forbidden
+        ]
+        if not skills:
+            return self._with_gate_decision(profile, gate_decision)
+
+        if (
+            list(profile.matched_skills) == skills
+            and not forbidden
+            and (
+                len(skills) != 1
+                or skills[0] == "observation-planner"
+                or profile.legacy_route == "direct_task"
+            )
+        ):
+            return self._with_gate_decision(profile, gate_decision)
+
+        if len(skills) == 1 and skills[0] != "observation-planner":
+            return self._profile(
+                task_type="single_tool_lookup",
+                legacy_route="direct_task",
+                confidence=max(profile.confidence, gate_decision.confidence),
+                reason=f"tool_necessity_gate_hint:{gate_decision.reason}",
+                matched_skills=skills,
+                router_source=profile.router_source,
+                rule_confidence=profile.rule_confidence,
+                llm_confidence=profile.llm_confidence,
+                gate_decision=gate_decision,
+            )
+
+        return self._profile(
+            task_type=self._infer_task_type(query, skills),
+            legacy_route="planned_task",
+            confidence=max(profile.confidence, gate_decision.confidence),
+            reason=f"tool_necessity_gate_hint:{gate_decision.reason}",
+            matched_skills=skills,
+            router_source=profile.router_source,
+            rule_confidence=profile.rule_confidence,
+            llm_confidence=profile.llm_confidence,
+            gate_decision=gate_decision,
+        )
+
+    def _with_gate_decision(
+        self,
+        profile: TaskProfile,
+        gate_decision: ToolNecessityDecision,
+    ) -> TaskProfile:
+        profile.tool_necessity_action = gate_decision.action
+        profile.tool_necessity_reason = gate_decision.reason
+        profile.tool_necessity_confidence = gate_decision.confidence
+        profile.answer_hint = gate_decision.answer_hint
+        profile.clarification_prompt = gate_decision.clarification_prompt
+        profile.tool_necessity_missing_params = list(gate_decision.missing_params)
+        profile.tool_necessity_allowed_skill_hints = list(
+            gate_decision.allowed_skill_hints
+        )
+        profile.tool_necessity_forbidden_skill_hints = list(
+            gate_decision.forbidden_skill_hints
+        )
+        return profile
 
     def _rule_profile(self, query: str) -> TaskProfile:
         """Deterministic rule router used as the first-pass classification."""
@@ -569,7 +722,9 @@ class RequestRouter:
         router_source: str = "rule",
         rule_confidence: Optional[float] = None,
         llm_confidence: Optional[float] = None,
+        gate_decision: Optional[ToolNecessityDecision] = None,
     ) -> TaskProfile:
+        gate = gate_decision
         return TaskProfile.from_legacy_route(
             route=legacy_route,
             task_type=task_type,
@@ -586,6 +741,18 @@ class RequestRouter:
                 else rule_confidence
             ),
             llm_confidence=llm_confidence,
+            tool_necessity_action=gate.action if gate else "",
+            tool_necessity_reason=gate.reason if gate else "",
+            tool_necessity_confidence=gate.confidence if gate else None,
+            answer_hint=gate.answer_hint if gate else "",
+            clarification_prompt=gate.clarification_prompt if gate else "",
+            tool_necessity_missing_params=list(gate.missing_params if gate else []),
+            tool_necessity_allowed_skill_hints=list(
+                gate.allowed_skill_hints if gate else []
+            ),
+            tool_necessity_forbidden_skill_hints=list(
+                gate.forbidden_skill_hints if gate else []
+            ),
         )
 
     def _is_smalltalk(self, text: str) -> bool:

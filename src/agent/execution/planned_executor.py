@@ -230,6 +230,20 @@ class PlannedExecutor:
             "router_source": route_meta.get("router_source"),
             "rule_confidence": route_meta.get("rule_confidence"),
             "llm_confidence": route_meta.get("llm_confidence"),
+            "tool_necessity_action": route_meta.get("tool_necessity_action"),
+            "tool_necessity_reason": route_meta.get("tool_necessity_reason"),
+            "tool_necessity_confidence": route_meta.get(
+                "tool_necessity_confidence"
+            ),
+            "tool_necessity_missing_params": route_meta.get(
+                "tool_necessity_missing_params", []
+            ),
+            "tool_necessity_allowed_skill_hints": route_meta.get(
+                "tool_necessity_allowed_skill_hints", []
+            ),
+            "tool_necessity_forbidden_skill_hints": route_meta.get(
+                "tool_necessity_forbidden_skill_hints", []
+            ),
             "planner_source": plan.planner_type,
             "plan_steps_with_params": [
                 {

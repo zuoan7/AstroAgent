@@ -1671,6 +1671,15 @@ class BaseStreamingGenerator:
                         "router_source": audit_metadata.get("router_source"),
                         "rule_confidence": audit_metadata.get("rule_confidence"),
                         "llm_confidence": audit_metadata.get("llm_confidence"),
+                        "tool_necessity_action": audit_metadata.get(
+                            "tool_necessity_action"
+                        ),
+                        "tool_necessity_reason": audit_metadata.get(
+                            "tool_necessity_reason"
+                        ),
+                        "tool_necessity_confidence": audit_metadata.get(
+                            "tool_necessity_confidence"
+                        ),
                         "planner_source": audit_metadata.get("planner_source"),
                         "plan_steps_with_params": audit_metadata.get(
                             "plan_steps_with_params", []

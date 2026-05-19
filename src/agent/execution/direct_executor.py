@@ -18,7 +18,7 @@ from src.core.config import settings
 
 
 class DirectExecutor:
-    """封装 direct_task 三条子路径：smalltalk / single_tool_lookup / simple_qa。"""
+    """封装 direct_task 子路径。"""
 
     def __init__(
         self,
@@ -49,6 +49,18 @@ class DirectExecutor:
             self._attach_execution_events(response)
             return response
 
+        if decision.task_type == "clarification":
+            response = self._run_clarification(decision, query)
+            self._attach_response_metadata(response, decision=decision)
+            self._attach_execution_events(response)
+            return response
+
+        if decision.task_type == "direct_answer_no_tool":
+            response = self._run_no_tool_answer(decision, query)
+            self._attach_response_metadata(response, decision=decision)
+            self._attach_execution_events(response)
+            return response
+
         if decision.task_type == "single_tool_lookup":
             return await self._run_tool_task(decision, query)
 
@@ -61,6 +73,47 @@ class DirectExecutor:
             return response
 
         raise ValueError(f"unsupported direct task type: {decision.task_type}")
+
+    def _run_clarification(
+        self,
+        decision: RouteDecision,
+        query: str,
+    ) -> FinalResponse:
+        answer = (
+            decision.clarification_prompt
+            or "这个请求还缺少关键信息。请补充目标、时间、地点或器材参数后我再继续。"
+        )
+        return FinalResponse(
+            answer=answer,
+            summary=answer[:200] if len(answer) > 200 else answer,
+            tools_used=[],
+            sources=[],
+            confidence=decision.confidence,
+            route=decision.route,
+            task_type=decision.task_type,
+            versions=self._synthesizer._default_versions()
+            if hasattr(self._synthesizer, "_default_versions")
+            else None,
+        )
+
+    def _run_no_tool_answer(
+        self,
+        decision: RouteDecision,
+        query: str,
+    ) -> FinalResponse:
+        answer = decision.answer_hint or self._direct_no_tool_reply(query)
+        return FinalResponse(
+            answer=answer,
+            summary=answer[:200] if len(answer) > 200 else answer,
+            tools_used=[],
+            sources=[],
+            confidence=decision.confidence,
+            route=decision.route,
+            task_type=decision.task_type,
+            versions=self._synthesizer._default_versions()
+            if hasattr(self._synthesizer, "_default_versions")
+            else None,
+        )
 
     async def _run_tool_task(self, decision: RouteDecision, query: str) -> FinalResponse:
         from src.agent.models.skill_result import SkillResult
@@ -110,6 +163,20 @@ class DirectExecutor:
             "router_source": route_meta.get("router_source"),
             "rule_confidence": route_meta.get("rule_confidence"),
             "llm_confidence": route_meta.get("llm_confidence"),
+            "tool_necessity_action": route_meta.get("tool_necessity_action"),
+            "tool_necessity_reason": route_meta.get("tool_necessity_reason"),
+            "tool_necessity_confidence": route_meta.get(
+                "tool_necessity_confidence"
+            ),
+            "tool_necessity_missing_params": route_meta.get(
+                "tool_necessity_missing_params", []
+            ),
+            "tool_necessity_allowed_skill_hints": route_meta.get(
+                "tool_necessity_allowed_skill_hints", []
+            ),
+            "tool_necessity_forbidden_skill_hints": route_meta.get(
+                "tool_necessity_forbidden_skill_hints", []
+            ),
             "planner_source": "",
             "plan_steps_with_params": [],
             "param_builder_source": param_builder_source,
@@ -240,6 +307,14 @@ class DirectExecutor:
         if "在吗" in query:
             return "在。可以直接问我天文知识、今晚观测目标、天气或观测计划。"
         return "你好，我可以帮你查询天象、观测条件、天体位置和天文知识。"
+
+    def _direct_no_tool_reply(self, query: str) -> str:
+        prompt = (
+            "你是天文助手。请不用任何外部工具，直接回答这个稳定知识或经验判断问题。"
+            "如果问题缺少实时数据，要明确说明只能给一般性判断。\n\n"
+            f"问题：{query}\n\n回答："
+        )
+        return self._invoke_llm(prompt)
 
     def _build_skill_params(self, skill_name: str, query: str) -> Dict[str, Any]:
         return self._param_builder.build(skill_name, query)
