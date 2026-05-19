@@ -79,6 +79,8 @@ def make_report_dir(root: Path) -> Path:
 
 
 def infer_composite_mcp_tools(skill_name: str, params: dict[str, Any]) -> list[str]:
+    if skill_name in {"get_nasa_apod", "web_search"}:
+        return [skill_name]
     if skill_name == "weather-lookup":
         return ["get_weather"]
     if skill_name == "observation-planner":
@@ -93,6 +95,7 @@ def infer_composite_mcp_tools(skill_name: str, params: dict[str, Any]) -> list[s
         tools = ["get_astrophysical_object_info"]
         target = str(params.get("target") or "").lower().replace(" ", "")
         if "星系" in str(params.get("target") or "") or target in {
+            "银河系",
             "m31",
             "m33",
             "m51",
@@ -105,8 +108,6 @@ def infer_composite_mcp_tools(skill_name: str, params: dict[str, Any]) -> list[s
             "ngc598",
         }:
             tools.append("get_galaxy_data")
-        if params.get("observer_location"):
-            tools.append("get_weather")
         return tools
     if skill_name == "neo-tracker":
         return ["get_neo_data"]

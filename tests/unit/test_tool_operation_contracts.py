@@ -9,6 +9,7 @@ def test_position_operation_contracts_map_to_atomic_mcp_tools():
         "rise_set": "get_rise_set_times",
         "planet_position": "get_planet_position",
         "current_sky": "get_current_sky_objects",
+        "coordinate_transformation": "coordinate_transformation",
     }
 
     for operation, mcp_tool in expected.items():

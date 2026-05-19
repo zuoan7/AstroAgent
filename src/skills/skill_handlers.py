@@ -515,17 +515,9 @@ class DeepSkyObservingGuideHandler:
                 "kwargs": {"galaxy_name": target},
                 "_key": "galaxy_info",
             })
-        if observer_location:
-            parallel_calls.append({
-                "tool_name": "get_weather",
-                "kwargs": {"city": observer_location, "extensions": "all"},
-                "_key": "weather",
-            })
-
         parallel_results = mcp.call_tools_parallel(parallel_calls)
         obj_info_raw = ""
         galaxy_info_raw: Optional[str] = None
-        weather_brief = ""
         for i, result in enumerate(parallel_results):
             key = parallel_calls[i]["_key"]
             if key == "obj_info":
@@ -534,9 +526,6 @@ class DeepSkyObservingGuideHandler:
             elif key == "galaxy_info":
                 galaxy_info_data, galaxy_info_raw = _extract_tool_payload_and_text(result)
                 sources.append(_tool_source_entry("get_galaxy_data", result, snippet_text=galaxy_info_raw))
-            elif key == "weather":
-                weather_brief = _summarize_weather(result)
-                sources.append(_tool_source_entry("get_weather", result, snippet_text=weather_brief))
 
         lines = [
             f"🎯 深空目标：{target}",
@@ -552,10 +541,6 @@ class DeepSkyObservingGuideHandler:
         if galaxy_info_raw:
             lines.append("\n补充：星系数据摘要")
             lines.append(ParamParser.shorten_text(galaxy_info_raw, 400))
-
-        if weather_brief:
-            lines.append("\n二、观测条件（天气简要）")
-            lines.append(weather_brief)
 
         lines.append("\n三、观测建议")
         lines.append(
@@ -583,7 +568,7 @@ class DeepSkyObservingGuideHandler:
 
     def _is_galaxy_target(self, target: str) -> bool:
         normalized = (target or "").strip().lower().replace(" ", "")
-        if "galaxy" in normalized or "星系" in normalized:
+        if "galaxy" in normalized or "星系" in normalized or "银河系" in normalized:
             return True
         return normalized in {
             "m31",
@@ -847,11 +832,15 @@ class CelestialPositionCalculatorHandler:
         location: Optional[str] = None,
         output_format: Optional[str] = None,
         operation: Optional[str] = None,
+        ra: Optional[float] = None,
+        dec: Optional[float] = None,
+        epoch: Optional[str] = None,
+        target_system: Optional[str] = None,
     ) -> SkillResult:
         started = time.perf_counter()
 
         requested_operation = (operation or "").strip().lower()
-        if not target and requested_operation != "current_sky":
+        if not target and requested_operation not in {"current_sky", "coordinate_transformation"}:
             return SkillResult.from_error(
                 skill_name="celestial-position-calculator",
                 error_code="VALIDATION_ERROR",
@@ -864,13 +853,21 @@ class CelestialPositionCalculatorHandler:
         mcp_target = PLANET_NAME_ALIASES.get(target, target).lower()
 
         operation_name = requested_operation
-        if operation_name not in {"altaz", "rise_set", "planet_position", "current_sky"}:
+        if operation_name not in {"altaz", "rise_set", "planet_position", "current_sky", "coordinate_transformation"}:
             if fmt in {"rise_set", "rise-set", "riseset"}:
                 operation_name = "rise_set"
             elif fmt == "altaz":
                 operation_name = "altaz"
             else:
                 operation_name = "planet_position"
+
+        if operation_name == "coordinate_transformation" and (ra is None or dec is None):
+            return SkillResult.from_error(
+                skill_name="celestial-position-calculator",
+                error_code="VALIDATION_ERROR",
+                error_message="坐标转换需要提供赤经 ra 和赤纬 dec。",
+            )
+
         operation_spec = registry.get_operation_spec(
             "celestial-position-calculator",
             operation_name,
@@ -891,6 +888,15 @@ class CelestialPositionCalculatorHandler:
                 latitude=lat,
                 longitude=lon,
                 date=obs_time.strftime("%Y-%m-%d"),
+            )
+        elif operation_name == "coordinate_transformation":
+            tool_name = operation_spec.atomic_tool_name
+            result_raw = mcp.call_tool(
+                tool_name,
+                ra=float(ra or 0.0),
+                dec=float(dec or 0.0),
+                epoch=epoch or "J2000",
+                target_system=target_system or "fk5",
             )
         elif operation_name == "rise_set":
             tool_name = operation_spec.atomic_tool_name
@@ -920,6 +926,8 @@ class CelestialPositionCalculatorHandler:
             coordinate_label = "地平坐标（高度角/方位角）"
         elif operation_name == "current_sky":
             coordinate_label = "当前天空目标"
+        elif operation_name == "coordinate_transformation":
+            coordinate_label = "坐标转换"
         else:
             coordinate_label = "赤道坐标"
         header = (

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from tests.mock_deps import mock_heavy_dependencies
 
 mock_heavy_dependencies()
@@ -118,3 +120,48 @@ def test_event_range_extracts_monthly_intent_for_general_public_events():
     assert friend_events["start_date"] is not None
     assert friend_events["end_date"] is not None
     assert friend_events["operation"] == "monthly"
+
+
+def test_event_range_extracts_month_with_spaced_chinese_date():
+    params = _builder().build(
+        "celestial-events-forecast",
+        "2026 年 6 月有哪些适合观测的天象？",
+    )
+
+    assert params["start_date"] == "2026-06-01"
+    assert params["end_date"] == "2026-06-30"
+    assert params["operation"] == "monthly"
+
+
+def test_celestial_position_current_sky_query_builds_current_sky_operation():
+    params = _builder().build(
+        "celestial-position-calculator",
+        "今晚上海肉眼能看到哪些亮星或行星？",
+    )
+
+    assert params["location"] == "上海"
+    assert params["datetime"] == "今晚"
+    assert params["operation"] == "current_sky"
+
+
+def test_celestial_position_radec_query_builds_coordinate_operation():
+    params = _builder().build(
+        "celestial-position-calculator",
+        "赤经 5h35m、赤纬 -5°23′ 这个位置大概在哪里？",
+    )
+
+    assert params["operation"] == "coordinate_transformation"
+    assert params["ra"] == pytest.approx(5 + 35 / 60)
+    assert params["dec"] == pytest.approx(-(5 + 23 / 60))
+
+
+def test_atomic_mcp_tool_params_for_apod_and_web_search():
+    builder = _builder()
+
+    apod = builder.build("get_nasa_apod", "帮我查一下 2026-01-01 的 APOD")
+    search = builder.build("web_search", "帮我查一下最近韦布望远镜有什么新结果")
+
+    assert apod["date"] == "2026-01-01"
+    assert apod["hd"] is False
+    assert search["query"] == "最近韦布望远镜有什么新结果"
+    assert search["max_results"] == 5

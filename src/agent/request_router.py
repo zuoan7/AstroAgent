@@ -784,6 +784,10 @@ class RequestRouter:
 
     def _infer_task_type(self, text: str, matched_skills: List[str]) -> str:
         skill_set = set(matched_skills)
+        if "observation-planner" in skill_set and any(
+            token in text for token in ("计划", "安排", "推荐", "观测顺序", "看什么", "先看")
+        ):
+            return "observation_recommendation"
         if "astrophotography-calculator" in skill_set or "摄影" in text:
             return "astrophotography_advice"
         if "deep-sky-observing-guide" in skill_set or any(
@@ -829,7 +833,11 @@ class RequestRouter:
                 continue
 
             skill_name = spec.skill_name
-            if skill_name == "weather-lookup" and self._is_weather_intent(text):
+            if skill_name == "get_nasa_apod" and self._is_apod_lookup_intent(text):
+                matched.append(skill_name)
+            elif skill_name == "web_search" and self._is_web_search_intent(text):
+                matched.append(skill_name)
+            elif skill_name == "weather-lookup" and self._is_weather_intent(text):
                 matched.append(skill_name)
             elif (
                 skill_name == "observation-planner"
@@ -863,10 +871,54 @@ class RequestRouter:
         return list(dict.fromkeys(matched))
 
     def _is_weather_intent(self, text: str) -> bool:
-        return any(word in text for word in WEATHER_HINTS)
+        if not any(word in text for word in WEATHER_HINTS):
+            return False
+        if any(token in text for token in ("预报说", "天气晴但", "湿度很高", "视宁度不好")):
+            return False
+        has_city = any(city in text for city in ("北京", "上海", "广州", "深圳", "杭州", "成都", "南京", "武汉", "西安", "重庆", "天津"))
+        has_time = any(token in text for token in ("今晚", "明晚", "今天", "明天", "当前", "现在"))
+        asks_lookup = any(token in text for token in ("云多吗", "云少", "会不会下雨", "适合架望远镜", "适合出门观星", "适合观星", "观测条件"))
+        if has_city and (
+            any(token in text for token in ("天气怎么样", "查天气", "天气如何", "今天天气"))
+            or ("查" in text and "天气" in text)
+        ):
+            return True
+        return has_city and has_time and asks_lookup
 
     def _is_observation_recommendation_intent(self, text: str) -> bool:
+        if "拍" in text:
+            return False
+        if re.search(r"\bM\s?\d{1,3}\b", text, re.IGNORECASE) and "差别" in text:
+            return False
+        if any(token in text for token in ("提前准备", "提前多久到", "出门观星前需要")):
+            return False
+        if self._is_observation_ordering_intent(text):
+            return True
         if any(word in text for word in OBSERVATION_RECOMMENDATION_HINTS):
+            return True
+        if self._has_observing_equipment_constraint(text) and any(
+            token in text for token in ("看什么", "安排", "目标", "推荐", "观测顺序")
+        ):
+            return True
+        if any(
+            token in text
+            for token in (
+                "今晚推荐什么",
+                "明晚应该安排什么",
+                "今晚安排什么",
+                "计划要不要换",
+                "周末晚上能不能安排",
+                "带孩子看星星",
+                "朋友观星",
+                "不容易冷场",
+                "城市阳台",
+                "郊外公园",
+                "哪天更适合观星",
+                "只有半小时",
+                "观测顺序",
+                "从容易找到的目标开始",
+            )
+        ):
             return True
         return any(
             re.search(pattern, text)
@@ -877,16 +929,47 @@ class RequestRouter:
         )
 
     def _is_deep_sky_intent(self, text: str) -> bool:
-        return any(word in text for word in DEEP_SKY_HINTS) or bool(
-            re.search(
-                r"\b(M\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b",
-                text,
-                re.IGNORECASE,
-            )
+        if any(token in text for token in ("区别", "是不是一个", "同一个", "为什么更适合", "会不会影响", "应该先选", "基本没戏", "帮助大吗")):
+            return False
+        has_catalog = bool(
+            re.search(r"\b(M\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b", text, re.IGNORECASE)
         )
+        if has_catalog:
+            return True
+        if any(word in text for word in ("仙女座星系", "猎户座大星云", "昴星团", "银河系")):
+            return True
+        if any(word in text for word in DEEP_SKY_HINTS):
+            return any(
+                token in text
+                for token in (
+                    "观测",
+                    "用肉眼",
+                    "用双筒",
+                    "用多大倍率",
+                    "找",
+                    "看出",
+                    "适合看",
+                    "能看到",
+                    "值得试",
+                    "离我们",
+                    "什么天体",
+                    "类型",
+                    "提到",
+                    "差别大",
+                )
+            )
+        return False
 
     def _is_astrophotography_intent(self, text: str) -> bool:
+        if any(token in text for token in ("怎么避免", "直接拍单张", "规则现在", "怎么对焦", "有必要买吗", "一定要拍", "可能是哪一步", "分别是干什么")):
+            return False
         if any(word in text for word in ASTROPHOTOGRAPHY_HINTS):
+            if any(token in text for token in ("曝光", "增益", "单张", "累计", "流程", "安排", "计划", "架机", "收片", "参数", "快门")):
+                return True
+            if re.search(r"\d{1,4}\s*(?:mm|毫米)", text):
+                return True
+            return False
+        if "参数思路" in text:
             return True
         return bool(
             re.search(
@@ -896,9 +979,11 @@ class RequestRouter:
         )
 
     def _is_position_intent(self, text: str) -> bool:
-        return self._has_celestial_target(text) and any(
-            word in text for word in POSITION_HINTS
-        )
+        if self._is_current_sky_intent(text) or self._is_coordinate_transform_intent(text):
+            return True
+        if any(token in text for token in ("怎么理解", "这是赤经赤纬吗", "只有 12 度高度")):
+            return False
+        return self._has_celestial_target(text) and any(word in text for word in POSITION_HINTS)
 
     def _has_celestial_target(self, text: str) -> bool:
         return any(
@@ -923,6 +1008,58 @@ class RequestRouter:
                 text,
                 re.IGNORECASE,
             )
+        )
+
+    @staticmethod
+    def _is_apod_lookup_intent(text: str) -> bool:
+        has_apod_reference = "APOD" in text or "每日天文图" in text
+        if not has_apod_reference:
+            return False
+        has_lookup_context = any(
+            token in text for token in ("今天", "今日", "昨天", "日期", "查", "查询", "图片")
+        ) or bool(re.search(r"\d{4}-\d{2}-\d{2}", text))
+        if any(token in text for token in ("什么意思", "怎么理解")):
+            return False
+        if "是什么" in text and not has_lookup_context:
+            return False
+        return has_lookup_context
+
+    @staticmethod
+    def _is_web_search_intent(text: str) -> bool:
+        if any(token in text for token in ("天象", "流星雨", "月食", "日食", "合月")):
+            return False
+        return any(token in text for token in ("最近", "最新", "新闻", "新结果", "新发现")) and any(
+            token in text for token in ("天文", "韦布", "JWST", "发现", "结果")
+        )
+
+    @staticmethod
+    def _is_current_sky_intent(text: str) -> bool:
+        return any(token in text for token in ("天上有什么", "能看到哪些", "能看哪些", "哪些亮星", "亮星或行星")) and any(
+            token in text for token in ("现在", "今晚", "当前")
+        )
+
+    @staticmethod
+    def _is_coordinate_transform_intent(text: str) -> bool:
+        return ("赤经" in text and "赤纬" in text and any(token in text for token in ("哪里", "在哪里", "位置", "大概"))) or bool(
+            re.search(r"\bRA\b.*\bDec\b", text, re.IGNORECASE)
+            and any(token in text for token in ("哪里", "在哪里", "位置"))
+        )
+
+    @staticmethod
+    def _is_observation_ordering_intent(text: str) -> bool:
+        has_order_word = any(token in text for token in ("先看", "先观测", "优先看", "先看哪个"))
+        has_choice = "还是" in text or "哪个" in text
+        target_count = sum(
+            1
+            for target in ("月亮", "月球", "木星", "土星", "火星", "金星", "深空", "星云", "星团", "星系")
+            if target in text
+        )
+        return has_order_word and has_choice and target_count >= 2
+
+    @staticmethod
+    def _has_observing_equipment_constraint(text: str) -> bool:
+        return bool(re.search(r"\b\d{1,2}\s*x\s*\d{2}\b", text, re.IGNORECASE)) or any(
+            token in text for token in ("双筒", "望远镜", "DOB", "小折射", "目镜")
         )
 
     def _should_keep_single_skill_direct(self, skill_name: str, text: str) -> bool:

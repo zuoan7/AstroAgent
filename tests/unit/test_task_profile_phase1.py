@@ -192,9 +192,9 @@ class TestRequestRouterProfile:
             ),
             (
                 "今晚风大会不会影响架望远镜？",
-                "weather-lookup",
+                "",
                 "direct_task",
-                "single_tool_lookup",
+                "direct_answer_no_tool",
             ),
             (
                 "今晚北京最值得看什么？",
@@ -242,7 +242,10 @@ class TestRequestRouterProfile:
         expected_task_type,
     ):
         p = self.router.profile(query)
-        assert expected_skill in p.matched_skills
+        if expected_skill:
+            assert expected_skill in p.matched_skills
+        else:
+            assert p.matched_skills == []
         assert p.legacy_route == expected_route
         assert p.task_type == expected_task_type
 

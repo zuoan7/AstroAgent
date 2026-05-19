@@ -62,6 +62,33 @@ _ASTRONOMY_SKILL_SPECS: tuple[SkillSpec, ...] = (
         special_handling=normalize_weather_params,
     ),
     SkillSpec(
+        skill_name="get_nasa_apod",
+        langchain_tool_name="get_nasa_apod",
+        summary="查询 NASA 每日天文图 APOD",
+        description=(
+            "查询 NASA 每日天文图 APOD（atomic MCP tool: get_nasa_apod）。\n"
+            "参数：date（YYYY-MM-DD，可选，默认今天），hd（是否返回高清图，可选）。"
+        ),
+        route_type="simple",
+        mcp_tool_name="get_nasa_apod",
+        param_names=["date", "hd"],
+        defaults={"hd": False},
+    ),
+    SkillSpec(
+        skill_name="web_search",
+        langchain_tool_name="web_search",
+        summary="联网搜索最新天文新闻或外部资料",
+        description=(
+            "联网搜索最新天文新闻或外部资料（atomic MCP tool: web_search）。\n"
+            "参数：query（搜索关键词，必填），max_results（结果数量，可选，默认 5）。"
+        ),
+        route_type="simple",
+        mcp_tool_name="web_search",
+        param_names=["query", "max_results"],
+        defaults={"max_results": 5},
+        type_conversions={"max_results": int},
+    ),
+    SkillSpec(
         skill_name="observation-planner",
         langchain_tool_name="ObservationPlanner",
         summary="生成指定日期和地点的天文观测计划",
@@ -154,10 +181,20 @@ _ASTRONOMY_SKILL_SPECS: tuple[SkillSpec, ...] = (
             "datetime（观测时间，建议YYYY-MM-DD HH:MM 格式，可选，默认当前时间），"
             "location（观测地点，经纬度'纬度,经度'形式，可选），"
             "output_format（输出格式，如'altaz''radec''rise_set'，可选），"
-            "operation（altaz、rise_set、planet_position 或 current_sky，可选，用于约束底层 MCP 工具）。"
+            "operation（altaz、rise_set、planet_position、coordinate_transformation 或 current_sky，可选，用于约束底层 MCP 工具）。"
         ),
         route_type="handler",
-        param_names=["target", "datetime", "location", "output_format", "operation"],
+        param_names=[
+            "target",
+            "datetime",
+            "location",
+            "output_format",
+            "operation",
+            "ra",
+            "dec",
+            "epoch",
+            "target_system",
+        ],
     ),
 )
 
@@ -206,6 +243,20 @@ _OPERATION_SPECS: tuple[OperationSpec, ...] = (
         required_params=["datetime", "location"],
         allowed_child_tools=["get_current_sky_objects"],
         forbidden_child_tools=["get_altaz", "get_planet_position", "get_rise_set_times"],
+    ),
+    OperationSpec(
+        logical_skill="celestial-position-calculator",
+        operation="coordinate_transformation",
+        atomic_tool_name="coordinate_transformation",
+        trigger_summary="赤经赤纬坐标解析、坐标系统转换或位置格式解释",
+        required_params=["ra", "dec"],
+        allowed_child_tools=["coordinate_transformation"],
+        forbidden_child_tools=[
+            "get_altaz",
+            "get_planet_position",
+            "get_rise_set_times",
+            "get_current_sky_objects",
+        ],
     ),
     OperationSpec(
         logical_skill="celestial-events-forecast",

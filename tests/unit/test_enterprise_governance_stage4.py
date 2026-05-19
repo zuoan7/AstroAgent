@@ -116,8 +116,7 @@ async def test_task_orchestrator_planned_response_contains_enterprise_metadata()
     assert result.versions["planner_version"]
     assert result.versions["synth_prompt_version"]
     assert result.route_decision["route"] == "planned_task"
-    assert result.fallback_path
-    assert result.fallback_path[0]["strategy"] == "react_fallback"
+    assert result.fallback_path == []
 
 
 @pytest.mark.asyncio

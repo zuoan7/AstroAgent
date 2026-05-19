@@ -45,6 +45,22 @@ class SkillParamBuilder:
         if self._is_structured_skill_payload(parsed, query):
             return self._finalize(skill_name, parsed)
 
+        if skill_name == "get_nasa_apod":
+            return self._finalize(
+                skill_name,
+                {
+                    "date": self._extract_iso_date(query),
+                    "hd": False,
+                },
+            )
+        if skill_name == "web_search":
+            return self._finalize(
+                skill_name,
+                {
+                    "query": self._extract_web_search_query(query),
+                    "max_results": 5,
+                },
+            )
         if skill_name == "weather-lookup":
             return self._finalize(
                 skill_name,
@@ -69,6 +85,16 @@ class SkillParamBuilder:
                     "observer_location": self._extract_location(query),
                     "date": self._extract_date(query),
                     "equipment": self._extract_equipment(query),
+                },
+            )
+        if skill_name == "neo-tracker":
+            min_size, max_distance = self._extract_neo_filters(query)
+            return self._finalize(
+                skill_name,
+                {
+                    "time_range": self._extract_date(query) or self._extract_neo_time_range(query),
+                    "min_size": min_size,
+                    "max_distance": max_distance,
                 },
             )
         if skill_name == "celestial-events-forecast":
@@ -99,6 +125,7 @@ class SkillParamBuilder:
                 },
             )
         if skill_name == "celestial-position-calculator":
+            ra, dec = self._extract_radec(query)
             return self._finalize(
                 skill_name,
                 {
@@ -107,6 +134,10 @@ class SkillParamBuilder:
                     "datetime": self._extract_datetime(query),
                     "output_format": self._extract_output_format(query),
                     "operation": self._extract_position_operation(query),
+                    "ra": ra,
+                    "dec": dec,
+                    "epoch": "J2000" if ra is not None and dec is not None else None,
+                    "target_system": "fk5" if ra is not None and dec is not None else None,
                 },
             )
 
@@ -138,6 +169,12 @@ class SkillParamBuilder:
         return normalized
 
     def _extract_location(self, query: str) -> Optional[str]:
+        coord_match = re.search(
+            r"(?<!\d)(-?\d{1,2}(?:\.\d+)?)\s*[,，]\s*(-?\d{2,3}(?:\.\d+)?)(?!\d)",
+            query,
+        )
+        if coord_match:
+            return f"{coord_match.group(1)},{coord_match.group(2)}"
         for city in KNOWN_CITIES:
             if city in query:
                 return city
@@ -156,6 +193,7 @@ class SkillParamBuilder:
             "猎户座大星云",
             "北美洲星云",
             "昴星团",
+            "银河系",
             "银河",
             "星野",
             "星轨",
@@ -200,15 +238,15 @@ class SkillParamBuilder:
         return None
 
     def _extract_date(self, query: str) -> Optional[str]:
-        for token in ("今晚", "明晚", "今天", "明天", "本周末", "这个周末", "周末", "下周一"):
+        for token in ("今晚", "明晚", "今天", "明天", "本周末", "这个周末", "这周末", "周末", "下周一"):
             if token in query:
-                if token in {"这个周末", "周末"}:
+                if token in {"这个周末", "这周末", "周末"}:
                     return "本周末"
                 return token
         return None
 
     def _extract_event_range(self, query: str) -> tuple[Optional[str], Optional[str]]:
-        month_match = re.search(r"(\d{4})年(\d{1,2})月", query)
+        month_match = re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月", query)
         if month_match:
             year = int(month_match.group(1))
             month = int(month_match.group(2))
@@ -227,6 +265,10 @@ class SkillParamBuilder:
             else:
                 end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
             return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+        if "今年" in query:
+            today = datetime.now()
+            return today.strftime("%Y-%m-%d"), datetime(today.year, 12, 31).strftime("%Y-%m-%d")
 
         if any(token in query for token in ("适合普通人", "带朋友看天象", "月内天象")):
             today = datetime.now()
@@ -250,6 +292,14 @@ class SkillParamBuilder:
         if match:
             return match.group(0)
         return self._extract_date(query)
+
+    def _extract_iso_date(self, query: str) -> Optional[str]:
+        match = re.search(r"\d{4}-\d{2}-\d{2}", query)
+        if match:
+            return match.group(0)
+        if any(token in query for token in ("今天", "今日", "今晚", "每日天文图")):
+            return datetime.now().strftime("%Y-%m-%d")
+        return None
 
     def _extract_equipment(self, query: str) -> Optional[str]:
         for equipment in ("双筒望远镜", "双筒", "小折射镜", "8寸望远镜", "赤道仪", "固定三脚架", "三脚架"):
@@ -312,6 +362,10 @@ class SkillParamBuilder:
         return None
 
     def _extract_output_format(self, query: str) -> Optional[str]:
+        radec_terms = ("赤经", "赤纬", "RA", "Dec", "radec")
+        if any(term in query for term in radec_terms):
+            return "radec"
+
         rise_set_terms = (
             "升起",
             "落下",
@@ -333,10 +387,14 @@ class SkillParamBuilder:
             "地平高度",
             "地平坐标",
             "可见",
+            "能看",
             "能看到",
             "能看见",
             "在哪",
             "哪里",
+            "更好",
+            "前半夜",
+            "后半夜",
             "altaz",
         )
         if any(term in query for term in altaz_terms):
@@ -345,8 +403,7 @@ class SkillParamBuilder:
         if "日落" in query or "天黑" in query:
             return "rise_set"
 
-        radec_terms = ("赤经", "赤纬", "RA", "Dec", "radec", "坐标")
-        if any(term in query for term in radec_terms):
+        if "坐标" in query:
             return "radec"
         return None
 
@@ -371,13 +428,95 @@ class SkillParamBuilder:
         return None
 
     def _extract_position_operation(self, query: str) -> Optional[str]:
+        ra, dec = self._extract_radec(query)
+        if self._is_current_sky_query(query):
+            return "current_sky"
+        if ra is not None and dec is not None:
+            return "coordinate_transformation"
         output_format = self._extract_output_format(query)
         if output_format == "altaz":
             return "altaz"
         if output_format == "rise_set":
             return "rise_set"
-        if any(token in query for token in ("当前天空", "现在天空", "今晚天空", "有哪些目标")):
-            return "current_sky"
         if output_format == "radec":
             return "planet_position"
         return None
+
+    @staticmethod
+    def _is_current_sky_query(query: str) -> bool:
+        return any(
+            token in query
+            for token in (
+                "天上有什么",
+                "当前天空",
+                "现在天空",
+                "今晚天空",
+                "能看到哪些",
+                "能看哪些",
+                "哪些亮星",
+                "亮星或行星",
+            )
+        )
+
+    def _extract_radec(self, query: str) -> tuple[Optional[float], Optional[float]]:
+        return self._extract_ra_hours(query), self._extract_dec_degrees(query)
+
+    @staticmethod
+    def _extract_ra_hours(query: str) -> Optional[float]:
+        match = re.search(
+            r"(?:赤经|RA)\s*([0-9]{1,2}(?:\.\d+)?)\s*h(?:\s*([0-9]{1,2}(?:\.\d+)?)\s*m)?(?:\s*([0-9]{1,2}(?:\.\d+)?)\s*s)?",
+            query,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        hours = float(match.group(1))
+        minutes = float(match.group(2) or 0)
+        seconds = float(match.group(3) or 0)
+        return hours + minutes / 60.0 + seconds / 3600.0
+
+    @staticmethod
+    def _extract_dec_degrees(query: str) -> Optional[float]:
+        match = re.search(
+            r"(?:赤纬|Dec)\s*([+-]?\d{1,2}(?:\.\d+)?)\s*[°d](?:\s*(\d{1,2}(?:\.\d+)?)\s*[′'m])?(?:\s*(\d{1,2}(?:\.\d+)?)\s*[″\"s])?",
+            query,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        degrees = float(match.group(1))
+        sign = -1.0 if degrees < 0 else 1.0
+        minutes = float(match.group(2) or 0)
+        seconds = float(match.group(3) or 0)
+        return sign * (abs(degrees) + minutes / 60.0 + seconds / 3600.0)
+
+    @staticmethod
+    def _extract_web_search_query(query: str) -> str:
+        cleaned = query.strip()
+        cleaned = re.sub(r"^帮我查一下", "", cleaned)
+        return cleaned.strip(" ？?。") or query.strip()
+
+    @staticmethod
+    def _extract_neo_time_range(query: str) -> Optional[str]:
+        if any(token in query for token in ("未来一周", "最近", "靠近", "飞掠")):
+            return "未来7天"
+        if "本月" in query:
+            return "本月"
+        return None
+
+    @staticmethod
+    def _extract_neo_filters(query: str) -> tuple[Optional[float], Optional[float]]:
+        min_size = None
+        max_distance = None
+        size_match = re.search(r"(?:超过|大于|直径超过)\s*(\d+(?:\.\d+)?)\s*米", query)
+        if size_match:
+            min_size = float(size_match.group(1))
+        elif any(token in query for token in ("个头也不算小", "比较大", "值得关注")):
+            min_size = 50.0
+
+        distance_match = re.search(r"(\d+(?:\.\d+)?)\s*个?地月距离(?:以内|内)?", query)
+        if distance_match:
+            max_distance = float(distance_match.group(1))
+        elif any(token in query for token in ("比较近", "靠近")):
+            max_distance = 20.0
+        return min_size, max_distance

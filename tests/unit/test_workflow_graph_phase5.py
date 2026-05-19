@@ -370,7 +370,6 @@ class TestPlannerGraphPlanning:
         assert graph.validate() == []
         assert graph.output_schema == "observation_answer_v1"
         assert graph.metadata.get("task_type") == "observation_recommendation"
-        assert graph.node("weather_context") is not None
         assert graph.node("observation_plan") is not None
         assert graph.node("observation_plan").inputs["location"] == "北京"
         assert graph.node("observation_plan").inputs["date"] == "今晚"

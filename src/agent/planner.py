@@ -121,21 +121,21 @@ class Planner:
         rationale = ""
 
         if task_type == "observation_recommendation":
-            rationale = "观测推荐通常需要先获取环境条件，再生成目标与时段建议。"
-            if "weather-lookup" in skill_set or "天气" in query or not skill_set:
+            rationale = "观测推荐以 observation-planner 为聚合入口；按目标约束补充事件、深空或位置证据。"
+            if self._observation_plan_needs_event_step(query):
                 steps.append(
                     self._make_step(
                         query=query,
                         planner_source="template",
-                        id="weather_context",
-                        title="查询天气条件",
-                        description="获取当前位置或目标地点的天气与云量信息",
-                        skill="weather-lookup",
-                        purpose="确认观测条件中的天气、云量和风等环境因素",
-                        success_criteria="返回指定城市的天气或云量信息",
-                        evidence_key="weather",
+                        id="event_context",
+                        title="查询天象事件",
+                        description="获取计划时段内的主要天象",
+                        skill="celestial-events-forecast",
+                        purpose="为多日或周末观测计划补充天象事件",
+                        success_criteria="返回指定时段的天象事件摘要",
+                        evidence_key="celestial_events",
                         retry_policy=1,
-                        timeout_ms=8000,
+                        timeout_ms=12000,
                     )
                 )
             steps.append(
@@ -153,6 +153,38 @@ class Planner:
                     timeout_ms=12000,
                 )
             )
+            if self._observation_plan_needs_deep_sky_step(query):
+                steps.append(
+                    self._make_step(
+                        query=query,
+                        planner_source="template",
+                        id="deep_sky_context",
+                        title="补充深空目标资料",
+                        description="补充深空目标资料、器材约束和观测提示",
+                        skill="deep-sky-observing-guide",
+                        purpose="为设备约束、深空目标或观测顺序提供目标证据",
+                        success_criteria="返回目标基础信息与观测建议",
+                        evidence_key="deep_sky_object",
+                        retry_policy=1,
+                        timeout_ms=15000,
+                    )
+                )
+            if self._observation_plan_needs_position_step(query):
+                steps.append(
+                    self._make_step(
+                        query=query,
+                        planner_source="template",
+                        id="position_context",
+                        title="补充天体位置",
+                        description="补充月亮、行星或目标的时段位置",
+                        skill="celestial-position-calculator",
+                        purpose="为观测顺序和目标选择提供位置证据",
+                        success_criteria="返回目标位置或可见性数据",
+                        evidence_key="celestial_position",
+                        retry_policy=1,
+                        timeout_ms=12000,
+                    )
+                )
         elif task_type == "celestial_event_analysis":
             rationale = "天象分析以天象事件检索为核心，必要时补充观测条件。"
             steps.append(
@@ -188,7 +220,7 @@ class Planner:
                     )
                 )
         elif task_type == "deep_sky_guidance":
-            rationale = "深空指导需要目标观测建议，可选补充天气判断。"
+            rationale = "深空指导以目标资料为核心；涉及今晚可见性或目标比较时补充位置计算。"
             steps.append(
                 self._make_step(
                     query=query,
@@ -204,21 +236,20 @@ class Planner:
                     timeout_ms=15000,
                 )
             )
-            if "weather-lookup" in skill_set or any(token in query for token in ("今晚", "天气", "云量")):
+            if self._deep_sky_needs_position_step(query):
                 steps.append(
                     self._make_step(
                         query=query,
                         planner_source="template",
-                        id="deep_sky_weather",
-                        title="补充天气条件",
-                        description="补充当前地点的天空条件判断",
-                        skill="weather-lookup",
-                        purpose="补充深空观测的天气条件",
-                        success_criteria="返回指定城市天气或云量",
-                        evidence_key="weather",
-                        required=False,
+                        id="deep_sky_position",
+                        title="补充可见性计算",
+                        description="补充目标在指定时间地点的可见性或高度信息",
+                        skill="celestial-position-calculator",
+                        purpose="判断深空目标在给定时间地点是否适合观测",
+                        success_criteria="返回目标位置或可见性数据",
+                        evidence_key="celestial_position",
                         retry_policy=1,
-                        timeout_ms=8000,
+                        timeout_ms=12000,
                     )
                 )
         elif task_type == "astrophotography_advice":
@@ -241,6 +272,23 @@ class Planner:
                     timeout_ms=15000,
                 )
             )
+            if self._photography_needs_deep_sky_context(query):
+                steps.append(
+                    self._make_step(
+                        query=query,
+                        planner_source="template",
+                        id="photo_target_context",
+                        title="补充拍摄目标资料",
+                        description="获取深空拍摄目标的亮度、类型和观测特点",
+                        skill="deep-sky-observing-guide",
+                        purpose="为深空目标曝光和累计时长建议提供目标证据",
+                        success_criteria="返回目标基础信息与观测提示",
+                        evidence_key="deep_sky_object",
+                        parallel_group=parallel_group,
+                        retry_policy=1,
+                        timeout_ms=15000,
+                    )
+                )
             if weather_relevant:
                 steps.append(
                     self._make_step(
@@ -574,4 +622,58 @@ class Planner:
         )
         return has_explicit_when_or_where and any(
             term in query for term in observability_terms
+        )
+
+    def _observation_plan_needs_event_step(self, query: str) -> bool:
+        return any(
+            token in query
+            for token in (
+                "周末两晚",
+                "这个周末两晚",
+                "未来三天",
+                "哪天更适合",
+                "周末晚上",
+            )
+        )
+
+    def _observation_plan_needs_deep_sky_step(self, query: str) -> bool:
+        if any(token in query for token in ("看不清", "临时改看", "改看什么")):
+            return False
+        has_equipment_constraint = bool(
+            re.search(r"\b\d{1,2}\s*x\s*\d{2}\b", query, re.IGNORECASE)
+        ) or bool(re.search(r"\d{1,2}\s*寸", query))
+        return any(
+            token in query
+            for token in (
+                "双筒",
+                "DOB",
+                "深空",
+                "星云",
+                "星系",
+                "星团",
+                "从月亮到深空",
+            )
+        ) or has_equipment_constraint
+
+    def _observation_plan_needs_position_step(self, query: str) -> bool:
+        target_count = sum(
+            1
+            for target in ("月亮", "月球", "木星", "土星", "火星", "金星", "水星")
+            if target in query
+        )
+        has_sequence_intent = any(
+            token in query for token in ("先看", "先观测", "优先看", "观测顺序", "顺序", "还是")
+        )
+        return target_count >= 2 and has_sequence_intent
+
+    def _deep_sky_needs_position_step(self, query: str) -> bool:
+        has_time = any(token in query for token in ("今晚", "明晚", "这周末", "周末", "今天", "明天"))
+        has_visibility = any(token in query for token in ("能看到", "能看见", "适合", "哪个更", "差别"))
+        return has_time and has_visibility
+
+    def _photography_needs_deep_sky_context(self, query: str) -> bool:
+        return bool(
+            re.search(r"\b(M\s?\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b", query, re.IGNORECASE)
+        ) or any(
+            token in query for token in ("猎户座大星云", "仙女座星系")
         )

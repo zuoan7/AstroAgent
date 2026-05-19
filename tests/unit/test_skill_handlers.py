@@ -122,6 +122,24 @@ def test_celestial_position_rise_set_branch_uses_get_rise_set_times():
     assert result.operation == "rise_set"
 
 
+def test_celestial_position_coordinate_operation_uses_coordinate_transformation():
+    mcp = _FakeMCP()
+
+    result = CelestialPositionCalculatorHandler()(
+        mcp,
+        operation="coordinate_transformation",
+        ra=5.5,
+        dec=-5.25,
+    )
+
+    assert result.success is True
+    assert mcp.calls[0][0] == "coordinate_transformation"
+    assert mcp.calls[0][1]["ra"] == 5.5
+    assert mcp.calls[0][1]["dec"] == -5.25
+    assert result.operation == "coordinate_transformation"
+    assert result.expected_mcp_tools == ["coordinate_transformation"]
+
+
 def test_celestial_events_monthly_operation_uses_get_monthly_events():
     mcp = _FakeMCP()
 
@@ -167,6 +185,16 @@ def test_deep_sky_m31_branch_fetches_object_info_and_galaxy_data():
         "get_astrophysical_object_info",
         "get_galaxy_data",
     ]
+
+
+def test_deep_sky_does_not_call_weather_even_with_observer_location():
+    mcp = _FakeMCP()
+
+    result = DeepSkyObservingGuideHandler()(mcp, target="M31", observer_location="上海")
+
+    assert result.success is True
+    tool_names = [call["tool_name"] for call in mcp.parallel_calls[0]]
+    assert "get_weather" not in tool_names
 
 
 def test_observation_planner_defaults_to_beijing_and_calls_expected_mcp_tools():
