@@ -36,6 +36,9 @@ class ExecutionTraceEntry:
     error: Optional[str] = None
     summary: str = ""
     sources: List[Dict[str, Any]] = field(default_factory=list)
+    depends_on: List[str] = field(default_factory=list)
+    evidence_key: str = ""
+    fallback_strategy: str = ""
     # react 路径额外字段（planned/direct 路径不使用）
     tool_name: Optional[str] = None
     tool_input: Optional[str] = None
@@ -61,6 +64,9 @@ class ExecutionTraceEntry:
             "error": self.error,
             "summary": self.summary,
             "sources": list(self.sources),
+            "depends_on": list(self.depends_on),
+            "evidence_key": self.evidence_key,
+            "fallback_strategy": self.fallback_strategy,
             "tool_name": self.tool_name,
             "tool_input": self.tool_input,
             "tool_output_summary": self.tool_output_summary,
@@ -110,6 +116,9 @@ class ExecutionTraceEntry:
                     "title": self.title,
                     "skill": self.skill,
                     "kind": self.kind,
+                    "depends_on": list(self.depends_on),
+                    "evidence_key": self.evidence_key,
+                    "fallback_strategy": self.fallback_strategy,
                 },
                 source=source or "planned",
             ),
@@ -130,6 +139,9 @@ class ExecutionTraceEntry:
                     "sources": list(self.sources),
                     "latency_ms": self.latency_ms,
                     "error": self.error,
+                    "depends_on": list(self.depends_on),
+                    "evidence_key": self.evidence_key,
+                    "fallback_strategy": self.fallback_strategy,
                 },
                 source=source or "planned",
             ),
@@ -158,6 +170,9 @@ class ExecutionTraceEntry:
             error=step_result.error,
             summary=step_result.summary,
             sources=list(step_result.sources),
+            depends_on=list(getattr(step_result, "depends_on", []) or []),
+            evidence_key=getattr(step_result, "evidence_key", ""),
+            fallback_strategy=getattr(step_result, "fallback_strategy", ""),
         )
 
     @classmethod
@@ -181,6 +196,9 @@ class ExecutionTraceEntry:
             error=d.get("error"),
             summary=d.get("summary", ""),
             sources=d.get("sources", []),
+            depends_on=d.get("depends_on", []),
+            evidence_key=d.get("evidence_key", ""),
+            fallback_strategy=d.get("fallback_strategy", ""),
             tool_name=d.get("tool_name"),
             tool_input=d.get("tool_input"),
             tool_output_summary=d.get("tool_output_summary"),

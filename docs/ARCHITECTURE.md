@@ -41,7 +41,7 @@ FrontendExecutionEventAdapter → 旧前端事件序列
 | `DirectExecutor` | smalltalk / single_tool_lookup / simple_qa | `src/agent/execution/direct_executor.py` |
 | `PlannedExecutor` | plan → execute(DAG) → synthesize | `src/agent/execution/planned_executor.py` |
 | `ReactExecutor` | react 非流式执行 + 原始事件代理 | `src/agent/execution/react_executor.py` |
-| `WorkflowExecutor` | 按 DAG 拓扑顺序执行节点 | `src/agent/execution/workflow_executor.py` |
+| `WorkflowExecutor` | 按 DAG 依赖并发执行 ready 节点，处理 retry / failure strategy / evidence aggregation | `src/agent/execution/workflow_executor.py` |
 
 ---
 
@@ -51,10 +51,10 @@ FrontendExecutionEventAdapter → 旧前端事件序列
 
 - 节点（`WorkflowNode`）对应 `PlanStep`
 - 有向边（`WorkflowEdge`）表示依赖关系
-- `from_execution_plan()` 将顺序步骤转换为线性 DAG（同 parallel_group 的节点并排，无跨组依赖）
-- `topological_order()` 使用 Kahn 算法，支持循环检测
-- 当前 `WorkflowExecutor` 为 `PlannedExecutor` 的唯一执行引擎；
-  `ENABLE_WORKFLOW_GRAPH` 仍作为 compatibility flag 保留，用于控制是否回退到 `plan()+from_execution_plan()`
+- `from_execution_plan()` 将兼容 `ExecutionPlan` 转换为 DAG，支持 `depends_on` 和 `parallel_group`
+- `topological_order()` / `topological_generations()` 使用 Kahn 算法，支持循环检测和并发分层
+- 当前 `WorkflowExecutor` 为 `PlannedExecutor` 的唯一执行引擎
+- `ENABLE_WORKFLOW_GRAPH` 仅作为 deprecated config 保留，不再切换 planned 主路径
 
 ---
 
@@ -109,7 +109,7 @@ flags 的权威状态以 [Agent Compatibility Matrix](agent_compatibility_matrix
 | Flag | 默认值 | 说明 |
 |------|--------|------|
 | `ENABLE_UNIFIED_EXECUTION_ENGINE` | **True** | Phase 8 起开启，旧路径 flag=False 兼容 |
-| `ENABLE_WORKFLOW_GRAPH` | **True** | 控制 `Planner.plan_graph()` 是否优先；关闭时回退到 `plan()+from_execution_plan()` |
+| `ENABLE_WORKFLOW_GRAPH` | **True** | 已不再切换主路径；仅保留历史兼容语义 |
 | `ENABLE_UNIFIED_EXECUTION_TRACE` | **True** | Phase 8 起开启 |
 | `ENABLE_UNIFIED_EXECUTION_EVENTS` | **True** | Phase 8 起开启 |
 | `ENABLE_TASK_PROFILE` | False | 已不再切换主路径；仅保留历史兼容语义 |
@@ -124,7 +124,7 @@ flags 的权威状态以 [Agent Compatibility Matrix](agent_compatibility_matrix
 |---------|---------|
 | `test_dag_agent_phase8.py` | flags 默认值、ExecutionEngine 新路径、分支切换、TaskOrchestrator 兼容 |
 | `test_execution_trace_phase7.py` | ExecutionTraceEntry、ExecutionEvent、FrontendExecutionEventAdapter |
-| `test_workflow_executor_phase6.py` | WorkflowExecutor、PlannedExecutor flag 分支 |
+| `test_workflow_executor_dag.py` | WorkflowExecutor DAG 依赖、并发、retry、失败策略、证据聚合 |
 | `test_workflow_graph_phase5.py` | WorkflowGraph DAG 构建、拓扑排序 |
 | `test_execution_engine_phase4.py` | ExecutionEngine 分发、三种模式 |
 | `test_execution_decision_phase3.py` | ExecutionDecision 模型 |

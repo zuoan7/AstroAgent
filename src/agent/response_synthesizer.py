@@ -50,6 +50,7 @@ class ResponseSynthesizer:
         fallback_path: Optional[List[Dict[str, Any]]] = None,
         budget_usage: Optional[Dict[str, Any]] = None,
         versions: Optional[Dict[str, Any]] = None,
+        evidence: Optional[Dict[str, Any]] = None,
     ) -> FinalResponse:
         collected_outputs = []
         sources: List[Dict[str, Any]] = []
@@ -62,6 +63,8 @@ class ResponseSynthesizer:
             sources.extend(sr.sources)
             if sr.success and sr.data:
                 structured_payload[sr.skill_name] = sr.data
+        if evidence:
+            structured_payload["dag_evidence"] = dict(evidence)
 
         if self._should_use_deterministic_tool_synthesis(task_type, skill_results):
             answer = self._build_deterministic_tool_answer(query, skill_results)
@@ -88,11 +91,27 @@ class ResponseSynthesizer:
 
         # Build compacted tool evidence for prompt injection
         tool_outputs_text = chr(10).join(collected_outputs)
+        if evidence:
+            evidence_text = self._format_dag_evidence(evidence)
+            if evidence_text:
+                tool_outputs_text = (
+                    f"聚合证据：\n{evidence_text}\n\n原始工具摘要：\n{tool_outputs_text}"
+                    if tool_outputs_text
+                    else f"聚合证据：\n{evidence_text}"
+                )
         if settings.TOOL_EVIDENCE_BUDGET_ENABLED and skill_results:
             try:
                 compactor = ToolEvidenceCompactor()
                 compact_result = compactor.compact_skill_results(skill_results)
-                tool_outputs_text = compact_result.text
+                if evidence:
+                    evidence_text = self._format_dag_evidence(evidence)
+                    tool_outputs_text = (
+                        f"聚合证据：\n{evidence_text}\n\n压缩工具摘要：\n{compact_result.text}"
+                        if evidence_text
+                        else compact_result.text
+                    )
+                else:
+                    tool_outputs_text = compact_result.text
             except Exception:
                 logger.warning(
                     "tool evidence compaction failed, falling back to raw collected_outputs"
@@ -383,6 +402,24 @@ class ResponseSynthesizer:
             "weather-lookup": "天气条件",
         }
         return names.get(skill_name, skill_name)
+
+    @staticmethod
+    def _format_dag_evidence(evidence: Dict[str, Any]) -> str:
+        lines: list[str] = []
+        for key, record in evidence.items():
+            if not isinstance(record, dict):
+                continue
+            status = str(record.get("status") or "")
+            skill = str(record.get("skill") or "")
+            summary = str(record.get("summary") or "").strip()
+            error = str(record.get("error") or "").strip()
+            detail = summary or error
+            if len(detail) > 800:
+                detail = detail[:800].rstrip() + "...（已截断）"
+            lines.append(
+                f"- {key}: status={status}, skill={skill}, detail={detail}"
+            )
+        return "\n".join(lines)
 
     def _versions_with_synthesis_mode(
         self,

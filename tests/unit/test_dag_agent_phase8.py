@@ -166,6 +166,217 @@ class TestExecutionEngineNewPaths:
         assert isinstance(result, FinalResponse)
         assert result.answer == "react 答案"
 
+    def test_engine_planned_required_failure_runs_react_fallback(self):
+        engine = ExecutionEngine.__new__(ExecutionEngine)
+        planned_response = FinalResponse(
+            answer="planned failed answer",
+            summary="planned failed answer",
+            route="planned_task",
+            task_type="observation_recommendation",
+            execution_plan={"task_type": "observation_recommendation", "steps": []},
+            execution_trace=[
+                {
+                    "step_id": "weather",
+                    "title": "天气",
+                    "kind": "tool",
+                    "status": "error",
+                    "required": True,
+                    "error": "tool failed",
+                }
+            ],
+            fallback_path=[
+                {
+                    "strategy": "react_fallback",
+                    "reason": "required_step_failed",
+                    "metadata": {"required_failed_steps": ["weather"]},
+                }
+            ],
+            execution_events=[
+                {"type": "plan_created", "payload": {"plan": {}}, "source": "planned"},
+                {
+                    "type": "fallback_triggered",
+                    "payload": {
+                        "strategy": "react_fallback",
+                        "reason": "required_step_failed",
+                        "metadata": {"required_failed_steps": ["weather"]},
+                    },
+                    "source": "planned",
+                },
+                {
+                    "type": "answer_ready",
+                    "payload": {"answer": "planned failed answer"},
+                    "source": "planned",
+                },
+            ],
+        )
+        react_response = FinalResponse(
+            answer="react recovered answer",
+            summary="react recovered answer",
+            route="planned_task",
+            task_type="observation_recommendation",
+            execution_events=[
+                {
+                    "type": "answer_ready",
+                    "payload": {"answer": "react recovered answer"},
+                    "source": "react",
+                }
+            ],
+        )
+        engine._planned = MagicMock()
+        engine._planned.run = AsyncMock(return_value=planned_response)
+        engine._react = MagicMock()
+        engine._react.run = AsyncMock(return_value=react_response)
+
+        result = asyncio.run(
+            engine.run(
+                ExecutionDecision(mode="planned", reason="test"),
+                _route_decision("planned_task", "observation_recommendation"),
+                "今晚北京观测条件",
+            )
+        )
+
+        engine._react.run.assert_awaited_once()
+        assert result.answer == "react recovered answer"
+        assert result.execution_plan == planned_response.execution_plan
+        assert result.execution_trace == planned_response.execution_trace
+        assert result.fallback_path[0]["strategy"] == "react_fallback"
+        assert result.fallback_path[0]["metadata"]["executed"] is True
+        assert result.fallback_path[0]["metadata"]["recovery_mode"] == "react"
+        answer_events = [
+            event
+            for event in result.execution_events
+            if event["type"] == "answer_ready"
+        ]
+        assert answer_events[-1]["payload"]["answer"] == "react recovered answer"
+
+    def test_engine_planned_optional_failure_stays_partial_answer(self):
+        engine = ExecutionEngine.__new__(ExecutionEngine)
+        planned_response = FinalResponse(
+            answer="partial planned answer",
+            summary="partial planned answer",
+            route="planned_task",
+            task_type="observation_recommendation",
+            fallback_path=[
+                {
+                    "strategy": "partial_answer",
+                    "reason": "optional_step_failed",
+                    "metadata": {"optional_failed_steps": ["weather"]},
+                }
+            ],
+            execution_events=[
+                {
+                    "type": "fallback_triggered",
+                    "payload": {
+                        "strategy": "partial_answer",
+                        "reason": "optional_step_failed",
+                        "metadata": {"optional_failed_steps": ["weather"]},
+                    },
+                    "source": "planned",
+                }
+            ],
+        )
+        engine._planned = MagicMock()
+        engine._planned.run = AsyncMock(return_value=planned_response)
+        engine._react = MagicMock()
+        engine._react.run = AsyncMock()
+
+        result = asyncio.run(
+            engine.run(
+                ExecutionDecision(mode="planned", reason="test"),
+                _route_decision("planned_task", "observation_recommendation"),
+                "今晚北京观测条件",
+            )
+        )
+
+        engine._react.run.assert_not_awaited()
+        assert result.answer == "partial planned answer"
+        assert result.fallback_path[0]["metadata"]["executed"] is True
+        assert result.fallback_path[0]["metadata"]["recovery_mode"] == "partial_answer"
+
+    def test_engine_planned_plan_repair_runs_once(self):
+        engine = ExecutionEngine.__new__(ExecutionEngine)
+        failed_response = FinalResponse(
+            answer="failed planned answer",
+            summary="failed planned answer",
+            route="planned_task",
+            task_type="observation_recommendation",
+            execution_plan={"task_type": "observation_recommendation", "steps": []},
+            execution_trace=[
+                {
+                    "step_id": "bad_step",
+                    "title": "坏步骤",
+                    "kind": "bad",
+                    "status": "error",
+                    "required": True,
+                    "error": "unsupported node kind: 'bad'",
+                }
+            ],
+            fallback_path=[
+                {
+                    "strategy": "plan_repair",
+                    "reason": "repairable_plan_failure",
+                    "metadata": {"required_failed_steps": ["bad_step"]},
+                }
+            ],
+            execution_events=[
+                {"type": "plan_created", "payload": {"plan": {}}, "source": "planned"},
+                {
+                    "type": "fallback_triggered",
+                    "payload": {
+                        "strategy": "plan_repair",
+                        "reason": "repairable_plan_failure",
+                        "metadata": {"required_failed_steps": ["bad_step"]},
+                    },
+                    "source": "planned",
+                },
+                {
+                    "type": "answer_ready",
+                    "payload": {"answer": "failed planned answer"},
+                    "source": "planned",
+                },
+            ],
+        )
+        repaired_response = FinalResponse(
+            answer="repaired planned answer",
+            summary="repaired planned answer",
+            route="planned_task",
+            task_type="observation_recommendation",
+            execution_plan={"task_type": "observation_recommendation", "steps": []},
+            execution_events=[
+                {
+                    "type": "answer_ready",
+                    "payload": {"answer": "repaired planned answer"},
+                    "source": "planned",
+                }
+            ],
+        )
+        repaired_plan = ExecutionPlan(
+            task_type="observation_recommendation",
+            output_schema="observation_answer_v1",
+            steps=[PlanStep(id="fixed", kind="tool", skill="weather-lookup")],
+        )
+        engine._planned = MagicMock()
+        engine._planned.run = AsyncMock(side_effect=[failed_response, repaired_response])
+        engine._planned.repair_plan.return_value = repaired_plan
+        engine._react = MagicMock()
+        engine._react.run = AsyncMock()
+
+        result = asyncio.run(
+            engine.run(
+                ExecutionDecision(mode="planned", reason="test"),
+                _route_decision("planned_task", "observation_recommendation"),
+                "今晚北京观测条件",
+            )
+        )
+
+        assert engine._planned.run.await_count == 2
+        engine._react.run.assert_not_awaited()
+        assert result.answer == "repaired planned answer"
+        assert result.fallback_path[0]["strategy"] == "plan_repair"
+        assert result.fallback_path[0]["metadata"]["executed"] is True
+        assert result.fallback_path[0]["metadata"]["recovery_mode"] == "plan_repair"
+        assert any(event["type"] == "plan_repaired" for event in result.execution_events)
+
 
 # ─────────────────────────────────────────────────────────────────
 # 3. StreamingService._run_orchestrated_path 分支切换
@@ -454,6 +665,58 @@ class TestPlannedExecutorWorkflowBranch:
         result = asyncio.run(executor.run(decision, "今晚天气", execution_plan=plan))
         wf_executor.execute.assert_called_once()
         assert isinstance(result, FinalResponse)
+
+
+class TestPlannedRecoveryPolicy:
+    def test_required_tool_failure_stays_react_fallback(self):
+        from src.agent.policies.fallback_policy import FallbackPolicy
+
+        outcome = SimpleNamespace(
+            halted=False,
+            step_results=[
+                SimpleNamespace(
+                    step_id="weather",
+                    required=True,
+                    status="error",
+                    error="weather service unavailable",
+                )
+            ],
+        )
+        plan = SimpleNamespace(task_type="observation_recommendation")
+
+        decision = FallbackPolicy().decide_for_execution(
+            outcome=outcome,
+            plan=plan,
+        )
+
+        assert decision.strategy == "react_fallback"
+        assert decision.metadata["recovery_mode"] == "react"
+        assert decision.metadata["executed"] is False
+
+    def test_repairable_required_failure_returns_plan_repair(self):
+        from src.agent.policies.fallback_policy import FallbackPolicy
+
+        outcome = SimpleNamespace(
+            halted=False,
+            step_results=[
+                SimpleNamespace(
+                    step_id="bad_step",
+                    required=True,
+                    status="error",
+                    error="unsupported node kind: 'bad'",
+                )
+            ],
+        )
+        plan = SimpleNamespace(task_type="observation_recommendation")
+
+        decision = FallbackPolicy().decide_for_execution(
+            outcome=outcome,
+            plan=plan,
+        )
+
+        assert decision.strategy == "plan_repair"
+        assert decision.metadata["recovery_mode"] == "plan_repair"
+        assert decision.metadata["executed"] is False
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -355,7 +355,10 @@ class MemoryConfig(BaseSettings):
 class AgentGovernanceConfig(BaseSettings):
     AGENT_MODE: str = Field(
         "hybrid",
-        description="Agent 执行模式：react|hybrid|planned",
+        description=(
+            "Agent 策略模式：auto|react|planned；hybrid 是 auto 的兼容别名。"
+            "实际执行路径由 direct|planned|react 表示"
+        ),
     )
     ENABLE_STRUCTURED_SKILL_RESULT: bool = Field(
         False,
@@ -491,13 +494,13 @@ class AgentGovernanceConfig(BaseSettings):
             "设为 False 时回退到 legacy TaskOrchestrator 路径"
         ),
     )
-    # Compatibility switch: 仍真实控制 Planner.plan_graph 与 legacy plan()->from_execution_plan()。
-    # 去向：默认保留为 planned 路径灰度/兼容开关。
+    # Deprecated config: WorkflowGraph 已固定为 planned 主计划表达。
+    # 去向：Planner.plan_graph() / WorkflowExecutor；保留该字段只为旧环境变量兼容。
     ENABLE_WORKFLOW_GRAPH: bool = Field(
         True,
         description=(
-            "[compatibility flag] WorkflowGraph 为 planned 主计划表达；"
-            "设为 False 时回退到 legacy plan()+from_execution_plan()"
+            "[deprecated config] WorkflowGraph 已固定为 planned 主计划表达；"
+            "该配置位仅为历史配置兼容保留，不再切换主路径"
         ),
     )
     # Deprecated config: unified trace 已成为统一响应/观测格式，当前无运行时分支。

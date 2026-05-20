@@ -682,10 +682,11 @@ class BaseStreamingGenerator:
             )
         else:
             # 即使缺少 router/legacy route，也构造兼容画像并统一走 decide()。
-            if policy.mode == "react":
+            effective_mode = getattr(policy, "effective_mode", getattr(policy, "mode", "hybrid"))
+            if effective_mode == "react":
                 fallback_route = "fallback_react"
                 fallback_task_type = "open_domain_reasoning"
-            elif policy.mode == "planned" or policy.enable_planner:
+            elif effective_mode == "planned" or policy.enable_planner:
                 fallback_route = "planned_task"
                 fallback_task_type = "observation_recommendation"
             elif policy.enable_react_fallback:

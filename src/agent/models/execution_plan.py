@@ -16,6 +16,7 @@ class PlanStep:
     success_criteria: str = ""
     fallback_strategy: str = ""
     evidence_key: str = ""
+    depends_on: List[str] = field(default_factory=list)
     planner_source: str = ""
     required: bool = True
     parallel_group: Optional[str] = None
@@ -35,6 +36,7 @@ class PlanStep:
             success_criteria=str(data.get("success_criteria", "")),
             fallback_strategy=str(data.get("fallback_strategy", "")),
             evidence_key=str(data.get("evidence_key", "")),
+            depends_on=list(data.get("depends_on", []) or []),
             planner_source=str(data.get("planner_source", "")),
             required=bool(data.get("required", True)),
             parallel_group=data.get("parallel_group"),
@@ -54,6 +56,7 @@ class PlanStep:
             "success_criteria": self.success_criteria,
             "fallback_strategy": self.fallback_strategy,
             "evidence_key": self.evidence_key,
+            "depends_on": list(self.depends_on),
             "planner_source": self.planner_source,
             "required": self.required,
             "parallel_group": self.parallel_group,
@@ -111,6 +114,7 @@ class ExecutionPlan:
                     "skill": step.skill,
                     "required": step.required,
                     "parallel_group": step.parallel_group,
+                    "depends_on": list(step.depends_on),
                 }
             )
         return frontend_steps
@@ -164,6 +168,7 @@ class ExecutionPlan:
                     params=dict(node.inputs or {}),
                     planner_source=str(metadata.get("planner_type", "graph_native")),
                     required=not node.optional,
+                    depends_on=list(getattr(node, "depends_on", []) or []),
                     timeout_ms=node.timeout_ms,
                 )
             )

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from src.agent.models.execution_decision import ExecutionDecision
 
 
-VALID_AGENT_MODES = {"react", "hybrid", "planned"}
+VALID_AGENT_MODES = {"auto", "react", "hybrid", "planned"}
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,10 @@ class AgentExecutionPolicy:
     enable_structured_skill_result: bool = False
     enable_planner: bool = False
     enable_react_fallback: bool = True
+
+    @property
+    def effective_mode(self) -> str:
+        return "auto" if self.mode == "hybrid" else self.mode
 
     @classmethod
     def from_settings(cls) -> "AgentExecutionPolicy":
@@ -40,10 +44,12 @@ class AgentExecutionPolicy:
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["effective_mode"] = self.effective_mode
+        return payload
 
     def _legacy_path_from_route(self, route: Optional[str]) -> str:
-        if self.mode == "react":
+        if self.effective_mode == "react":
             return "react"
         if route == "direct_task":
             return "direct"
@@ -52,8 +58,8 @@ class AgentExecutionPolicy:
         if route == "fallback_react":
             if self.enable_react_fallback:
                 return "react"
-            return "planned" if self.enable_planner or self.mode == "planned" else "direct"
-        if self.mode == "planned":
+            return "planned" if self.enable_planner or self.effective_mode == "planned" else "direct"
+        if self.effective_mode == "planned":
             return "planned"
         if self.enable_react_fallback:
             return "react"
@@ -94,7 +100,7 @@ class AgentExecutionPolicy:
         """Policy 主输出：基于 TaskProfile/ExecutionContext 推断 ExecutionDecision。
 
         规则（优先级从高到低）：
-        1. mode==react（全局覆盖）-> react
+        1. effective_mode==react（全局覆盖）-> react
         2. complexity==low + tool_need==none -> direct
         3. tool_need==single + openness!=high -> direct
         4. tool_need==multi 或 complexity==high（且 openness!=high）-> planned
@@ -109,7 +115,7 @@ class AgentExecutionPolicy:
 
         legacy_path = self._legacy_path_from_route(profile.legacy_route)
 
-        if self.mode == "react":
+        if self.effective_mode == "react":
             return ExecutionDecision(
                 mode="react",
                 reason="global_mode_override_react",

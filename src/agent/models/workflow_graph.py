@@ -91,13 +91,30 @@ class WorkflowGraph:
         source_ids = {e.source for e in self.edges if e.target == node_id}
         return [n for n in self.nodes if n.id in source_ids]
 
+    def dependency_map(self) -> Dict[str, List[str]]:
+        """Return normalized node dependencies from depends_on plus explicit edges."""
+        deps: Dict[str, set[str]] = {n.id: set(n.depends_on) for n in self.nodes}
+        for edge in self.edges:
+            deps.setdefault(edge.target, set()).add(edge.source)
+            deps.setdefault(edge.source, set())
+        return {node_id: sorted(values) for node_id, values in deps.items()}
+
+    def successor_map(self) -> Dict[str, List[str]]:
+        """Return normalized successors derived from the normalized dependency map."""
+        successors: Dict[str, set[str]] = {n.id: set() for n in self.nodes}
+        for target, deps in self.dependency_map().items():
+            successors.setdefault(target, set())
+            for dep in deps:
+                successors.setdefault(dep, set()).add(target)
+        return {node_id: sorted(values) for node_id, values in successors.items()}
+
     # ── 拓扑排序 ──────────────────────────────────────────────────────
 
     def topological_order(self) -> List[WorkflowNode]:
         """Kahn 算法拓扑排序，返回合法执行顺序；存在环则抛 ValueError。"""
-        in_degree: Dict[str, int] = {n.id: 0 for n in self.nodes}
-        for edge in self.edges:
-            in_degree[edge.target] = in_degree.get(edge.target, 0) + 1
+        dependency_map = self.dependency_map()
+        in_degree: Dict[str, int] = {n.id: len(dependency_map.get(n.id, [])) for n in self.nodes}
+        successors = self.successor_map()
 
         queue = [nid for nid, deg in in_degree.items() if deg == 0]
         order: List[str] = []
@@ -106,10 +123,10 @@ class WorkflowGraph:
             queue.sort()  # 保证确定性
             nid = queue.pop(0)
             order.append(nid)
-            for succ in self.successors(nid):
-                in_degree[succ.id] -= 1
-                if in_degree[succ.id] == 0:
-                    queue.append(succ.id)
+            for succ_id in successors.get(nid, []):
+                in_degree[succ_id] -= 1
+                if in_degree[succ_id] == 0:
+                    queue.append(succ_id)
 
         if len(order) != len(self.nodes):
             raise ValueError(
@@ -118,6 +135,34 @@ class WorkflowGraph:
 
         node_map = {n.id: n for n in self.nodes}
         return [node_map[nid] for nid in order]
+
+    def topological_generations(self) -> List[List[WorkflowNode]]:
+        """Return executable DAG layers; nodes in the same layer are independent."""
+        dependency_map = self.dependency_map()
+        successors = self.successor_map()
+        in_degree: Dict[str, int] = {n.id: len(dependency_map.get(n.id, [])) for n in self.nodes}
+        node_map = {n.id: n for n in self.nodes}
+        ready = sorted([nid for nid, deg in in_degree.items() if deg == 0])
+        generations: List[List[WorkflowNode]] = []
+        visited: List[str] = []
+
+        while ready:
+            current = ready
+            ready = []
+            generations.append([node_map[nid] for nid in current])
+            visited.extend(current)
+            for nid in current:
+                for succ_id in successors.get(nid, []):
+                    in_degree[succ_id] -= 1
+                    if in_degree[succ_id] == 0:
+                        ready.append(succ_id)
+            ready.sort()
+
+        if len(visited) != len(self.nodes):
+            raise ValueError(
+                f"WorkflowGraph 存在循环依赖，无法拓扑分层: {set(in_degree) - set(visited)}"
+            )
+        return generations
 
     # ── 验证 ──────────────────────────────────────────────────────────
 
@@ -184,7 +229,7 @@ class WorkflowGraph:
             kind=step.kind,
             skill=step.skill,
             inputs=dict(step.params or {}),
-            depends_on=list(depends_on or []),
+            depends_on=list(getattr(step, "depends_on", []) or depends_on or []),
             timeout_ms=step.timeout_ms,
             optional=not step.required,
             output_key=step.id,
@@ -220,14 +265,15 @@ class WorkflowGraph:
         for segment in segments:
             seg_ids: List[str] = []
             for step in segment:
+                step_depends_on = list(getattr(step, "depends_on", []) or prev_segment_ids)
                 node = cls.node_from_plan_step(
                     step,
-                    depends_on=prev_segment_ids,
+                    depends_on=step_depends_on,
                 )
                 nodes.append(node)
                 seg_ids.append(step.id)
 
-                for prev_id in prev_segment_ids:
+                for prev_id in step_depends_on:
                     edges.append(WorkflowEdge(source=prev_id, target=step.id))
 
             prev_segment_ids = seg_ids

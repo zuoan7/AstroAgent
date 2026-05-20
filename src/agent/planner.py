@@ -134,6 +134,7 @@ class Planner:
 
         if task_type == "observation_recommendation":
             rationale = "观测推荐以 observation-planner 为聚合入口；按目标约束补充事件、深空或位置证据。"
+            context_group = "observation_context"
             if self._observation_plan_needs_event_step(query):
                 steps.append(
                     make_step(
@@ -145,6 +146,9 @@ class Planner:
                         purpose="为多日或周末观测计划补充天象事件",
                         success_criteria="返回指定时段的天象事件摘要",
                         evidence_key="celestial_events",
+                        required=False,
+                        fallback_strategy="continue",
+                        parallel_group=context_group,
                         retry_policy=1,
                         timeout_ms=12000,
                     )
@@ -159,6 +163,8 @@ class Planner:
                     purpose="生成目标、时段和实用观测安排",
                     success_criteria="返回指定日期地点的观测计划或目标建议",
                     evidence_key="observation_plan",
+                    fallback_strategy="react_fallback",
+                    parallel_group=context_group,
                     retry_policy=1,
                     timeout_ms=12000,
                 )
@@ -174,6 +180,9 @@ class Planner:
                         purpose="为设备约束、深空目标或观测顺序提供目标证据",
                         success_criteria="返回目标基础信息与观测建议",
                         evidence_key="deep_sky_object",
+                        required=False,
+                        fallback_strategy="continue",
+                        parallel_group=context_group,
                         retry_policy=1,
                         timeout_ms=15000,
                     )
@@ -189,12 +198,16 @@ class Planner:
                         purpose="为观测顺序和目标选择提供位置证据",
                         success_criteria="返回目标位置或可见性数据",
                         evidence_key="celestial_position",
+                        required=False,
+                        fallback_strategy="continue",
+                        parallel_group=context_group,
                         retry_policy=1,
                         timeout_ms=12000,
                     )
                 )
         elif task_type == "celestial_event_analysis":
             rationale = "天象分析以天象事件检索为核心，必要时补充观测条件。"
+            event_group = "event_context" if ("weather-lookup" in skill_set or "天气" in query) else None
             steps.append(
                 make_step(
                     planner_source="template",
@@ -205,6 +218,8 @@ class Planner:
                     purpose="获取用户关心时间范围内的天象事件",
                     success_criteria="返回周/月范围内的天象事件摘要",
                     evidence_key="celestial_events",
+                    fallback_strategy="react_fallback",
+                    parallel_group=event_group,
                     retry_policy=1,
                     timeout_ms=12000,
                 )
@@ -221,12 +236,15 @@ class Planner:
                         success_criteria="返回指定城市天气或云量",
                         evidence_key="weather",
                         required=False,
+                        fallback_strategy="continue",
+                        parallel_group="event_context",
                         retry_policy=1,
                         timeout_ms=8000,
                     )
                 )
         elif task_type == "deep_sky_guidance":
             rationale = "深空指导以目标资料为核心；涉及今晚可见性或目标比较时补充位置计算。"
+            deep_sky_group = "deep_sky_context" if self._deep_sky_needs_position_step(query) else None
             steps.append(
                 make_step(
                     planner_source="template",
@@ -237,6 +255,8 @@ class Planner:
                     purpose="获取深空目标资料并生成观测建议",
                     success_criteria="返回目标基础信息、观测条件和器材建议",
                     evidence_key="deep_sky_object",
+                    fallback_strategy="react_fallback",
+                    parallel_group=deep_sky_group,
                     retry_policy=1,
                     timeout_ms=15000,
                 )
@@ -252,6 +272,9 @@ class Planner:
                         purpose="判断深空目标在给定时间地点是否适合观测",
                         success_criteria="返回目标位置或可见性数据",
                         evidence_key="celestial_position",
+                        required=False,
+                        fallback_strategy="continue",
+                        parallel_group="deep_sky_context",
                         retry_policy=1,
                         timeout_ms=12000,
                     )
@@ -270,6 +293,7 @@ class Planner:
                     purpose="计算目标、焦距、支架和曝光相关摄影参数",
                     success_criteria="返回单张曝光、ISO/光圈或器材相关建议",
                     evidence_key="astrophotography_settings",
+                    fallback_strategy="react_fallback",
                     parallel_group=parallel_group,
                     retry_policy=1,
                     timeout_ms=15000,
@@ -286,6 +310,8 @@ class Planner:
                         purpose="为深空目标曝光和累计时长建议提供目标证据",
                         success_criteria="返回目标基础信息与观测提示",
                         evidence_key="deep_sky_object",
+                        required=False,
+                        fallback_strategy="continue",
                         parallel_group=parallel_group,
                         retry_policy=1,
                         timeout_ms=15000,
@@ -304,6 +330,7 @@ class Planner:
                         evidence_key="weather",
                         parallel_group="imaging_context",
                         required=False,
+                        fallback_strategy="continue",
                         retry_policy=1,
                         timeout_ms=8000,
                     )
@@ -347,6 +374,7 @@ class Planner:
                     purpose=f"调用 {skill_name} 获取回答证据",
                     success_criteria="返回可用于回答用户问题的工具结果",
                     evidence_key=skill_name,
+                    fallback_strategy="react_fallback",
                     parallel_group="generic_parallel" if len(matched_skills) > 1 else None,
                     retry_policy=1,
                     timeout_ms=10000,
@@ -443,6 +471,7 @@ class Planner:
                     purpose=str(item.get("reason") or f"调用 {skill} 获取信息"),
                     success_criteria="返回可用于回答用户问题的工具结果",
                     evidence_key=skill,
+                    fallback_strategy="react_fallback" if bool(item.get("required", True)) else "continue",
                     required=bool(item.get("required", True)),
                     retry_policy=1,
                     timeout_ms=12000,
@@ -504,6 +533,7 @@ class Planner:
         success_criteria: str = "",
         fallback_strategy: str = "",
         evidence_key: str = "",
+        depends_on: Optional[list[str]] = None,
         required: bool = True,
         parallel_group: Optional[str] = None,
         retry_policy: int = 0,
@@ -530,6 +560,7 @@ class Planner:
             success_criteria=success_criteria,
             fallback_strategy=fallback_strategy,
             evidence_key=evidence_key,
+            depends_on=list(depends_on or []),
             planner_source=planner_source,
             required=required,
             parallel_group=parallel_group,

@@ -21,6 +21,7 @@ class FrontendExecutionEventAdapter:
         "route_decided": "route_decision",
         "plan_built": "plan_update",
         "plan_created": "plan_update",
+        "plan_repaired": "plan_update",
         "step_started": "step_start",
         "step_finished": "step_end",
         "answer_ready": "final_answer",
@@ -88,7 +89,7 @@ class FrontendExecutionEventAdapter:
                 continue
             if event.type in {"answer_ready", "final_answer"} and not include_answer_ready:
                 continue
-            if event.type in {"plan_built", "plan_created"}:
+            if event.type in {"plan_built", "plan_created", "plan_repaired"}:
                 plan_steps_payload = self._extract_plan_steps_payload(event)
                 if isinstance(plan_steps_payload, list):
                     async for processed in self.emit_execution_event(

@@ -213,6 +213,19 @@ class TestTopologicalOrder:
         assert set(ids[1:3]) == {"left", "right"}
         assert g.validate() == []
 
+    def test_topological_generations(self):
+        root = WorkflowNode(id="root")
+        left = WorkflowNode(id="left", depends_on=["root"])
+        right = WorkflowNode(id="right", depends_on=["root"])
+        sink = WorkflowNode(id="sink", depends_on=["left", "right"])
+        g = WorkflowGraph(nodes=[root, left, right, sink])
+        generations = g.topological_generations()
+        assert [[node.id for node in generation] for generation in generations] == [
+            ["root"],
+            ["left", "right"],
+            ["sink"],
+        ]
+
 
 class TestFromExecutionPlan:
     def test_simple_linear_chain(self):
@@ -258,6 +271,41 @@ class TestFromExecutionPlan:
         p3 = g.node("p3")
         # p3 应依赖 p1 和 p2（整个并行组）
         assert set(p3.depends_on) == {"p1", "p2"}
+
+    def test_explicit_depends_on_overrides_linear_segment_dependency(self):
+        plan = ExecutionPlan(
+            task_type="observation_recommendation",
+            output_schema="observation_answer_v1",
+            steps=[
+                PlanStep(id="root", kind="tool", skill="weather-lookup"),
+                PlanStep(
+                    id="left",
+                    kind="tool",
+                    skill="celestial-events-forecast",
+                    depends_on=["root"],
+                ),
+                PlanStep(
+                    id="right",
+                    kind="tool",
+                    skill="deep-sky-observing-guide",
+                    depends_on=["root"],
+                ),
+                PlanStep(
+                    id="sink",
+                    kind="tool",
+                    skill="observation-planner",
+                    depends_on=["left", "right"],
+                ),
+            ],
+        )
+        graph = WorkflowGraph.from_execution_plan(plan)
+        assert graph.node("right").depends_on == ["root"]
+        assert set(graph.node("sink").depends_on) == {"left", "right"}
+        assert [[node.id for node in generation] for generation in graph.topological_generations()] == [
+            ["root"],
+            ["left", "right"],
+            ["sink"],
+        ]
 
     def test_optional_flag_propagated(self):
         plan = _parallel_plan()
@@ -561,7 +609,8 @@ class TestPlannerGraphPlanning:
         assert isinstance(plan, ExecutionPlan)
         assert plan.task_type == "observation_recommendation"
         assert plan.output_schema == "observation_answer_v1"
-        assert [step.id for step in plan.steps] == [node.id for node in graph.topological_order()]
+        assert {step.id for step in plan.steps} == {node.id for node in graph.topological_order()}
+        assert plan.steps[0].id == "observation_plan"
 
     def test_execution_plan_roundtrip_keeps_legacy_step_fields(self):
         original = _parallel_plan()

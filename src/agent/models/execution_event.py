@@ -17,6 +17,7 @@ EXECUTION_EVENT_TYPES = {
     "execution_decision", # Policy/Engine 执行决策完成
     "plan_built",         # 执行计划已生成
     "plan_created",       # plan_built 兼容别名
+    "plan_repaired",      # planned 路径执行中完成一次受控计划修复
     "step_started",       # 步骤开始执行
     "step_finished",      # 步骤执行结束
     "tool_result",        # react 路径工具返回

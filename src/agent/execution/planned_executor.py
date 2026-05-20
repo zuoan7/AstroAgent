@@ -1,8 +1,4 @@
-"""PlannedExecutor — 计划任务执行器（Phase 4 引入，Phase 9 为主路径）。
-
-抽取自 TaskOrchestrator._run_planned_task()，逻辑完全等价。
-Phase 9 起：循环依赖已消除（改用 SkillParamBuilder），WorkflowExecutor 为唯一执行引擎。
-"""
+"""PlannedExecutor — structured DAG execution path for planned tasks."""
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -23,11 +19,7 @@ from src.core.config import settings
 
 
 class PlannedExecutor:
-    """封装 planned_task 主链路：plan -> execute(DAG) -> synthesize。
-
-    主路径使用 WorkflowGraph + WorkflowExecutor；
-    ExecutionPlan 仅作为兼容输入/输出视图保留。
-    """
+    """Run planned tasks as plan_graph -> DAG execution -> evidence synthesis."""
 
     def __init__(
         self,
@@ -117,9 +109,11 @@ class PlannedExecutor:
             fallback_path=[fallback_decision.to_dict()] if fallback_decision else [],
             budget_usage=budget_tracker.snapshot() if budget_tracker else None,
             versions=versions_payload,
+            evidence=outcome.evidence_by_key,
         )
         response.route = decision.route
         response.task_type = decision.task_type
+        response.sources = self._merge_sources(response.sources, outcome.evidence_items)
         response.execution_plan = plan.to_dict()
         response.execution_trace = [step.to_dict() for step in outcome.step_results]
         response.route_decision = decision.to_meta()
@@ -130,12 +124,35 @@ class PlannedExecutor:
             decision=decision,
             plan=plan,
             execution_trace=response.execution_trace,
+            evidence_by_key=outcome.evidence_by_key,
+            skipped_step_ids=outcome.skipped_step_ids,
         )
         response.execution_events = self._build_execution_events(
             response=response,
             fallback_decision=fallback_decision,
         )
         return response
+
+    @staticmethod
+    def _merge_sources(
+        existing: list[dict[str, Any]],
+        evidence_items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for item in list(existing or []) + list(evidence_items or []):
+            if not isinstance(item, dict):
+                continue
+            identity = (
+                str(item.get("source_id") or ""),
+                str(item.get("title") or ""),
+                str(item.get("snippet") or ""),
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            merged.append(dict(item))
+        return merged
 
     def preview_plan(
         self,
@@ -156,6 +173,113 @@ class PlannedExecutor:
         )
         return plan
 
+    def repair_plan(
+        self,
+        decision: RouteDecision,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+        failed_response: Optional[FinalResponse] = None,
+        error: str = "",
+    ) -> Optional[ExecutionPlan]:
+        """Build a one-shot repaired plan for structural/parameter failures.
+
+        This is intentionally narrow: it only normalizes an existing planned
+        response by fixing bad dependencies, converting repairable tool nodes,
+        and rebuilding params for failed tool steps. Tool outages and timeouts
+        are handled by fallback instead of broad replanning.
+        """
+        if failed_response is None or not failed_response.execution_plan:
+            return None
+
+        try:
+            plan = ExecutionPlan.from_dict(failed_response.execution_plan)
+        except Exception:
+            return None
+
+        if not plan.steps:
+            return None
+
+        failed_step_ids = self._failed_step_ids_from_response(failed_response)
+        trace_by_step = {
+            str(trace.get("step_id", "")): trace
+            for trace in failed_response.execution_trace
+            if isinstance(trace, dict)
+        }
+        valid_ids = {step.id for step in plan.steps}
+        changed = False
+
+        for step in plan.steps:
+            valid_depends_on = [
+                dep for dep in step.depends_on if dep in valid_ids and dep != step.id
+            ]
+            if valid_depends_on != step.depends_on:
+                step.depends_on = valid_depends_on
+                changed = True
+
+            if step.kind != "tool" and step.skill:
+                step.kind = "tool"
+                changed = True
+
+            trace = trace_by_step.get(step.id, {})
+            step_error = str(trace.get("error") or error or "")
+            if (
+                step.id in failed_step_ids
+                and step.skill
+                and self._is_param_repair_error(step_error)
+            ):
+                try:
+                    step.params = self._param_builder.build(
+                        step.skill,
+                        query,
+                        chat_history=chat_history,
+                        user_profile=user_profile,
+                    )
+                    changed = True
+                except Exception:
+                    pass
+
+        if not changed:
+            return None
+
+        plan.planner_type = f"{plan.planner_type}_repair"
+        plan.rationale = (
+            f"{plan.rationale}\n"
+            "受控计划修复：规范依赖/节点类型，并为失败步骤重建参数。"
+        ).strip()
+        return plan
+
+    @staticmethod
+    def _failed_step_ids_from_response(response: FinalResponse) -> set[str]:
+        ids: set[str] = set()
+        for fallback in response.fallback_path or []:
+            metadata = fallback.get("metadata") or {}
+            for key in ("required_failed_steps", "optional_failed_steps"):
+                for step_id in metadata.get(key) or []:
+                    ids.add(str(step_id))
+        for trace in response.execution_trace or []:
+            if not isinstance(trace, dict):
+                continue
+            if trace.get("status") in {"error", "skipped"}:
+                ids.add(str(trace.get("step_id", "")))
+        return {step_id for step_id in ids if step_id}
+
+    @staticmethod
+    def _is_param_repair_error(error: str) -> bool:
+        text = str(error or "").lower()
+        return any(
+            hint in text
+            for hint in (
+                "missing required",
+                "required parameter",
+                "missing parameter",
+                "invalid param",
+                "参数",
+                "缺少",
+            )
+        )
+
     def _resolve_plan_and_graph(
         self,
         decision: RouteDecision,
@@ -165,12 +289,11 @@ class PlannedExecutor:
         user_profile: str = "",
         execution_plan: Optional[ExecutionPlan] = None,
     ) -> tuple[ExecutionPlan, WorkflowGraph]:
-        """优先使用原生 WorkflowGraph；ExecutionPlan 仅保留兼容层。"""
+        """Resolve the native WorkflowGraph and compatibility ExecutionPlan view."""
         if execution_plan is not None:
             return execution_plan, WorkflowGraph.from_execution_plan(execution_plan)
 
-        use_graph_planning = bool(getattr(settings, "ENABLE_WORKFLOW_GRAPH", True))
-        if use_graph_planning and hasattr(self._planner, "plan_graph"):
+        if hasattr(self._planner, "plan_graph"):
             try:
                 graph = self._planner.plan_graph(
                     query=query,
@@ -201,6 +324,8 @@ class PlannedExecutor:
         decision: RouteDecision,
         plan: ExecutionPlan,
         execution_trace: list[dict[str, Any]],
+        evidence_by_key: dict[str, Any],
+        skipped_step_ids: list[str],
     ) -> dict[str, Any]:
         route_meta = decision.to_meta()
         param_sources: list[str] = []
@@ -273,6 +398,10 @@ class PlannedExecutor:
             "handler_mcp_tools_used": handler_mcp_tools,
             "operations": operations,
             "expected_mcp_tools": expected_mcp_tools,
+            "dag_node_count": len(plan.steps),
+            "dag_evidence_keys": sorted(evidence_by_key),
+            "dag_evidence": evidence_by_key,
+            "skipped_step_ids": list(skipped_step_ids),
         }
 
     def _build_execution_events(

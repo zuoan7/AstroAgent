@@ -6,7 +6,7 @@ AstroAgent 是一个面向天文场景的 AI Agent 项目，围绕“天文知�
 - `FastMCP` 天文工具服务，用于向 Agent 暴露标准 MCP 工具能力
 - `Vue 3 + Vite` 前端工作台，用于交互式调试与验证
 
-项目当前实现采用 `LangChain + LangGraph` 驱动 Agent 编排，结合本地 RAG、MCP 工具调用、短期记忆和长期用户画像，实现面向天文问答与观测规划的智能助手。
+项目当前实现采用统一执行引擎驱动 Agent 编排，按请求画像分流到 `direct`、`planned` 或 `react` 路径；其中 planned 路径已收敛为 DAG 执行图，结合本地 RAG、MCP 工具调用、短期记忆和长期用户画像，实现面向天文问答与观测规划的智能助手。
 
 ## 项目概述
 
@@ -32,14 +32,17 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 - [AstroAgent Evaluation Runner](docs/astro_agent_evaluation_runner.md)：200 条 Agent benchmark 的静态校验、live SSE 评测脚本、指标口径与运行命令
 - [Streaming Event Bus](docs/streaming-event-bus.md)：流式输出统一事件总线、适配器接口、插件机制与兼容性说明
 - [Agent Compatibility Matrix](docs/agent_compatibility_matrix.md)：DAG Agent 重构后各兼容层、deprecated 接口、feature flags 与删除条件清单
+- [Agent Mode and DAG Refactor](docs/agent_mode_dag_refactor.md)：agent 策略模式、planned DAG 执行、步骤失败策略与证据聚合说明
 
 
 ## 核心功能
 
 ### 1. Agent 智能编排
 
-- `AstroAgent` 是总入口，负责初始化 LLM、RAG、技能管理、记忆和流式输出
-- Agent 采用 ReAct 风格，通过高层技能工具完成任务分发
+- `AstroAgent` 是总入口，负责初始化 LLM、RAG、技能管理、记忆、统一执行引擎和流式输出
+- `ExecutionEngine` 按 `ExecutionDecision.mode` 分发到 `direct`、`planned` 或 `react` 执行路径
+- `planned` 路径采用 `WorkflowGraph + WorkflowExecutor` 执行 DAG，支持步骤依赖、并行、重试、失败策略和证据聚合
+- `react` 保留为开放式任务路径，以及 structured planned 路径失败后的真实兜底执行
 - 工具由 `SkillManager` 统一注册，避免 Agent 直接依赖底层实现细节
 
 ### 2. 技能路由与 MCP 工具调用
@@ -86,7 +89,7 @@ AstroAgent 的记忆系统采用**事件化短期记忆 + 长期用户画像**�
 
 | 类别 | 主要技术 |
 | --- | --- |
-| Agent 编排 | LangChain, LangGraph |
+| Agent 编排 | LangChain, 自研 ExecutionEngine / WorkflowGraph |
 | 大模型 | Tongyi/Qwen（`ChatTongyi`、DashScope） |
 | Web 服务 | FastAPI, Uvicorn, SlowAPI |
 | MCP 服务 | FastMCP, langchain-mcp-adapters |
@@ -111,9 +114,16 @@ Client / UI
 Application Layer
 ├── AstroAgent
 ├── StreamingService
+├── ExecutionEngine
 ├── VisionService
 ├── SpeechService
 └── FallbackService
+
+Execution Layer
+├── DirectExecutor
+├── PlannedExecutor
+├── WorkflowExecutor
+└── ReactExecutor
 
 Skill Orchestration Layer
 ├── SkillManager
@@ -176,6 +186,9 @@ AstroAgent/
 | `src/agent/skill_manager.py` | 高层技能注册与统一入口 |
 | `src/agent/streaming_events.py` | 流式事件模型、校验器与文本/JSON/SSE 适配器 |
 | `src/agent/streaming_service.py` | 统一事件总线驱动的流式输出与记忆写入 |
+| `src/agent/execution/engine.py` | 统一执行入口，按 direct/planned/react 分发并协调 planned recovery |
+| `src/agent/execution/workflow_executor.py` | planned DAG 执行器，处理依赖、并行、重试、失败策略和证据聚合 |
+| `src/agent/policies/fallback_policy.py` | planned 执行后的 partial answer、plan repair 与 react fallback 策略 |
 | `src/skills/router.py` | 技能路由，连接技能处理器与 MCP 工具 |
 | `src/skills/skill_handlers.py` | 观测计划、天象预报、深空观测等复杂技能实现 |
 | `src/skills/mcp_client.py` | Streamable HTTP MCP 客户端，负责会话与工具调用 |
@@ -192,10 +205,37 @@ AstroAgent/
 
 1. 客户端调用 `FastAPI` 接口或通过 `Vue3` 前端触发请求
 2. API 层根据 `user_id` 获取或创建会话，绑定短期记忆与流式服务
-3. `StreamingService` 组织上下文、用户画像和工具执行过程
-4. `AstroAgent` 调用 ReAct Agent，选择 RAG 或高层技能工具
-5. 高层技能通过 `SkillManager -> AstronomySkillRouter -> MCPClient` 调用 MCP 工具，或直接访问 RAG
-6. 底层天文服务返回结果后，统一内部事件总线生成标准事件，再按文本流 / JSON / SSE 适配输出给客户端
+3. `StreamingService` 组织上下文、用户画像、任务画像和流式事件
+4. `AgentExecutionPolicy` 生成 `ExecutionDecision`，由 `ExecutionEngine` 分发到 `direct`、`planned` 或 `react`
+5. `planned` 路径由 `Planner.plan_graph()` 生成 `WorkflowGraph`，再由 `WorkflowExecutor` 按 DAG 执行技能步骤
+6. 高层技能通过 `SkillManager -> AstronomySkillRouter -> MCPClient` 调用 MCP 工具，或直接访问 RAG
+7. 底层天文服务返回结果后，统一内部事件总线生成标准事件，再按文本流 / JSON / SSE 适配输出给客户端
+
+### Planned DAG 与恢复策略
+
+复杂、可模板化的天文任务默认进入 planned 路径：
+
+```text
+Planner.plan_graph()
+  -> WorkflowGraph
+  -> WorkflowExecutor.execute()
+  -> EvidenceAggregator
+  -> ResponseSynthesizer
+```
+
+planned 路径支持以下步骤级策略：
+
+- `continue`：可选步骤失败后继续执行可运行节点，最终标记为 partial answer。
+- `skip_dependents`：当前步骤失败后跳过依赖它的下游分支。
+- `halt` / `react_fallback`：必需步骤失败后停止 planned 执行，交给恢复策略处理。
+
+planned 执行后的恢复由 `FallbackPolicy` 和 `ExecutionEngine` 共同完成：
+
+- `partial_answer`：只有可选步骤失败时，不进入 ReAct，基于已成功返回的证据生成答案。
+- `plan_repair`：依赖、参数、节点类型、空图或循环依赖等计划结构问题，会尝试一次受控修复并重跑 repaired plan。
+- `react_fallback`：必需工具失败、外部服务失败、repair 不可用或 repair 后仍失败时，真实调用 `ReactExecutor.run()` 生成最终答案。
+
+恢复路径会写入 `fallback_path`、`audit_metadata.recovery` 和 `ExecutionEvent`，其中 `fallback_path.metadata.executed` 表示恢复动作是否真实执行，`recovery_mode` 标记为 `partial_answer`、`plan_repair` 或 `react`。
 
 ### MCP 工具集合
 
@@ -532,6 +572,7 @@ data: {"type":"text","content":"今晚上海可以观测到木星..."}
 
 - 这些对外事件由统一内部事件总线生成，再经 `FrontendJsonEventAdapter` / `SSEEventAdapter` 转换输出。
 - 内部主事件协议已收口为 `ExecutionEvent`；上述事件名属于前端兼容输出层，不要求前端立刻迁移。
+- planned recovery 相关的内部事件包括 `fallback_triggered` 和 `plan_repaired`；前端兼容层会继续映射为既有进度事件，不破坏旧客户端。
 - 纯文本流、JSON 事件流和 SSE 流已收敛到同一底层事件序列，减少不同输出路径之间的逻辑漂移。
 - `final_answer` 事件当前会额外携带 `total_duration_sec`、`tool_count`、`tool_success_count`、`tool_error_count`、`evidence_count`、`memory_hit_count` 等前端可观测字段。
 

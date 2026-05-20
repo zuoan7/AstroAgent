@@ -9,6 +9,22 @@ from src.agent.fast_answers import build_context_update_answer, stable_knowledge
 
 ToolNecessityAction = Literal["use_tool", "clarify", "answer_without_tool"]
 
+OBSERVING_TOOL_HINTS = (
+    "weather-lookup",
+    "observation-planner",
+    "celestial-events-forecast",
+    "deep-sky-observing-guide",
+    "neo-tracker",
+    "astrophotography-calculator",
+    "celestial-position-calculator",
+)
+
+EXTERNAL_LOOKUP_TOOL_HINTS = (
+    *OBSERVING_TOOL_HINTS,
+    "get_nasa_apod",
+    "web_search",
+)
+
 
 @dataclass(frozen=True)
 class ToolNecessityDecision:
@@ -238,17 +254,7 @@ class ToolNecessityGate:
                 confidence=0.96,
                 reason="user_explicitly_requested_no_external_data",
                 answer_hint="可以，不使用实时数据也能回答。这个问题属于稳定知识或一般经验判断，我会直接说明原理和适用边界。",
-                forbidden_skill_hints=[
-                    "weather-lookup",
-                    "observation-planner",
-                    "celestial-events-forecast",
-                    "deep-sky-observing-guide",
-                    "neo-tracker",
-                    "astrophotography-calculator",
-                    "celestial-position-calculator",
-                    "get_nasa_apod",
-                    "web_search",
-                ],
+                forbidden_skill_hints=list(EXTERNAL_LOOKUP_TOOL_HINTS),
             )
 
         if self._is_external_failure_strategy_question(text):
@@ -290,15 +296,7 @@ class ToolNecessityGate:
                 confidence=0.92,
                 reason="stable_knowledge_fast_answer",
                 answer_hint=stable_answer,
-                forbidden_skill_hints=[
-                    "weather-lookup",
-                    "observation-planner",
-                    "celestial-events-forecast",
-                    "deep-sky-observing-guide",
-                    "neo-tracker",
-                    "astrophotography-calculator",
-                    "celestial-position-calculator",
-                ],
+                forbidden_skill_hints=list(OBSERVING_TOOL_HINTS),
             )
 
         stable_answers = [
@@ -335,13 +333,7 @@ class ToolNecessityGate:
                     confidence=0.9,
                     reason=reason,
                     answer_hint=answer,
-                    forbidden_skill_hints=[
-                        "weather-lookup",
-                        "celestial-events-forecast",
-                        "deep-sky-observing-guide",
-                        "astrophotography-calculator",
-                        "celestial-position-calculator",
-                    ],
+                    forbidden_skill_hints=list(OBSERVING_TOOL_HINTS),
                 )
 
         if self._is_stable_explanation_or_advice(text):
@@ -349,15 +341,7 @@ class ToolNecessityGate:
                 action="answer_without_tool",
                 confidence=0.88,
                 reason="stable_explanation_or_general_advice_without_tool",
-                forbidden_skill_hints=[
-                    "weather-lookup",
-                    "observation-planner",
-                    "celestial-events-forecast",
-                    "deep-sky-observing-guide",
-                    "neo-tracker",
-                    "astrophotography-calculator",
-                    "celestial-position-calculator",
-                ],
+                forbidden_skill_hints=list(OBSERVING_TOOL_HINTS),
             )
 
         return None
@@ -373,15 +357,7 @@ class ToolNecessityGate:
             confidence=0.94,
             reason=reason,
             answer_hint=answer,
-            forbidden_skill_hints=[
-                "weather-lookup",
-                "observation-planner",
-                "celestial-events-forecast",
-                "deep-sky-observing-guide",
-                "neo-tracker",
-                "astrophotography-calculator",
-                "celestial-position-calculator",
-            ],
+            forbidden_skill_hints=list(OBSERVING_TOOL_HINTS),
         )
 
     def _tool_allow_decision(self, text: str) -> ToolNecessityDecision | None:
@@ -803,7 +779,6 @@ class ToolNecessityGate:
                 "明晚应该安排什么",
                 "今晚最值得看什么",
                 "今晚安排什么",
-                "观测顺序",
                 "带孩子看星星",
                 "朋友观星",
                 "城市阳台",
@@ -812,7 +787,6 @@ class ToolNecessityGate:
                 "周末晚上能不能安排",
                 "计划要不要换",
                 "只有半小时",
-                "今晚还值得架望远镜",
             )
         )
 

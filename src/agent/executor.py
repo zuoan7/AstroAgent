@@ -44,6 +44,9 @@ class StepExecutionResult:
     error: Optional[str] = None
     summary: str = ""
     sources: List[Dict[str, Any]] = field(default_factory=list)
+    depends_on: List[str] = field(default_factory=list)
+    evidence_key: str = ""
+    fallback_strategy: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -64,6 +67,9 @@ class StepExecutionResult:
             "error": self.error,
             "summary": self.summary,
             "sources": list(self.sources),
+            "depends_on": list(self.depends_on),
+            "evidence_key": self.evidence_key,
+            "fallback_strategy": self.fallback_strategy,
         }
 
     def to_trace_entry(self) -> "ExecutionTraceEntry":  # noqa: F821
@@ -77,8 +83,71 @@ class ExecutionOutcome:
     plan: ExecutionPlan
     skill_results: List[SkillResult] = field(default_factory=list)
     step_results: List[StepExecutionResult] = field(default_factory=list)
+    evidence_by_key: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    evidence_items: List[Dict[str, Any]] = field(default_factory=list)
+    skipped_step_ids: List[str] = field(default_factory=list)
     halted: bool = False
     halt_reason: Optional[str] = None
+
+
+class EvidenceAggregator:
+    """Collect stable evidence records from DAG step results."""
+
+    def __init__(self) -> None:
+        self._by_key: Dict[str, Dict[str, Any]] = {}
+        self._items: List[Dict[str, Any]] = []
+        self._seen_sources: set[tuple[str, str, str]] = set()
+
+    def add(
+        self,
+        *,
+        key: str,
+        step_result: StepExecutionResult,
+        skill_result: Optional[SkillResult],
+    ) -> None:
+        evidence_key = key or step_result.evidence_key or step_result.step_id
+        record = {
+            "key": evidence_key,
+            "step_id": step_result.step_id,
+            "skill": step_result.skill,
+            "status": step_result.status,
+            "summary": step_result.summary,
+            "sources": list(step_result.sources),
+            "error": step_result.error,
+        }
+        if skill_result is not None and skill_result.success and skill_result.data:
+            record["data"] = dict(skill_result.data)
+        self._by_key[evidence_key] = record
+
+        if step_result.summary:
+            self._append_item(
+                {
+                    "source_id": evidence_key,
+                    "kind": "tool_evidence",
+                    "title": step_result.title or step_result.skill or step_result.step_id,
+                    "snippet": step_result.summary[:240],
+                    "tool": step_result.skill,
+                    "step_id": step_result.step_id,
+                    "status": step_result.status,
+                }
+            )
+        for source in step_result.sources:
+            if isinstance(source, dict):
+                self._append_item(source)
+
+    def _append_item(self, item: Dict[str, Any]) -> None:
+        identity = (
+            str(item.get("source_id") or ""),
+            str(item.get("title") or ""),
+            str(item.get("snippet") or ""),
+        )
+        if identity in self._seen_sources:
+            return
+        self._seen_sources.add(identity)
+        self._items.append(dict(item))
+
+    def snapshot(self) -> tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
+        return dict(self._by_key), list(self._items)
 
 
 class StepExecutor:
@@ -254,6 +323,9 @@ class StepExecutor:
             error=None if status == "success" else last_error,
             summary=skill_result.summary if skill_result else "",
             sources=list(skill_result.sources) if skill_result else [],
+            evidence_key=step.evidence_key or step.id,
+            fallback_strategy=step.fallback_strategy
+            or ("halt" if step.required else "continue"),
         )
 
         if skill_result:

@@ -122,4 +122,5 @@ docs/*
 !docs/memory_context_evaluation.md
 !docs/agent_evaluation_dataset_design.md
 !docs/astro_agent_evaluation_runner.md
+!docs/agent_mode_dag_refactor.md
 CLAUDE.md
