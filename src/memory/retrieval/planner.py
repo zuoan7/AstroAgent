@@ -586,6 +586,18 @@ class RetrievalPlanner:
 
     def _format_task_state(self, state: TaskState) -> str:
         parts = []
+        has_task_content = bool(
+            state.current_goal
+            or state.active_constraints
+            or state.pending_steps
+            or state.completed_steps
+            or state.open_questions
+            or state.assumptions
+            or state.blockers
+            or state.next_action
+        )
+        if state.status and (state.status != "active" or has_task_content):
+            parts.append(f"status: {state.status}")
         if state.current_goal:
             parts.append(f"current_goal: {state.current_goal}")
         if state.active_constraints:
@@ -594,6 +606,12 @@ class RetrievalPlanner:
             )
         if state.pending_steps:
             parts.append("pending_steps: " + "; ".join(state.pending_steps[:8]))
+        if state.completed_steps:
+            parts.append("completed_steps: " + "; ".join(state.completed_steps[:8]))
+        if state.open_questions:
+            parts.append("open_questions: " + "; ".join(state.open_questions[:6]))
+        if state.assumptions:
+            parts.append("assumptions: " + "; ".join(state.assumptions[:6]))
         if state.blockers:
             parts.append("blockers: " + "; ".join(state.blockers[:5]))
         if state.next_action:

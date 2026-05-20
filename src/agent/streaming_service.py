@@ -36,6 +36,7 @@ from src.memory.api.dto import (
     AppendToolCallRequest,
     BuildContextRequest,
 )
+from src.memory.application.task_state_runtime_service import TaskStateRuntimeService
 
 MAX_ACTION_HISTORY_ENTRIES = 100
 TOOL_INPUT_LOG_PREVIEW_CHARS = 300
@@ -61,6 +62,7 @@ class BaseStreamingGenerator:
         audit_logger: Optional[Any] = None,
         agent_executor_factory: Optional[Any] = None,
         execution_engine: Optional[Any] = None,
+        task_state_runtime: Optional[Any] = None,
     ):
         self._agent_executor = agent_executor
         self._memory = memory
@@ -84,6 +86,7 @@ class BaseStreamingGenerator:
         self._agent_executor_factory = agent_executor_factory
         # ExecutionEngine 为默认主执行入口；未注入时才回退到旧 TaskOrchestrator。
         self._execution_engine = execution_engine
+        self._task_state_runtime = task_state_runtime or TaskStateRuntimeService(memory)
 
     def _cleanup_action_history(self, request_id: Optional[str] = None):
         if request_id and request_id in self._action_history:
@@ -101,19 +104,223 @@ class BaseStreamingGenerator:
             f"操作历史内存状态: {total_entries} 个请求, 共 {total_actions} 条动作记录"
         )
 
-    def _format_chat_history(self) -> str:
+    def _build_short_term_memory_context(self, query: str) -> Dict[str, Any]:
         try:
             context = self._memory.build_context(
                 BuildContextRequest(
                     session_id=self._memory_session_id(),
-                    query=self._current_query or "",
+                    query=query or self._current_query or "",
                 )
             )
-            context_text = context.get("context_text", "")
-            return context_text or "无历史对话"
+            return context if isinstance(context, dict) else {}
         except Exception as e:
             logger.warning(f"build_context失败，使用空历史: {type(e).__name__}: {e}")
+            return {}
+
+    def _format_chat_history(
+        self,
+        memory_context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        try:
+            context = (
+                memory_context
+                if memory_context is not None
+                else self._build_short_term_memory_context(self._current_query or "")
+            )
+            context_text = context.get("context_text", "") if context else ""
+            return context_text or "无历史对话"
+        except Exception as e:
+            logger.warning(f"format chat_history失败，使用空历史: {type(e).__name__}: {e}")
             return "无历史对话"
+
+    def _selected_task_state_from_context(
+        self,
+        memory_context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not isinstance(memory_context, dict):
+            return {}
+        state = memory_context.get("selected_task_state")
+        return state if isinstance(state, dict) else {}
+
+    def _build_effective_query(
+        self,
+        query: str,
+        memory_context: Optional[Dict[str, Any]],
+    ) -> str:
+        try:
+            return self._task_state_runtime.build_effective_query(
+                query,
+                self._selected_task_state_from_context(memory_context),
+            )
+        except Exception as exc:
+            logger.warning(
+                "build effective query from task_state failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+            return query
+
+    def _task_state_expected_version(
+        self,
+        state: Optional[Dict[str, Any]],
+    ) -> Optional[int]:
+        if not isinstance(state, dict):
+            return None
+        try:
+            return int(state.get("version")) if state.get("version") is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _apply_task_state_turn_started(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        original_query: str,
+        effective_query: str,
+        profile: Optional[Any],
+        execution_decision: Optional[Any],
+        execution_plan: Optional[ExecutionPlan],
+        selected_task_state: Optional[Dict[str, Any]],
+    ) -> Optional[Any]:
+        try:
+            patch = self._task_state_runtime.build_turn_started_patch(
+                effective_query or original_query,
+                profile=profile,
+                execution_decision=execution_decision,
+                execution_plan=execution_plan,
+                selected_task_state=selected_task_state,
+            )
+            state = self._task_state_runtime.apply_patch_with_retry(
+                session_id=session_id,
+                patch=patch,
+                expected_version=self._task_state_expected_version(selected_task_state),
+                turn_id=turn_id,
+                created_by="task_state_runtime",
+            )
+            return state
+        except Exception as exc:
+            logger.warning(
+                "[%s] task_state start update failed: %s: %s",
+                turn_id,
+                type(exc).__name__,
+                exc,
+            )
+            return None
+
+    def _apply_task_state_turn_completed(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        response: Optional[FinalResponse] = None,
+        profile: Optional[Any] = None,
+        execution_decision: Optional[Any] = None,
+        error: Optional[BaseException | str] = None,
+        fallback_message: str = "",
+        expected_version: Optional[int] = None,
+    ) -> Optional[Any]:
+        try:
+            patch = self._task_state_runtime.build_turn_completed_patch(
+                response=response,
+                profile=profile,
+                execution_decision=execution_decision,
+                error=error,
+                fallback_message=fallback_message,
+            )
+            return self._task_state_runtime.apply_patch_with_retry(
+                session_id=session_id,
+                patch=patch,
+                expected_version=expected_version,
+                turn_id=turn_id,
+                created_by="task_state_runtime",
+            )
+        except Exception as exc:
+            logger.warning(
+                "[%s] task_state completion update failed: %s: %s",
+                turn_id,
+                type(exc).__name__,
+                exc,
+            )
+            return None
+
+    def _schedule_task_state_enrichment(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        user_message: str,
+        assistant_message: str,
+        current_state: Optional[Any],
+    ) -> None:
+        try:
+            self._task_state_runtime.enrich_patch_with_llm_async(
+                session_id=session_id,
+                turn_id=turn_id,
+                user_message=user_message,
+                assistant_message=assistant_message,
+                current_state=current_state,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[%s] task_state enrichment scheduling failed: %s: %s",
+                turn_id,
+                type(exc).__name__,
+                exc,
+            )
+
+    def _get_task_state_debug(self, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        if not hasattr(self._memory, "get_task_state"):
+            return None
+        try:
+            state = self._memory.get_task_state(session_id or self._memory_session_id())
+            return state.to_dict() if hasattr(state, "to_dict") else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _final_response_from_stream_state(
+        *,
+        answer: str,
+        execution_path: str,
+        decision: Optional[Any],
+        tool_timeline: list[Dict[str, Any]],
+        fallback_used: bool,
+    ) -> FinalResponse:
+        task_type = getattr(decision, "task_type", "") if decision else ""
+        route = getattr(decision, "route", "") if decision else ""
+        trace = []
+        for item in tool_timeline or []:
+            if not isinstance(item, dict):
+                continue
+            trace.append(
+                {
+                    "step_id": str(item.get("run_id") or item.get("tool") or "tool"),
+                    "title": str(item.get("tool") or item.get("tool_name") or "tool"),
+                    "kind": "tool",
+                    "status": item.get("status", "success"),
+                    "tool_name": item.get("tool") or item.get("tool_name"),
+                    "tool_input": item.get("input", ""),
+                    "tool_output_summary": item.get("output_summary", ""),
+                    "summary": item.get("output_summary", ""),
+                    "duration_sec": item.get("duration_sec"),
+                }
+            )
+        fallback_path = (
+            [{"strategy": "stream_fallback", "reason": "fallback_used"}]
+            if fallback_used
+            else []
+        )
+        return FinalResponse(
+            answer=answer,
+            summary=answer[:200] if len(answer) > 200 else answer,
+            tools_used=list(tool_timeline or []),
+            confidence=0.4,
+            route=route,
+            task_type=task_type or ("open_domain_reasoning" if execution_path == "react" else ""),
+            execution_trace=trace,
+            fallback_path=fallback_path,
+        )
 
     def _format_user_profile(self) -> str:
         if not self._long_term_memory:
@@ -269,10 +476,13 @@ class BaseStreamingGenerator:
         return "".join(response_parts)
 
     def _prepare_input(
-        self, query: str, use_long_term_memory: bool = True
+        self,
+        query: str,
+        use_long_term_memory: bool = True,
+        memory_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         self._current_query = query
-        chat_history = self._format_chat_history()
+        chat_history = self._format_chat_history(memory_context)
         user_profile = (
             self._format_user_profile()
             if use_long_term_memory
@@ -626,13 +836,14 @@ class BaseStreamingGenerator:
         *,
         use_long_term_memory: bool,
         request_id: Optional[str] = None,
+        memory_context: Optional[Dict[str, Any]] = None,
     ) -> Any:
         from src.agent.models.request_context import RequestContext
 
         self._current_query = query
         return RequestContext(
             query=query,
-            chat_history=self._format_chat_history(),
+            chat_history=self._format_chat_history(memory_context),
             user_profile=(
                 self._format_user_profile()
                 if use_long_term_memory
@@ -933,28 +1144,36 @@ class BaseStreamingGenerator:
         latency: LatencyTracker,
         execution_plan: Optional[ExecutionPlan] = None,
         event_callback: Optional[Any] = None,
+        chat_history: Optional[str] = None,
+        user_profile: Optional[str] = None,
+        execution_decision: Optional[Any] = None,
+        exec_context: Optional[Any] = None,
     ) -> FinalResponse:
         with latency.measure("agent_prepare_ms"):
-            chat_history = self._format_chat_history()
+            if chat_history is None:
+                chat_history = self._format_chat_history()
             self._current_query = query
-            user_profile = (
-                self._format_user_profile()
-                if use_long_term_memory
-                else "本轮对话已禁用长期记忆"
-            )
+            if user_profile is None:
+                user_profile = (
+                    self._format_user_profile()
+                    if use_long_term_memory
+                    else "本轮对话已禁用长期记忆"
+                )
 
         # 默认主路径：ExecutionEngine。
         # 兼容层：flag=False 或 execution_engine 未配置时，回退到旧 TaskOrchestrator。
         use_new_engine = self._use_unified_execution_engine()
 
         if use_new_engine:
-            exec_decision, _, exec_context = self._resolve_execution_decision(
-                query,
-                decision,
-                use_long_term_memory=use_long_term_memory,
-                chat_history=chat_history,
-                user_profile=user_profile,
-            )
+            exec_decision = execution_decision
+            if exec_decision is None or exec_context is None:
+                exec_decision, _, exec_context = self._resolve_execution_decision(
+                    query,
+                    decision,
+                    use_long_term_memory=use_long_term_memory,
+                    chat_history=chat_history,
+                    user_profile=user_profile,
+                )
 
             with latency.measure("agent_total_ms"):
                 result = await self._execution_engine.run(
@@ -1035,6 +1254,17 @@ class BaseStreamingGenerator:
         runtime_metrics_before = self._snapshot_runtime_metrics()
         actual_plan: Optional[ExecutionPlan] = None
         final_resp_obj: Optional[FinalResponse] = None
+        decision = None
+        profile = None
+        execution_decision = None
+        execution_path = "unknown"
+        fallback_used = False
+        selected_task_state: Dict[str, Any] = {}
+        task_state_started = None
+        task_state_completed = None
+        completion_state_written = False
+        task_state_debug: Optional[Dict[str, Any]] = None
+        output_schema_parse_success = response_mode != "final_answer"
 
         def next_event(
             event_type: str,
@@ -1060,10 +1290,18 @@ class BaseStreamingGenerator:
                 yield processed
 
         try:
+            memory_context = self._build_short_term_memory_context(query)
+            selected_task_state = self._selected_task_state_from_context(memory_context)
+            effective_query = self._build_effective_query(query, memory_context)
+            if effective_query != query:
+                latency.set_meta("effective_query_used", True)
+                latency.set_meta("effective_query_preview", self._preview_text(effective_query, 240))
+
             request_context = self._build_request_context(
-                query,
+                effective_query,
                 use_long_term_memory=use_long_term_memory,
                 request_id=request_id,
+                memory_context=memory_context,
             )
 
             async for processed in emit(
@@ -1127,21 +1365,20 @@ class BaseStreamingGenerator:
                     yield processed
 
             precomputed_profile = None
-            decision = None
             router = getattr(self, "_request_router", None)
             if router and hasattr(router, "profile"):
                 with latency.measure("route_decision_ms"):
-                    precomputed_profile = router.profile(query)
+                    precomputed_profile = router.profile(effective_query)
                     decision = self._resolve_legacy_route_decision(
-                        query,
+                        effective_query,
                         precomputed_profile=precomputed_profile,
                     )
             elif router and hasattr(router, "route"):
                 with latency.measure("route_decision_ms"):
-                    decision = self._resolve_legacy_route_decision(query)
+                    decision = self._resolve_legacy_route_decision(effective_query)
 
             execution_decision, profile, _exec_context = self._resolve_execution_decision(
-                query,
+                effective_query,
                 decision,
                 use_long_term_memory=use_long_term_memory,
                 chat_history=request_context.chat_history,
@@ -1153,7 +1390,7 @@ class BaseStreamingGenerator:
             output_schema_parse_success = response_mode != "final_answer"
             if decision is None:
                 decision = self._resolve_legacy_route_decision(
-                    query,
+                    effective_query,
                     precomputed_profile=profile,
                 )
 
@@ -1184,7 +1421,7 @@ class BaseStreamingGenerator:
                 actual_plan = self._preview_execution_plan_for_streaming(
                     execution_decision,
                     decision,
-                    query,
+                    effective_query,
                     chat_history=request_context.chat_history,
                     user_profile=request_context.user_profile,
                 )
@@ -1205,6 +1442,17 @@ class BaseStreamingGenerator:
                     ):
                         yield processed
 
+            task_state_started = self._apply_task_state_turn_started(
+                session_id=self._memory_session_id(),
+                turn_id=request_id,
+                original_query=query,
+                effective_query=effective_query,
+                profile=profile,
+                execution_decision=execution_decision,
+                execution_plan=actual_plan,
+                selected_task_state=selected_task_state,
+            )
+
             if execution_path != "planned":
                 plan_steps = self._update_plan_status(plan_steps, "tools", "running")
                 async for processed in emit(
@@ -1221,12 +1469,16 @@ class BaseStreamingGenerator:
 
             if execution_path in ("direct", "planned") and decision:
                 final_resp: FinalResponse = await self._run_orchestrated_path(
-                    query,
+                    effective_query,
                     decision,
                     use_long_term_memory=use_long_term_memory,
                     latency=latency,
                     execution_plan=actual_plan,
                     event_callback=None,
+                    chat_history=request_context.chat_history,
+                    user_profile=request_context.user_profile,
+                    execution_decision=execution_decision,
+                    exec_context=_exec_context,
                 )
                 final_resp_obj = final_resp
                 output_schema_parse_success = True
@@ -1282,7 +1534,7 @@ class BaseStreamingGenerator:
                     and self._use_unified_execution_engine()
                 ):
                     _, _, exec_context = self._resolve_execution_decision(
-                        query,
+                        effective_query,
                         decision,
                         use_long_term_memory=use_long_term_memory,
                         chat_history=agent_input.get("chat_history", ""),
@@ -1291,7 +1543,7 @@ class BaseStreamingGenerator:
                     raw_events = self._execution_engine.astream_events(
                         execution_decision,
                         decision,
-                        query,
+                        effective_query,
                         chat_history=agent_input.get("chat_history", ""),
                         user_profile=agent_input.get("user_profile", ""),
                         version="v1",
@@ -1545,6 +1797,17 @@ class BaseStreamingGenerator:
                 )
             ):
                 yield processed
+            task_state_completed = self._apply_task_state_turn_completed(
+                session_id=self._memory_session_id(),
+                turn_id=request_id,
+                response=final_resp_obj,
+                profile=profile,
+                execution_decision=execution_decision,
+                error=e,
+                fallback_message=fallback,
+                expected_version=getattr(task_state_started, "version", None),
+            )
+            completion_state_written = task_state_completed is not None
             self._save_to_memory(
                 query,
                 fallback,
@@ -1565,6 +1828,17 @@ class BaseStreamingGenerator:
                 )
             ):
                 yield processed
+            task_state_completed = self._apply_task_state_turn_completed(
+                session_id=self._memory_session_id(),
+                turn_id=request_id,
+                response=final_resp_obj,
+                profile=profile,
+                execution_decision=execution_decision,
+                error=e,
+                fallback_message=fallback,
+                expected_version=getattr(task_state_started, "version", None),
+            )
+            completion_state_written = task_state_completed is not None
             self._save_to_memory(
                 query,
                 fallback,
@@ -1594,6 +1868,27 @@ class BaseStreamingGenerator:
                 output_schema_parse_success = bool(final_response.strip()) and (
                     output_schema_parse_success or final_answer_extracted
                 )
+            completion_response = final_resp_obj or self._final_response_from_stream_state(
+                answer=final_response,
+                execution_path=execution_path,
+                decision=decision,
+                tool_timeline=tool_timeline,
+                fallback_used=fallback_used,
+            )
+            task_state_completed = self._apply_task_state_turn_completed(
+                session_id=self._memory_session_id(),
+                turn_id=request_id,
+                response=completion_response,
+                profile=profile,
+                execution_decision=execution_decision,
+                expected_version=getattr(task_state_started, "version", None),
+            )
+            completion_state_written = task_state_completed is not None
+            task_state_debug = (
+                task_state_completed.to_dict()
+                if hasattr(task_state_completed, "to_dict")
+                else self._get_task_state_debug()
+            )
             self._save_to_memory(
                 query,
                 final_response,
@@ -1601,6 +1896,14 @@ class BaseStreamingGenerator:
                 latency=latency,
             )
             response_saved = True
+            if completion_state_written:
+                self._schedule_task_state_enrichment(
+                    session_id=self._memory_session_id(),
+                    turn_id=request_id,
+                    user_message=query,
+                    assistant_message=final_response,
+                    current_state=task_state_debug,
+                )
             if execution_path != "planned":
                 plan_steps = self._update_plan_status(plan_steps, "tools", "done")
             plan_steps = self._update_plan_status(plan_steps, "answer", "done")
@@ -1654,6 +1957,7 @@ class BaseStreamingGenerator:
                         ),
                         "reasoning_summary": reasoning_summary,
                         "memory_hits": memory_hits,
+                        "task_state": task_state_debug or self._get_task_state_debug(),
                         "total_duration_sec": total_duration_sec,
                         "tool_count": len(tool_timeline),
                         "tool_success_count": tool_success_count,
@@ -1736,6 +2040,7 @@ class BaseStreamingGenerator:
                         {
                             "request_id": request_id,
                             "query": query,
+                            "effective_query": locals().get("effective_query", query),
                             "route_decision": (
                                 decision.to_meta()
                                 if decision and hasattr(decision, "to_meta")
@@ -1762,6 +2067,7 @@ class BaseStreamingGenerator:
                             "fallback_path": (
                                 final_resp_obj.fallback_path if final_resp_obj else []
                             ),
+                            "task_state": task_state_debug or self._get_task_state_debug(),
                         }
                     )
                 except Exception as audit_error:
@@ -1779,12 +2085,43 @@ class BaseStreamingGenerator:
                     )
                 )
             if not response_saved and response_chunks:
+                final_text = "".join(response_chunks)
+                if not completion_state_written:
+                    completion_response = final_resp_obj or self._final_response_from_stream_state(
+                        answer=final_text,
+                        execution_path=execution_path,
+                        decision=decision,
+                        tool_timeline=tool_timeline,
+                        fallback_used=fallback_used,
+                    )
+                    task_state_completed = self._apply_task_state_turn_completed(
+                        session_id=self._memory_session_id(),
+                        turn_id=request_id,
+                        response=completion_response,
+                        profile=profile,
+                        execution_decision=execution_decision,
+                        expected_version=getattr(task_state_started, "version", None),
+                    )
+                    completion_state_written = task_state_completed is not None
+                    task_state_debug = (
+                        task_state_completed.to_dict()
+                        if hasattr(task_state_completed, "to_dict")
+                        else self._get_task_state_debug()
+                    )
                 self._save_to_memory(
                     query,
-                    "".join(response_chunks),
+                    final_text,
                     use_long_term_memory=use_long_term_memory,
                     latency=latency,
                 )
+                if completion_state_written:
+                    self._schedule_task_state_enrichment(
+                        session_id=self._memory_session_id(),
+                        turn_id=request_id,
+                        user_message=query,
+                        assistant_message=final_text,
+                        current_state=task_state_debug,
+                    )
             self._finalize_request(request_id)
 
 
@@ -1804,47 +2141,68 @@ class StreamingService(BaseStreamingGenerator):
         fallback_used = False
 
         try:
+            request_id = uuid.uuid4().hex[:8]
+            self._current_request_id = request_id
+            memory_context = self._build_short_term_memory_context(query)
+            selected_task_state = self._selected_task_state_from_context(memory_context)
+            effective_query = self._build_effective_query(query, memory_context)
             precomputed_profile = None
             decision = None
             router = getattr(self, "_request_router", None)
             if router and hasattr(router, "profile"):
-                precomputed_profile = router.profile(query)
+                precomputed_profile = router.profile(effective_query)
                 decision = self._resolve_legacy_route_decision(
-                    query,
+                    effective_query,
                     precomputed_profile=precomputed_profile,
                 )
             elif router and hasattr(router, "route"):
-                decision = self._resolve_legacy_route_decision(query)
+                decision = self._resolve_legacy_route_decision(effective_query)
 
             execution_decision, profile, _ = self._resolve_execution_decision(
-                query,
+                effective_query,
                 decision,
                 use_long_term_memory=True,
+                chat_history=self._format_chat_history(memory_context),
+                user_profile=self._format_user_profile(),
                 precomputed_profile=precomputed_profile,
             )
             if decision is None:
                 decision = self._resolve_legacy_route_decision(
-                    query,
+                    effective_query,
                     precomputed_profile=profile,
                 )
             execution_path = execution_decision.mode
             use_unified_engine = self._use_unified_execution_engine()
+            task_state_started = self._apply_task_state_turn_started(
+                session_id=self._memory_session_id(),
+                turn_id=request_id,
+                original_query=query,
+                effective_query=effective_query,
+                profile=profile,
+                execution_decision=execution_decision,
+                execution_plan=None,
+                selected_task_state=selected_task_state,
+            )
             if decision and (
                 execution_path in ("direct", "planned")
                 or (execution_path == "react" and use_unified_engine)
             ):
                 final_resp = asyncio.run(
                     self._run_orchestrated_path(
-                        query,
+                        effective_query,
                         decision,
                         use_long_term_memory=True,
                         latency=LatencyTracker(),
+                        chat_history=self._format_chat_history(memory_context),
+                        user_profile=self._format_user_profile(),
+                        execution_decision=execution_decision,
                     )
                 )
                 output = final_resp.answer
                 intermediate_steps = []
             else:
-                agent_input = self._prepare_input(query)
+                final_resp = None
+                agent_input = self._prepare_input(effective_query, memory_context=memory_context)
                 agent_executor = self._ensure_agent_executor()
                 response = agent_executor.invoke(agent_input)
                 output = response.get("output", "")
@@ -1886,7 +2244,30 @@ class StreamingService(BaseStreamingGenerator):
 
             yield final_response
 
+            completion_response = final_resp or self._final_response_from_stream_state(
+                answer=final_response,
+                execution_path=execution_path,
+                decision=decision,
+                tool_timeline=[],
+                fallback_used=fallback_used,
+            )
+            task_state_completed = self._apply_task_state_turn_completed(
+                session_id=self._memory_session_id(),
+                turn_id=request_id,
+                response=completion_response,
+                profile=profile,
+                execution_decision=execution_decision,
+                expected_version=getattr(task_state_started, "version", None),
+            )
             self._save_to_memory(query, final_response)
+            if task_state_completed is not None:
+                self._schedule_task_state_enrichment(
+                    session_id=self._memory_session_id(),
+                    turn_id=request_id,
+                    user_message=query,
+                    assistant_message=final_response,
+                    current_state=task_state_completed,
+                )
 
             if fallback_used:
                 logger.info(
@@ -1916,7 +2297,25 @@ class StreamingService(BaseStreamingGenerator):
 
                     yield fallback_response
 
+                    task_state_completed = self._apply_task_state_turn_completed(
+                        session_id=self._memory_session_id(),
+                        turn_id=self._current_request_id or uuid.uuid4().hex[:8],
+                        response=locals().get("final_resp"),
+                        profile=locals().get("profile"),
+                        execution_decision=locals().get("execution_decision"),
+                        error=e,
+                        fallback_message=fallback_response,
+                        expected_version=getattr(locals().get("task_state_started"), "version", None),
+                    )
                     self._save_to_memory(query, fallback_response)
+                    if task_state_completed is not None:
+                        self._schedule_task_state_enrichment(
+                            session_id=self._memory_session_id(),
+                            turn_id=self._current_request_id or "",
+                            user_message=query,
+                            assistant_message=fallback_response,
+                            current_state=task_state_completed,
+                        )
 
                     logger.info(
                         f"✅ 降级搜索成功 | 助手响应长度：{len(fallback_response)} 字符"
@@ -1927,6 +2326,16 @@ class StreamingService(BaseStreamingGenerator):
 
             default_response = "抱歉，当前模型服务暂时不可用。请检查所选模型的 API Key、Base URL 配置，或稍后重试。"
             yield default_response
+            self._apply_task_state_turn_completed(
+                session_id=self._memory_session_id(),
+                turn_id=self._current_request_id or uuid.uuid4().hex[:8],
+                response=locals().get("final_resp"),
+                profile=locals().get("profile"),
+                execution_decision=locals().get("execution_decision"),
+                error=e,
+                fallback_message=default_response,
+                expected_version=getattr(locals().get("task_state_started"), "version", None),
+            )
             self._save_to_memory(query, default_response)
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:

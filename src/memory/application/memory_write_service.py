@@ -108,6 +108,7 @@ class MemoryWriteService:
         tenant_id: Optional[str] = None,
         expected_version: Optional[int] = None,
         created_by: Optional[str] = None,
+        turn_id: Optional[str] = None,
     ) -> TaskState:
         return self.task_state_manager.patch_state(
             tenant_id=tenant_id or self.tenant_id,
@@ -115,4 +116,5 @@ class MemoryWriteService:
             patch=patch,
             expected_version=expected_version,
             created_by=created_by,
+            turn_id=turn_id,
         )

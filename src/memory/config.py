@@ -16,6 +16,10 @@ class ShortTermMemoryConfig:
     persistence_enabled: bool
     persistence_path: str
     tool_result_max_length: int
+    task_state_enabled: bool
+    task_state_llm_enrich_enabled: bool
+    task_state_extract_model_name: str
+    task_state_extract_timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,10 @@ def get_short_term_memory_config() -> ShortTermMemoryConfig:
         persistence_enabled=settings.MEMORY_PERSISTENCE_ENABLED,
         persistence_path=settings.MEMORY_PERSISTENCE_PATH,
         tool_result_max_length=settings.MEMORY_TOOL_RESULT_MAX_LENGTH,
+        task_state_enabled=settings.MEMORY_TASK_STATE_ENABLED,
+        task_state_llm_enrich_enabled=settings.MEMORY_TASK_STATE_LLM_ENRICH_ENABLED,
+        task_state_extract_model_name=settings.MEMORY_TASK_STATE_EXTRACT_MODEL_NAME,
+        task_state_extract_timeout_seconds=settings.MEMORY_TASK_STATE_EXTRACT_TIMEOUT_SECONDS,
     )
 
 

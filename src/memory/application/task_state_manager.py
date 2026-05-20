@@ -26,6 +26,16 @@ class TaskStateManager:
         "confidence",
     }
 
+    _VALID_STATUSES = {"active", "running", "completed", "awaiting_user", "blocked"}
+    _LIST_LIMITS = {
+        "active_constraints": 12,
+        "completed_steps": 20,
+        "pending_steps": 12,
+        "open_questions": 10,
+        "assumptions": 10,
+        "blockers": 10,
+    }
+
     def __init__(self, repository: TaskStateRepository, event_store: EventStore):
         self.repository = repository
         self.event_store = event_store
@@ -44,6 +54,7 @@ class TaskStateManager:
         patch: Dict[str, Any],
         expected_version: Optional[int] = None,
         created_by: Optional[str] = None,
+        turn_id: Optional[str] = None,
     ) -> TaskState:
         """Apply a shallow patch and record the change as an append-only event."""
 
@@ -55,19 +66,29 @@ class TaskStateManager:
 
         for field in self._SCALAR_FIELDS:
             if field in patch:
-                setattr(state, field, patch[field] if patch[field] is not None else "")
+                value = patch[field]
+                if field == "status":
+                    normalized_status = self._normalize_status(value)
+                    if normalized_status is None:
+                        continue
+                    setattr(state, field, normalized_status)
+                elif field == "confidence":
+                    setattr(state, field, self._normalize_confidence(value))
+                else:
+                    setattr(state, field, str(value or "").strip())
         for field in self._LIST_FIELDS:
             if field in patch:
                 value = patch[field] or []
                 if not isinstance(value, list):
                     raise ValueError(f"{field} must be a list")
-                setattr(state, field, value)
+                setattr(state, field, self._normalize_list(field, value))
 
         state.version += 1
         state.updated_at = time.time()
         event = MemoryEvent(
             tenant_id=tenant_id,
             session_id=session_id,
+            turn_id=turn_id,
             event_type=MemoryEventType.TASK_STATE_UPDATED.value,
             source_type="task_state",
             source_id=state.task_state_id,
@@ -77,3 +98,33 @@ class TaskStateManager:
         stored_event = self.event_store.append(event)
         state.updated_from_event_id = stored_event.event_id
         return self.repository.save(state)
+
+    def _normalize_list(self, field: str, value: list[Any]) -> list[str]:
+        limit = self._LIST_LIMITS.get(field, 20)
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            normalized.append(text)
+            seen.add(text)
+            if len(normalized) >= limit:
+                break
+        return normalized
+
+    def _normalize_status(self, value: Any) -> Optional[str]:
+        text = str(value or "").strip()
+        if text in self._VALID_STATUSES:
+            return text
+        return None
+
+    @staticmethod
+    def _normalize_confidence(value: Any) -> Optional[float]:
+        if value is None or value == "":
+            return None
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError):
+            return None
+        return min(max(confidence, 0.0), 1.0)

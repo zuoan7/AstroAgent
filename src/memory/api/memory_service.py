@@ -126,6 +126,7 @@ class MemoryService:
         tenant_id: Optional[str] = None,
         expected_version: Optional[int] = None,
         created_by: Optional[str] = None,
+        turn_id: Optional[str] = None,
     ) -> TaskState:
         return self.write_service.update_task_state(
             session_id=session_id,
@@ -133,6 +134,7 @@ class MemoryService:
             tenant_id=tenant_id,
             expected_version=expected_version,
             created_by=created_by,
+            turn_id=turn_id,
         )
 
     def get_task_state(
@@ -190,7 +192,10 @@ class MemoryService:
         )
 
     def get_debug_info(self, session_id: Optional[str] = None) -> Dict[str, Any]:
-        return self.read_service.get_debug_info(session_id or self._require_session_id())
+        effective_session_id = session_id or self._require_session_id()
+        info = self.read_service.get_debug_info(effective_session_id)
+        info["task_state"] = self.get_task_state(effective_session_id).to_dict()
+        return info
 
     def get_context_debug_info(
         self, session_id: Optional[str] = None

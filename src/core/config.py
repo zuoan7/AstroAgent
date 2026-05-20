@@ -299,6 +299,22 @@ class MemoryConfig(BaseSettings):
         ),
         description="工具结果摘要最大字符数",
     )
+    MEMORY_TASK_STATE_ENABLED: bool = Field(
+        True,
+        description="是否启用短期 task_state 主链路投影更新",
+    )
+    MEMORY_TASK_STATE_LLM_ENRICH_ENABLED: bool = Field(
+        True,
+        description="是否启用后台 LLM task_state 补充抽取",
+    )
+    MEMORY_TASK_STATE_EXTRACT_MODEL_NAME: str = Field(
+        "",
+        description="task_state 补充抽取模型名；为空时使用 SMALL_MODEL_NAME",
+    )
+    MEMORY_TASK_STATE_EXTRACT_TIMEOUT_SECONDS: float = Field(
+        3.0,
+        description="task_state LLM 补充抽取超时时间",
+    )
 
     LTM_MIN_CONFIDENCE_TO_STORE: float = Field(
         0.3, description="长期记忆最低存储置信度"

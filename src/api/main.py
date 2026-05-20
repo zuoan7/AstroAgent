@@ -1082,6 +1082,7 @@ async def session_context_endpoint(
         "session_id": effective_session_id,
         "session": session.memory.get_debug_info(),
         "context": session.memory.get_context_debug_info(),
+        "task_state": session.memory.get_task_state().to_dict(),
         "messages": session.memory.get_all_messages(),
         "tool_calls": session.memory.get_tool_calls(),
         "salient_facts": session.memory.get_salient_facts(),
@@ -1134,6 +1135,7 @@ async def memory_overview_endpoint(
         "recent_events": [item.to_dict() for item in recent_events],
         "session_memory": {
             "summary": session.memory.get_summary(),
+            "task_state": session.memory.get_task_state().to_dict(),
             "messages": session.memory.get_all_messages(),
             "tool_calls": session.memory.get_tool_calls(),
             "salient_facts": session.memory.get_salient_facts(),
