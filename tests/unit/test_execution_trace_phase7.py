@@ -7,6 +7,7 @@
 4. FrontendExecutionEventAdapter 对 planned 路径正确产出旧前端事件序列
 5. 旧前端事件名（plan_update / step_start / step_end / evidence_found）不变
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,10 +24,10 @@ from src.agent.models.execution_event import ExecutionEvent, EXECUTION_EVENT_TYP
 from src.agent.streaming_events import StreamEvent
 from src.agent.executor import StepExecutionResult
 
-
 # ─────────────────────────────────────────────────────────────────
 # ExecutionTraceEntry 测试
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestExecutionTraceEntry:
 
@@ -43,7 +44,9 @@ class TestExecutionTraceEntry:
             latency_ms=123.4,
             error=None if status == "success" else "mock error",
             summary="天气晴",
-            sources=[{"source_id": "x", "kind": "tool_output", "title": "t", "snippet": "s"}],
+            sources=[
+                {"source_id": "x", "kind": "tool_output", "title": "t", "snippet": "s"}
+            ],
         )
 
     def test_from_step_result_fields(self):
@@ -115,7 +118,9 @@ class TestExecutionTraceEntry:
         events = entry.to_execution_events(source="planned")
         assert [event.type for event in events] == ["step_started", "step_finished"]
         assert events[0].payload["step_id"] == "s1"
+        assert events[0].payload["logical_skill"] == "weather-lookup"
         assert events[1].payload["status"] == "success"
+        assert events[1].payload["logical_skill"] == "weather-lookup"
 
     def test_react_trace_to_execution_events(self):
         entry = ExecutionTraceEntry.from_react_tool(
@@ -135,6 +140,7 @@ class TestExecutionTraceEntry:
 # ─────────────────────────────────────────────────────────────────
 # ExecutionEvent 测试
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestExecutionEvent:
 
@@ -178,7 +184,9 @@ class TestExecutionEvent:
         assert ev.to_frontend_type() is None
 
     def test_to_dict(self):
-        ev = ExecutionEvent(type="step_started", payload={"step_id": "s1"}, source="planned")
+        ev = ExecutionEvent(
+            type="step_started", payload={"step_id": "s1"}, source="planned"
+        )
         d = ev.to_dict()
         assert d["type"] == "step_started"
         assert d["payload"]["step_id"] == "s1"
@@ -188,6 +196,7 @@ class TestExecutionEvent:
 # ─────────────────────────────────────────────────────────────────
 # FrontendExecutionEventAdapter trace 映射测试
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestEmitTraceEvents:
     """验证 adapter 产出事件序列与旧前端事件名兼容。"""
@@ -206,7 +215,9 @@ class TestEmitTraceEvents:
             "latency_ms": 100.0,
             "error": None if status == "success" else "mock err",
             "summary": "晴天",
-            "sources": [{"source_id": "x", "kind": "tool_output", "title": "t", "snippet": "s"}],
+            "sources": [
+                {"source_id": "x", "kind": "tool_output", "title": "t", "snippet": "s"}
+            ],
         }
 
     def _collect_events(self, trace_dict: dict, plan_steps: list) -> list:
@@ -300,6 +311,8 @@ class TestEmitTraceEvents:
 
         assert len(tool_timeline) == 1
         assert tool_timeline[0]["tool"] == "weather-lookup"
+        assert tool_timeline[0]["display_tool"] == "weather-lookup"
+        assert tool_timeline[0]["logical_skill"] == "weather-lookup"
         assert tool_timeline[0]["status"] == "success"
 
     def test_plan_steps_status_updated(self):
@@ -320,8 +333,13 @@ class TestEmitTraceEvents:
         """也接受 ExecutionTraceEntry 对象（非 dict）。"""
         plan_steps = [{"id": "s1", "title": "天气查询", "status": "pending"}]
         sr = StepExecutionResult(
-            step_id="s1", title="天气查询", kind="tool", status="success",
-            skill="weather-lookup", input_params={}, attempts=1,
+            step_id="s1",
+            title="天气查询",
+            kind="tool",
+            status="success",
+            skill="weather-lookup",
+            input_params={},
+            attempts=1,
         )
         entry = ExecutionTraceEntry.from_step_result(sr)
         adapter = self._make_adapter()
@@ -331,8 +349,10 @@ class TestEmitTraceEvents:
         def next_event_fn(event_type, *, content=None, meta=None, modality="text"):
             sequence_counter[0] += 1
             return StreamEvent(
-                type=event_type, content=content,
-                meta=meta or {"request_id": "test"}, sequence=sequence_counter[0]
+                type=event_type,
+                content=content,
+                meta=meta or {"request_id": "test"},
+                sequence=sequence_counter[0],
             )
 
         async def emit_fn(event):
@@ -443,7 +463,9 @@ class TestEmitExecutionEvent:
                     execution_events=[
                         ExecutionEvent(
                             type="plan_created",
-                            payload={"plan": {"steps": [{"id": "s1", "status": "pending"}]}},
+                            payload={
+                                "plan": {"steps": [{"id": "s1", "status": "pending"}]}
+                            },
                             source="planned",
                         ).to_dict()
                     ]

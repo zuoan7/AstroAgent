@@ -149,6 +149,7 @@ class DirectExecutor:
             skill_name,
             **params,
         )
+        mcp_tools_used = _extract_mcp_tools_from_sources(result.sources)
         response = self._synthesizer.synthesize_direct(
             query=query,
             task_type=decision.task_type,
@@ -158,8 +159,8 @@ class DirectExecutor:
             response,
             decision=decision,
             param_builder_source="fallback_builder",
-            handler_mcp_tools_used=_extract_mcp_tools_from_sources(result.sources),
-            logical_skill=getattr(result, "logical_skill", None),
+            handler_mcp_tools_used=mcp_tools_used,
+            logical_skill=getattr(result, "logical_skill", None) or skill_name,
             operation=getattr(result, "operation", None),
             expected_mcp_tools=getattr(result, "expected_mcp_tools", []),
         )
@@ -169,6 +170,10 @@ class DirectExecutor:
             tool_input=params,
             tool_summary=result.summary,
             tool_status="success" if result.success else "error",
+            logical_skill=getattr(result, "logical_skill", None) or skill_name,
+            operation=getattr(result, "operation", None),
+            mcp_tools_used=mcp_tools_used,
+            expected_mcp_tools=getattr(result, "expected_mcp_tools", []),
         )
         return response
 
@@ -297,6 +302,10 @@ class DirectExecutor:
         tool_input: Optional[Dict[str, Any]] = None,
         tool_summary: str = "",
         tool_status: str = "success",
+        logical_skill: Optional[str] = None,
+        operation: Optional[str] = None,
+        mcp_tools_used: Optional[list[str]] = None,
+        expected_mcp_tools: Optional[list[str]] = None,
     ) -> None:
         events = []
         if tool_name:
@@ -305,8 +314,13 @@ class DirectExecutor:
                     type="tool_called",
                     payload={
                         "tool": tool_name,
+                        "display_tool": tool_name,
+                        "logical_skill": logical_skill or tool_name,
                         "input": dict(tool_input or {}),
                         "status": "running",
+                        "operation": operation,
+                        "mcp_tools_used": list(mcp_tools_used or []),
+                        "expected_mcp_tools": list(expected_mcp_tools or []),
                     },
                     source="direct",
                 ).to_dict()
@@ -316,8 +330,13 @@ class DirectExecutor:
                     type="tool_result",
                     payload={
                         "tool": tool_name,
+                        "display_tool": tool_name,
+                        "logical_skill": logical_skill or tool_name,
                         "output_summary": tool_summary,
                         "status": tool_status,
+                        "operation": operation,
+                        "mcp_tools_used": list(mcp_tools_used or []),
+                        "expected_mcp_tools": list(expected_mcp_tools or []),
                     },
                     source="direct",
                 ).to_dict()

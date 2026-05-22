@@ -3,6 +3,7 @@
 Executes ready WorkflowGraph nodes concurrently while respecting dependencies,
 step retry policy, failure strategy, and evidence aggregation.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -104,7 +105,9 @@ class WorkflowExecutor:
                 if skipped:
                     continue
                 outcome.halted = True
-                outcome.halt_reason = "no executable DAG nodes; dependency resolution stalled"
+                outcome.halt_reason = (
+                    "no executable DAG nodes; dependency resolution stalled"
+                )
                 outcome.evidence_by_key, outcome.evidence_items = evidence.snapshot()
                 return outcome
 
@@ -192,7 +195,9 @@ class WorkflowExecutor:
                         evidence=evidence,
                         reason=halting_failure,
                     )
-                    outcome.evidence_by_key, outcome.evidence_items = evidence.snapshot()
+                    outcome.evidence_by_key, outcome.evidence_items = (
+                        evidence.snapshot()
+                    )
                     return outcome
 
         outcome.evidence_by_key, outcome.evidence_items = evidence.snapshot()
@@ -267,7 +272,11 @@ class WorkflowExecutor:
             )
             if dep_result.status == "skipped":
                 return f"dependency skipped: {dep_id}"
-            if dep_result.required or strategy in {"halt", "skip_dependents", "react_fallback"}:
+            if dep_result.required or strategy in {
+                "halt",
+                "skip_dependents",
+                "react_fallback",
+            }:
                 return f"dependency failed: {dep_id}"
         return ""
 
@@ -415,9 +424,7 @@ class WorkflowExecutor:
 
         status = "success" if skill_result and skill_result.success else "error"
         if status == "error" and not last_error:
-            last_error = (
-                skill_result.error_message if skill_result else "unknown error"
-            )
+            last_error = skill_result.error_message if skill_result else "unknown error"
 
         step_result = StepExecutionResult(
             step_id=node.id,
@@ -430,15 +437,19 @@ class WorkflowExecutor:
             mcp_tools_used=_extract_mcp_tools_from_sources(
                 list(skill_result.sources) if skill_result else []
             ),
-            logical_skill=getattr(skill_result, "logical_skill", None)
-            if skill_result
-            else None,
-            operation=getattr(skill_result, "operation", None) if skill_result else None,
-            expected_mcp_tools=list(
-                getattr(skill_result, "expected_mcp_tools", []) or []
-            )
-            if skill_result
-            else [],
+            logical_skill=(
+                (getattr(skill_result, "logical_skill", None) or node.skill)
+                if skill_result
+                else None
+            ),
+            operation=(
+                getattr(skill_result, "operation", None) if skill_result else None
+            ),
+            expected_mcp_tools=(
+                list(getattr(skill_result, "expected_mcp_tools", []) or [])
+                if skill_result
+                else []
+            ),
             attempts=attempts,
             required=self._is_required(node, step_by_id),
             latency_ms=latency_ms,

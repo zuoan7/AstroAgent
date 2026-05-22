@@ -46,12 +46,19 @@ class SkillResult:
         return {
             "run_id": run_id or self.skill_name,
             "tool": self.skill_name,
+            "display_tool": self.skill_name,
             "input": {},
             "output_summary": self.summary[:240],
             "status": "success" if self.success else "error",
             "latency_ms": self.latency_ms,
             "logical_skill": self.logical_skill or self.skill_name,
             "operation": self.operation,
+            "mcp_tools_used": [
+                source.get("tool")
+                for source in self.sources
+                if isinstance(source, dict)
+                and source.get("kind") in {"mcp_tool", "tool_output"}
+            ],
             "expected_mcp_tools": list(self.expected_mcp_tools),
         }
 
@@ -62,6 +69,8 @@ class SkillResult:
             "title": self.skill_name,
             "snippet": self.summary[:240],
             "tool": self.skill_name,
+            "logical_skill": self.logical_skill or self.skill_name,
+            "expected_mcp_tools": list(self.expected_mcp_tools),
         }
 
     @classmethod

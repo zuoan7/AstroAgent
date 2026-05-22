@@ -63,7 +63,10 @@ class AstronomySkillRouter:
     def call(self, name: str, **params: Any) -> SkillResult:
         params = self._normalize_skill_params(name, params)
         if name in self._handlers:
-            return self._handlers[name](self._mcp, **params)
+            result = self._handlers[name](self._mcp, **params)
+            if result.logical_skill is None:
+                result.logical_skill = name
+            return result
 
         if name in self._simple_skills:
             return self._call_simple_skill(name, **params)
@@ -88,12 +91,19 @@ class AstronomySkillRouter:
             error_msg = ""
             if envelope and hasattr(envelope, "error"):
                 error_msg = getattr(envelope.error, "message", str(raw)[:500])
-            return SkillResult.from_error(
+            result = SkillResult.from_error(
                 skill_name=name,
                 error_code="TOOL_CALL_FAILED",
                 error_message=error_msg or str(raw)[:500],
                 latency_ms=round(elapsed_ms, 2),
             )
+            result.logical_skill = name
+            result.expected_mcp_tools = [tool_name]
+            result.allowed_child_tools = [tool_name]
+            result.sources = [
+                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+            ]
+            return result
 
         data: Dict[str, Any] = {}
         summary = raw
@@ -117,12 +127,23 @@ class AstronomySkillRouter:
             skill_name=name,
             success=True,
             data=data,
-            summary=summary if isinstance(summary, str) else json.dumps(summary, ensure_ascii=False),
-            sources=[{"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}],
+            summary=(
+                summary
+                if isinstance(summary, str)
+                else json.dumps(summary, ensure_ascii=False)
+            ),
+            sources=[
+                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+            ],
             latency_ms=round(elapsed_ms, 2),
+            logical_skill=name,
+            expected_mcp_tools=[tool_name],
+            allowed_child_tools=[tool_name],
         )
 
-    def _normalize_skill_params(self, name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_skill_params(
+        self, name: str, params: Dict[str, Any]
+    ) -> Dict[str, Any]:
         spec = registry.get_skill_spec(name)
         normalized: Dict[str, Any] = dict(spec.defaults or {})
         candidate = dict(params or {})

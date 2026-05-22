@@ -277,20 +277,31 @@ planned 执行后的恢复由 `FallbackPolicy` 和 `ExecutionEngine` 共同完�
 - `src/services/mcp_server.py` 中每个工具都使用对应的 Pydantic 输入模型校验参数。
 - `src/skills/mcp_client.py`、Router、Streaming、Fallback 等上层模块按 envelope 解析，不再猜测底层返回形态。
 
-### 高层技能集合
+### 工具层命名边界
 
-当前系统向 Agent 暴露的高层技能如下：
+当前系统同时存在三层“工具”概念，运行时真源是 `src/skills/registry.py`：
 
-| 技能名 | 说明 |
-| --- | --- |
-| `RAGRetrieve` | 检索本地天文知识库 |
-| `WeatherLookup` | 查询天气 |
-| `ObservationPlanner` | 生成观测计划 |
-| `CelestialEventsForecast` | 查询天象事件 |
-| `DeepSkyObservingGuide` | 深空观测指导 |
-| `NEOTracker` | 近地天体追踪 |
-| `AstrophotographyCalculator` | 天文摄影参数建议 |
-| `CelestialPositionCalculator` | 天体位置计算 |
+| 层级 | 字段 | 含义 | 示例 |
+| --- | --- | --- | --- |
+| Logical Skill | `skill_name` / `logical_skill` | Router 和 Planner 选择的领域能力入口 | `observation-planner` |
+| LangChain Tool Adapter | `langchain_tool_name` | ReAct / 旧链路兼容适配器名 | `ObservationPlanner` |
+| Atomic MCP Tool | `mcp_tool_name` / `mcp_tools_used` | MCP Server 上真实执行的原子工具 | `get_weather` |
+
+当前系统向 Agent 暴露的 logical skills 如下：
+
+| Logical skill | LangChain Tool Adapter | 路由类型 | 底层 MCP / Handler |
+| --- | --- | --- | --- |
+| `weather-lookup` | `WeatherLookup` | `simple` | `get_weather` |
+| `get_nasa_apod` | `get_nasa_apod` | `simple` | `get_nasa_apod` |
+| `web_search` | `web_search` | `simple` | `web_search` |
+| `observation-planner` | `ObservationPlanner` | `handler` | 组合调用 `get_weather`、`get_weekly_events`、`get_tonight_best` |
+| `celestial-events-forecast` | `CelestialEventsForecast` | `handler` | 按 operation 调用 `get_weekly_events` 或 `get_monthly_events` |
+| `deep-sky-observing-guide` | `DeepSkyObservingGuide` | `handler` | `get_astrophysical_object_info`，星系目标额外调用 `get_galaxy_data` |
+| `neo-tracker` | `NEOTracker` | `handler` | `get_neo_data` |
+| `astrophotography-calculator` | `AstrophotographyCalculator` | `handler` | 当前为内部计算/建议，不直接调用 MCP |
+| `celestial-position-calculator` | `CelestialPositionCalculator` | `handler` | 按 operation 调用 `get_altaz`、`get_rise_set_times`、`get_planet_position`、`get_current_sky_objects` 或 `coordinate_transformation` |
+
+`RAGRetrieve` 是 LangChain 兼容工具，用于本地知识库检索；它不属于 astronomy logical skill registry。
 
 ## 环境配置与依赖管理
 

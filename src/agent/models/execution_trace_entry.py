@@ -9,6 +9,7 @@
 收敛计划：Phase 8 可将 FinalResponse.execution_trace 类型升级为 List[ExecutionTraceEntry]，
           届时删除 from_dict 中的兼容性注释。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -89,6 +90,9 @@ class ExecutionTraceEntry:
                     payload={
                         "run_id": self.step_id,
                         "tool": tool_name,
+                        "display_tool": tool_name,
+                        "langchain_tool_name": tool_name,
+                        "logical_skill": self.logical_skill or self.skill or tool_name,
                         "input": self.tool_input or "",
                         "status": "running",
                     },
@@ -99,6 +103,9 @@ class ExecutionTraceEntry:
                     payload={
                         "run_id": self.step_id,
                         "tool": tool_name,
+                        "display_tool": tool_name,
+                        "langchain_tool_name": tool_name,
+                        "logical_skill": self.logical_skill or self.skill or tool_name,
                         "output_summary": self.tool_output_summary or self.summary,
                         "status": self.status,
                         "duration_sec": self.duration_sec,
@@ -115,6 +122,7 @@ class ExecutionTraceEntry:
                     "step_id": self.step_id,
                     "title": self.title,
                     "skill": self.skill,
+                    "logical_skill": self.logical_skill or self.skill,
                     "kind": self.kind,
                     "depends_on": list(self.depends_on),
                     "evidence_key": self.evidence_key,
@@ -132,7 +140,7 @@ class ExecutionTraceEntry:
                     "input": dict(self.input_params),
                     "param_builder_source": self.param_builder_source,
                     "mcp_tools_used": list(self.mcp_tools_used),
-                    "logical_skill": self.logical_skill,
+                    "logical_skill": self.logical_skill or self.skill,
                     "operation": self.operation,
                     "expected_mcp_tools": list(self.expected_mcp_tools),
                     "output_summary": self.summary,

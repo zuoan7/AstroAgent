@@ -1,3 +1,8 @@
+# Deprecated compatibility note:
+# Runtime skill definitions are not loaded from this file.
+# The active single source of truth is src/skills/registry.py.
+# Keep this file only as historical reference until it is removed or migrated.
+
 name: observation-planner
 description: 生成指定日期和地点的天文观测计划
 parameters:

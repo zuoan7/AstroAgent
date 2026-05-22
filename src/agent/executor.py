@@ -8,6 +8,9 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.skill_result import SkillResult
 from src.agent.policies.budget_policy import RequestBudgetTracker
+from src.core.mcp_protocol import TOOL_INPUT_MODELS
+
+KNOWN_MCP_TOOL_NAMES = frozenset(TOOL_INPUT_MODELS)
 
 
 EventCallback = Callable[[str, Dict[str, Any]], Awaitable[None] | None]
@@ -20,7 +23,11 @@ def _extract_mcp_tools_from_sources(sources: List[Dict[str, Any]]) -> List[str]:
         if not isinstance(source, dict):
             continue
         tool_name = source.get("tool")
-        if isinstance(tool_name, str) and tool_name.startswith("get_") and tool_name not in tools:
+        if (
+            isinstance(tool_name, str)
+            and tool_name in KNOWN_MCP_TOOL_NAMES
+            and tool_name not in tools
+        ):
             tools.append(tool_name)
     return tools
 
@@ -75,6 +82,7 @@ class StepExecutionResult:
     def to_trace_entry(self) -> "ExecutionTraceEntry":  # noqa: F821
         """转换为统一 trace 模型（Phase 7 引入）。"""
         from src.agent.models.execution_trace_entry import ExecutionTraceEntry
+
         return ExecutionTraceEntry.from_step_result(self)
 
 
@@ -124,7 +132,9 @@ class EvidenceAggregator:
                 {
                     "source_id": evidence_key,
                     "kind": "tool_evidence",
-                    "title": step_result.title or step_result.skill or step_result.step_id,
+                    "title": step_result.title
+                    or step_result.skill
+                    or step_result.step_id,
                     "snippet": step_result.summary[:240],
                     "tool": step_result.skill,
                     "step_id": step_result.step_id,
@@ -179,7 +189,10 @@ class StepExecutor:
             if step.parallel_group:
                 group = [step]
                 index += 1
-                while index < len(steps) and steps[index].parallel_group == step.parallel_group:
+                while (
+                    index < len(steps)
+                    and steps[index].parallel_group == step.parallel_group
+                ):
                     group.append(steps[index])
                     index += 1
                 if budget_tracker:
@@ -265,7 +278,9 @@ class StepExecutor:
                     raise ValueError(f"unsupported step kind: {step.kind}")
                 if budget_tracker:
                     budget_tracker.register_tool_call()
-                coro = asyncio.to_thread(self._skill_manager.call_skill, step.skill, **params)
+                coro = asyncio.to_thread(
+                    self._skill_manager.call_skill, step.skill, **params
+                )
                 if step.timeout_ms:
                     skill_result = await asyncio.wait_for(
                         coro,
@@ -308,15 +323,19 @@ class StepExecutor:
             mcp_tools_used=_extract_mcp_tools_from_sources(
                 list(skill_result.sources) if skill_result else []
             ),
-            logical_skill=getattr(skill_result, "logical_skill", None)
-            if skill_result
-            else None,
-            operation=getattr(skill_result, "operation", None) if skill_result else None,
-            expected_mcp_tools=list(
-                getattr(skill_result, "expected_mcp_tools", []) or []
-            )
-            if skill_result
-            else [],
+            logical_skill=(
+                (getattr(skill_result, "logical_skill", None) or step.skill)
+                if skill_result
+                else None
+            ),
+            operation=(
+                getattr(skill_result, "operation", None) if skill_result else None
+            ),
+            expected_mcp_tools=(
+                list(getattr(skill_result, "expected_mcp_tools", []) or [])
+                if skill_result
+                else []
+            ),
             attempts=attempts,
             required=step.required,
             latency_ms=latency_ms,

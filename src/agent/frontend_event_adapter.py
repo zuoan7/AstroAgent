@@ -83,11 +83,18 @@ class FrontendExecutionEventAdapter:
         include_answer_ready: bool = False,
     ) -> AsyncGenerator[Any, None]:
         for event in self.iter_response_execution_events(response):
-            if event.type in {"task_profile", "execution_decision", "fallback_triggered"}:
+            if event.type in {
+                "task_profile",
+                "execution_decision",
+                "fallback_triggered",
+            }:
                 continue
             if event.type == "route_decided":
                 continue
-            if event.type in {"answer_ready", "final_answer"} and not include_answer_ready:
+            if (
+                event.type in {"answer_ready", "final_answer"}
+                and not include_answer_ready
+            ):
                 continue
             if event.type in {"plan_built", "plan_created", "plan_repaired"}:
                 plan_steps_payload = self._extract_plan_steps_payload(event)
@@ -125,10 +132,13 @@ class FrontendExecutionEventAdapter:
                     )
                 skill_name = event.payload.get("skill")
                 if skill_name:
+                    logical_skill = event.payload.get("logical_skill") or skill_name
                     tool_timeline.append(
                         {
                             "run_id": step_id,
                             "tool": skill_name,
+                            "display_tool": skill_name,
+                            "logical_skill": logical_skill,
                             "input": event.payload.get("input", {}),
                             "output_summary": event.payload.get("output_summary", ""),
                             "latency_ms": event.payload.get("latency_ms"),
@@ -137,6 +147,10 @@ class FrontendExecutionEventAdapter:
                                 "param_builder_source", ""
                             ),
                             "mcp_tools_used": event.payload.get("mcp_tools_used", []),
+                            "expected_mcp_tools": event.payload.get(
+                                "expected_mcp_tools", []
+                            ),
+                            "operation": event.payload.get("operation"),
                         }
                     )
                 async for processed in self.emit_execution_event(
@@ -149,13 +163,20 @@ class FrontendExecutionEventAdapter:
             if event.type in {"tool_called", "tool_result", "tool_returned"}:
                 payload = dict(event.payload)
                 tool_name = payload.get("tool")
+                display_tool = payload.get("display_tool") or tool_name
+                logical_skill = payload.get("logical_skill")
                 if event.type == "tool_called":
                     tool_timeline.append(
                         {
                             "run_id": payload.get("run_id"),
                             "tool": tool_name,
+                            "display_tool": display_tool,
+                            "logical_skill": logical_skill,
                             "input": payload.get("input", ""),
                             "status": "running",
+                            "mcp_tools_used": payload.get("mcp_tools_used", []),
+                            "expected_mcp_tools": payload.get("expected_mcp_tools", []),
+                            "operation": payload.get("operation"),
                         }
                     )
                 else:
@@ -163,9 +184,14 @@ class FrontendExecutionEventAdapter:
                         {
                             "run_id": payload.get("run_id"),
                             "tool": tool_name,
+                            "display_tool": display_tool,
+                            "logical_skill": logical_skill,
                             "output_summary": payload.get("output_summary", ""),
                             "duration_sec": payload.get("duration_sec"),
                             "status": payload.get("status"),
+                            "mcp_tools_used": payload.get("mcp_tools_used", []),
+                            "expected_mcp_tools": payload.get("expected_mcp_tools", []),
+                            "operation": payload.get("operation"),
                         }
                     )
                 async for processed in self.emit_execution_event(
@@ -225,10 +251,16 @@ class FrontendExecutionEventAdapter:
             {
                 "run_id": step_id,
                 "tool": entry.skill,
+                "display_tool": entry.skill,
+                "logical_skill": entry.logical_skill or entry.skill,
                 "input": entry.input_params,
                 "output_summary": preview_text_fn(entry.summary, 240),
                 "latency_ms": entry.latency_ms,
                 "status": entry.status,
+                "param_builder_source": entry.param_builder_source,
+                "mcp_tools_used": list(entry.mcp_tools_used),
+                "expected_mcp_tools": list(entry.expected_mcp_tools),
+                "operation": entry.operation,
             }
         )
 
@@ -262,7 +294,9 @@ class FrontendExecutionEventAdapter:
             yield processed
 
     @staticmethod
-    def _extract_plan_steps_payload(event: ExecutionEvent) -> Optional[List[Dict[str, Any]]]:
+    def _extract_plan_steps_payload(
+        event: ExecutionEvent,
+    ) -> Optional[List[Dict[str, Any]]]:
         if isinstance(event.payload.get("steps"), list):
             return event.payload["steps"]
         plan = event.payload.get("plan")
