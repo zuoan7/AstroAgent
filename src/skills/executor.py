@@ -8,6 +8,7 @@ from src.agent.models.skill_result import SkillResult
 from src.capabilities.registry import CapabilityRegistry, get_default_capability_registry
 from src.core.mcp_protocol import is_tool_error, parse_tool_response
 from src.skills import registry
+from src.tools.operation_policy import OperationPolicyResolver, OperationToolPolicy
 from src.tools.runtime import ToolRuntime
 
 
@@ -33,6 +34,7 @@ class SkillExecutor:
         self._tool_runtime = tool_runtime
         self._handlers = dict(handlers)
         self._capabilities = capability_registry or get_default_capability_registry()
+        self._operation_policy = OperationPolicyResolver()
         self._simple_tool_caller = simple_tool_caller
         self._simple_skills: Dict[str, Dict[str, Any]] = {}
         self._register_registry_simple_skills()
@@ -42,9 +44,17 @@ class SkillExecutor:
         normalized = self._normalize_skill_params(spec.skill_name, params)
 
         if spec.skill_name in self._handlers:
-            runtime = self._runtime_for_skill(spec.skill_name)
+            operation_policy = self._operation_policy.resolve(
+                spec.skill_name,
+                normalized,
+            )
+            runtime = self._runtime_for_skill(
+                spec.skill_name,
+                operation_policy=operation_policy,
+            )
             result = self._handlers[spec.skill_name](runtime, **normalized)
             self._attach_default_metadata(result, spec.skill_name)
+            self._attach_operation_policy_metadata(result, operation_policy)
             return result
 
         if spec.skill_name in self._simple_skills:
@@ -144,13 +154,27 @@ class SkillExecutor:
             allowed_child_tools=[tool_name],
         )
 
-    def _runtime_for_skill(self, skill_name: str, *, simple: bool = False) -> ToolRuntime:
+    def _runtime_for_skill(
+        self,
+        skill_name: str,
+        *,
+        simple: bool = False,
+        operation_policy: Optional[OperationToolPolicy] = None,
+    ) -> ToolRuntime:
         spec = self._capabilities.get_skill(skill_name)
         runtime = self._tool_runtime
         if simple and self._simple_tool_caller is not None:
             runtime = ToolRuntime(
                 _CallableToolBackend(self._simple_tool_caller),
                 guard=self._tool_runtime.guard,
+            )
+        if operation_policy is not None:
+            return runtime.with_context(
+                logical_skill=skill_name,
+                operation=operation_policy.operation,
+                allowed_tools=list(operation_policy.allowed_tools),
+                forbidden_tools=list(operation_policy.forbidden_tools),
+                enforce_allowed_tools=True,
             )
         return runtime.with_context(
             logical_skill=skill_name,
@@ -187,3 +211,19 @@ class SkillExecutor:
     def _attach_default_metadata(result: SkillResult, skill_name: str) -> None:
         if result.logical_skill is None:
             result.logical_skill = skill_name
+
+    @staticmethod
+    def _attach_operation_policy_metadata(
+        result: SkillResult,
+        operation_policy: Optional[OperationToolPolicy],
+    ) -> None:
+        if operation_policy is None:
+            return
+        if result.operation is None:
+            result.operation = operation_policy.operation
+        if not result.expected_mcp_tools:
+            result.expected_mcp_tools = list(operation_policy.allowed_tools)
+        if not result.allowed_child_tools:
+            result.allowed_child_tools = list(operation_policy.allowed_tools)
+        if not result.forbidden_child_tools:
+            result.forbidden_child_tools = list(operation_policy.forbidden_tools)

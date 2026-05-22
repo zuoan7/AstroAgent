@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from src.core.mcp_protocol import error_envelope, serialize_envelope
+from pydantic import ValidationError
+
+from src.core.mcp_protocol import TOOL_INPUT_MODELS, error_envelope, serialize_envelope
 from src.tools.guard import ToolGuard, ToolGuardContext, ToolGuardViolation
 
 
@@ -40,6 +42,7 @@ class ToolRuntime:
         operation: Optional[str] = None,
         allowed_tools: Optional[List[str]] = None,
         forbidden_tools: Optional[List[str]] = None,
+        required_params: Optional[List[str]] = None,
         enforce_allowed_tools: Optional[bool] = None,
     ) -> "ToolRuntime":
         return ToolRuntime(
@@ -50,18 +53,19 @@ class ToolRuntime:
                 operation=operation,
                 allowed_tools=allowed_tools,
                 forbidden_tools=forbidden_tools,
+                required_params=required_params,
                 enforce_allowed_tools=enforce_allowed_tools,
             ),
         )
 
     def call_tool(self, tool_name: str, **kwargs: Any) -> str:
-        violation = self._validate(tool_name)
+        violation = self._validate(tool_name, kwargs)
         if violation is not None:
             return self._guard_error(tool_name, violation)
         return self._backend.call_tool(tool_name, **kwargs)
 
     async def async_call_tool(self, tool_name: str, **kwargs: Any) -> str:
-        violation = self._validate(tool_name)
+        violation = self._validate(tool_name, kwargs)
         if violation is not None:
             return self._guard_error(tool_name, violation)
         if hasattr(self._backend, "async_call_tool"):
@@ -78,7 +82,7 @@ class ToolRuntime:
 
         for index, call in enumerate(calls):
             tool_name = str(call.get("tool_name", ""))
-            violation = self._validate(tool_name)
+            violation = self._validate(tool_name, call.get("kwargs", {}) or {})
             if violation is not None:
                 violations[index] = violation
                 continue
@@ -120,25 +124,48 @@ class ToolRuntime:
         if hasattr(self._backend, "shutdown"):
             self._backend.shutdown()
 
-    def _validate(self, tool_name: str) -> Optional[ToolGuardViolation]:
+    def _validate(
+        self,
+        tool_name: str,
+        kwargs: Dict[str, Any],
+    ) -> Optional[ToolGuardViolation]:
         try:
-            self._guard.validate_tool_call(tool_name, context=self._context)
+            self._guard.validate_tool_call(
+                tool_name,
+                params=kwargs,
+                context=self._context,
+            )
+            input_model = TOOL_INPUT_MODELS.get(tool_name)
+            if input_model is not None:
+                input_model(**kwargs)
         except ToolGuardViolation as exc:
             return exc
+        except ValidationError as exc:
+            return ToolGuardViolation(
+                f"Invalid input for {tool_name}: {exc.errors()}",
+                code="TOOL_INPUT_VALIDATION_ERROR",
+                details={
+                    "tool_name": tool_name,
+                    "validation_errors": exc.errors(),
+                },
+            )
         return None
 
     def _guard_error(self, tool_name: str, violation: ToolGuardViolation) -> str:
+        details = {
+            "logical_skill": self._context.logical_skill,
+            "operation": self._context.operation,
+            "allowed_tools": list(self._context.allowed_tools),
+            "forbidden_tools": list(self._context.forbidden_tools),
+            "required_params": list(self._context.required_params),
+            "enforce_allowed_tools": self._context.enforce_allowed_tools,
+        }
+        details.update(getattr(violation, "details", {}) or {})
         return serialize_envelope(
             error_envelope(
                 tool_name=tool_name,
-                code="TOOL_GUARD_REJECTED",
+                code=getattr(violation, "code", "TOOL_GUARD_REJECTED"),
                 message=str(violation),
-                details={
-                    "logical_skill": self._context.logical_skill,
-                    "operation": self._context.operation,
-                    "allowed_tools": list(self._context.allowed_tools),
-                    "forbidden_tools": list(self._context.forbidden_tools),
-                    "enforce_allowed_tools": self._context.enforce_allowed_tools,
-                },
+                details=details,
             )
         )
