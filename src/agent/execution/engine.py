@@ -105,6 +105,7 @@ class ExecutionEngine:
                 query,
                 chat_history=chat_history,
                 user_profile=user_profile,
+                context=context,
             )
             self._attach_engine_events(
                 response,
@@ -123,6 +124,7 @@ class ExecutionEngine:
                 execution_plan=execution_plan,
                 event_callback=event_callback,
                 budget_tracker=budget_tracker,
+                context=context,
             )
             self._attach_engine_events(
                 response,
@@ -159,6 +161,7 @@ class ExecutionEngine:
         execution_plan: Optional["ExecutionPlan"],
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
+        context: Optional["ExecutionContext"],
     ) -> FinalResponse:
         try:
             response = await self._planned.run(
@@ -169,6 +172,7 @@ class ExecutionEngine:
                 execution_plan=execution_plan,
                 event_callback=event_callback,
                 budget_tracker=budget_tracker,
+                context=context,
             )
         except Exception as exc:
             return await self._recover_from_planned_exception(
@@ -732,6 +736,15 @@ class ExecutionEngine:
                     type="task_profile",
                     payload=context.profile.to_dict(),
                     source="router",
+                ).to_dict()
+            )
+        capability = getattr(context, "capability_decision", None) if context else None
+        if capability is not None and hasattr(capability, "to_dict"):
+            events.append(
+                ExecutionEvent(
+                    type="capability_selected",
+                    payload=capability.to_dict(),
+                    source="capability_selector",
                 ).to_dict()
             )
         events.append(

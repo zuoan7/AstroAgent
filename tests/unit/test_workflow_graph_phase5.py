@@ -88,8 +88,21 @@ class TestWorkflowNodeConstruction:
     def test_to_dict_keys(self):
         n = WorkflowNode(id="x", title="测试", skill="weather-lookup")
         d = n.to_dict()
-        assert set(d.keys()) == {"id", "title", "kind", "skill", "inputs",
-                                  "depends_on", "timeout_ms", "optional", "output_key"}
+        assert set(d.keys()) == {
+            "id",
+            "title",
+            "kind",
+            "skill",
+            "capability_kind",
+            "capability_name",
+            "operation",
+            "allowed_tools",
+            "inputs",
+            "depends_on",
+            "timeout_ms",
+            "optional",
+            "output_key",
+        }
 
     def test_optional_flag(self):
         n = WorkflowNode(id="opt", optional=True)
@@ -233,6 +246,28 @@ class TestFromExecutionPlan:
         g = WorkflowGraph.from_execution_plan(plan)
         assert len(g.nodes) == 2
         assert g.output_schema == "observation_answer_v1"
+
+    def test_plan_step_capability_fields_flow_to_node(self):
+        plan = ExecutionPlan(
+            task_type="single_tool_lookup",
+            output_schema="tool_answer_v1",
+            steps=[
+                PlanStep(
+                    id="weather",
+                    kind="tool",
+                    skill="weather-lookup",
+                    capability_kind="skill",
+                    capability_name="weather-lookup",
+                    allowed_tools=["get_weather"],
+                )
+            ],
+        )
+
+        node = WorkflowGraph.from_execution_plan(plan).node("weather")
+
+        assert node.capability_kind == "skill"
+        assert node.capability_name == "weather-lookup"
+        assert node.allowed_tools == ["get_weather"]
 
     def test_chain_dependency_order(self):
         plan = _simple_plan()

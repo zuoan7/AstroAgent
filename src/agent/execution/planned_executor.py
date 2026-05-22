@@ -48,6 +48,7 @@ class PlannedExecutor:
         execution_plan: Optional[ExecutionPlan] = None,
         event_callback: Optional[EventCallback] = None,
         budget_tracker: Optional[RequestBudgetTracker] = None,
+        context: Optional[Any] = None,
     ) -> FinalResponse:
         budget_tracker = budget_tracker or RequestBudgetTracker()
 
@@ -130,6 +131,7 @@ class PlannedExecutor:
             execution_trace=response.execution_trace,
             evidence_by_key=outcome.evidence_by_key,
             skipped_step_ids=outcome.skipped_step_ids,
+            context=context,
         )
         response.execution_events = self._build_execution_events(
             response=response,
@@ -330,8 +332,15 @@ class PlannedExecutor:
         execution_trace: list[dict[str, Any]],
         evidence_by_key: dict[str, Any],
         skipped_step_ids: list[str],
+        context: Optional[Any] = None,
     ) -> dict[str, Any]:
         route_meta = decision.to_meta()
+        capability = getattr(context, "capability_decision", None)
+        capability_payload = (
+            capability.to_dict()
+            if capability is not None and hasattr(capability, "to_dict")
+            else None
+        )
         param_sources: list[str] = []
         handler_mcp_tools: list[str] = []
         operations: list[dict[str, Any]] = []
@@ -389,6 +398,8 @@ class PlannedExecutor:
                 {
                     "id": step.id,
                     "skill": step.skill,
+                    "capability_kind": step.capability_kind,
+                    "capability_name": step.capability_name,
                     "params": dict(step.params),
                     "planner_source": step.planner_source or plan.planner_type,
                     "purpose": step.purpose,
@@ -402,6 +413,16 @@ class PlannedExecutor:
             "handler_mcp_tools_used": handler_mcp_tools,
             "operations": operations,
             "expected_mcp_tools": expected_mcp_tools,
+            "capability_decision": capability_payload,
+            "capability_kind": (
+                capability_payload.get("kind", "") if capability_payload else ""
+            ),
+            "capability_name": (
+                capability_payload.get("name", "") if capability_payload else ""
+            ),
+            "capability_reason": (
+                capability_payload.get("reason", "") if capability_payload else ""
+            ),
             "dag_node_count": len(plan.steps),
             "dag_evidence_keys": sorted(evidence_by_key),
             "dag_evidence": evidence_by_key,

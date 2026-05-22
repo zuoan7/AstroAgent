@@ -6,6 +6,7 @@ from src.agent.models.request_context import RequestContext
 from src.agent.models.execution_context import ExecutionContext
 from src.agent.models.execution_result import ExecutionResult
 from src.agent.models.execution_decision import ExecutionDecision
+from src.agent.models.capability_decision import CapabilityDecision
 
 __all__ = [
     "SkillResult",
@@ -18,4 +19,5 @@ __all__ = [
     "ExecutionContext",
     "ExecutionResult",
     "ExecutionDecision",
+    "CapabilityDecision",
 ]

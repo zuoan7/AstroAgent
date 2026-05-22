@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+from src.agent.models.capability_decision import CapabilityDecision
 from src.agent.models.task_profile import TaskProfile
 from src.agent.models.request_context import RequestContext
 
@@ -19,6 +20,7 @@ from src.agent.models.request_context import RequestContext
 class ExecutionContext:
     profile: TaskProfile
     request: RequestContext
+    capability_decision: Optional[CapabilityDecision] = None
 
     # 可选扩展字段（Phase 3 前保持 Optional）
     extra_meta: Dict[str, Any] = field(default_factory=dict)
@@ -52,6 +54,11 @@ class ExecutionContext:
         return {
             "profile": self.profile.to_dict(),
             "request": self.request.to_dict(),
+            "capability_decision": (
+                self.capability_decision.to_dict()
+                if self.capability_decision is not None
+                else None
+            ),
             "extra_meta": dict(self.extra_meta),
         }
 

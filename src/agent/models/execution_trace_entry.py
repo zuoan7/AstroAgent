@@ -25,6 +25,9 @@ class ExecutionTraceEntry:
     kind: str
     status: str
     skill: Optional[str] = None
+    capability_kind: str = ""
+    capability_name: str = ""
+    capability_reason: str = ""
     input_params: Dict[str, Any] = field(default_factory=dict)
     param_builder_source: str = ""
     mcp_tools_used: List[str] = field(default_factory=list)
@@ -53,6 +56,9 @@ class ExecutionTraceEntry:
             "kind": self.kind,
             "status": self.status,
             "skill": self.skill,
+            "capability_kind": self.capability_kind,
+            "capability_name": self.capability_name,
+            "capability_reason": self.capability_reason,
             "input_params": dict(self.input_params),
             "param_builder_source": self.param_builder_source,
             "mcp_tools_used": list(self.mcp_tools_used),
@@ -122,6 +128,9 @@ class ExecutionTraceEntry:
                     "step_id": self.step_id,
                     "title": self.title,
                     "skill": self.skill,
+                    "capability_kind": self.capability_kind,
+                    "capability_name": self.capability_name,
+                    "capability_reason": self.capability_reason,
                     "logical_skill": self.logical_skill or self.skill,
                     "kind": self.kind,
                     "depends_on": list(self.depends_on),
@@ -137,6 +146,9 @@ class ExecutionTraceEntry:
                     "title": self.title,
                     "status": self.status,
                     "skill": self.skill,
+                    "capability_kind": self.capability_kind,
+                    "capability_name": self.capability_name,
+                    "capability_reason": self.capability_reason,
                     "input": dict(self.input_params),
                     "param_builder_source": self.param_builder_source,
                     "mcp_tools_used": list(self.mcp_tools_used),
@@ -164,6 +176,9 @@ class ExecutionTraceEntry:
             kind=step_result.kind,
             status=step_result.status,
             skill=step_result.skill,
+            capability_kind=getattr(step_result, "capability_kind", ""),
+            capability_name=getattr(step_result, "capability_name", ""),
+            capability_reason=getattr(step_result, "capability_reason", ""),
             input_params=dict(step_result.input_params),
             param_builder_source=getattr(step_result, "param_builder_source", ""),
             mcp_tools_used=list(getattr(step_result, "mcp_tools_used", []) or []),
@@ -192,6 +207,9 @@ class ExecutionTraceEntry:
             kind=d.get("kind", "tool"),
             status=d.get("status", ""),
             skill=d.get("skill"),
+            capability_kind=d.get("capability_kind", ""),
+            capability_name=d.get("capability_name", ""),
+            capability_reason=d.get("capability_reason", ""),
             input_params=d.get("input_params", {}),
             param_builder_source=d.get("param_builder_source", ""),
             mcp_tools_used=d.get("mcp_tools_used", []),

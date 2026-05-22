@@ -39,6 +39,9 @@ class StepExecutionResult:
     kind: str
     status: str
     skill: Optional[str] = None
+    capability_kind: str = ""
+    capability_name: str = ""
+    capability_reason: str = ""
     input_params: Dict[str, Any] = field(default_factory=dict)
     param_builder_source: str = ""
     mcp_tools_used: List[str] = field(default_factory=list)
@@ -62,6 +65,9 @@ class StepExecutionResult:
             "kind": self.kind,
             "status": self.status,
             "skill": self.skill,
+            "capability_kind": self.capability_kind,
+            "capability_name": self.capability_name,
+            "capability_reason": self.capability_reason,
             "input_params": dict(self.input_params),
             "param_builder_source": self.param_builder_source,
             "mcp_tools_used": list(self.mcp_tools_used),
@@ -246,6 +252,10 @@ class StepExecutor:
     ) -> tuple[StepExecutionResult, Optional[SkillResult]]:
         params = {}
         param_builder_source = ""
+        capability_kind = getattr(step, "capability_kind", "") or (
+            "skill" if step.skill else ""
+        )
+        capability_name = getattr(step, "capability_name", "") or step.skill or ""
         if step.skill:
             if step.params:
                 params = dict(param_builder(step.skill, query))
@@ -264,6 +274,8 @@ class StepExecutor:
                 "title": step.title or step.skill or step.id,
                 "description": step.description,
                 "skill": step.skill,
+                "capability_kind": capability_kind,
+                "capability_name": capability_name,
                 "kind": step.kind,
             },
         )
@@ -318,6 +330,11 @@ class StepExecutor:
             kind=step.kind,
             status=status,
             skill=step.skill,
+            capability_kind=capability_kind,
+            capability_name=capability_name,
+            capability_reason=(
+                "plan_step_capability" if capability_name else ""
+            ),
             input_params=params,
             param_builder_source=param_builder_source,
             mcp_tools_used=_extract_mcp_tools_from_sources(
@@ -354,6 +371,8 @@ class StepExecutor:
                 {
                     "step_id": step.id,
                     "skill": step.skill,
+                    "capability_kind": capability_kind,
+                    "capability_name": capability_name,
                     "status": status,
                     "summary": skill_result.summary,
                     "latency_ms": latency_ms,
@@ -370,6 +389,8 @@ class StepExecutor:
                 "title": step.title or step.skill or step.id,
                 "status": status,
                 "skill": step.skill,
+                "capability_kind": capability_kind,
+                "capability_name": capability_name,
                 "latency_ms": latency_ms,
                 "error": last_error if status == "error" else None,
             },

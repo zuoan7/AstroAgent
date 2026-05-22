@@ -24,6 +24,9 @@ class TaskProfile:
     openness: str            # low | medium | high
     tool_need: str           # none | single | multi
     matched_skills: List[str] = field(default_factory=list)
+    capability_hints: List[str] = field(default_factory=list)
+    stable_flow: bool = False
+    domain: str = "astronomy"
     confidence: float = 0.0
     reason: str = ""
     expected_output_schema: str = "generic_answer_v1"
@@ -47,6 +50,9 @@ class TaskProfile:
             "openness": self.openness,
             "tool_need": self.tool_need,
             "matched_skills": list(self.matched_skills),
+            "capability_hints": list(self.capability_hints),
+            "stable_flow": self.stable_flow,
+            "domain": self.domain,
             "confidence": self.confidence,
             "reason": self.reason,
             "expected_output_schema": self.expected_output_schema,
@@ -116,9 +122,19 @@ class TaskProfile:
         tool_necessity_missing_params: Optional[List[str]] = None,
         tool_necessity_allowed_skill_hints: Optional[List[str]] = None,
         tool_necessity_forbidden_skill_hints: Optional[List[str]] = None,
+        capability_hints: Optional[List[str]] = None,
+        stable_flow: Optional[bool] = None,
+        domain: str = "astronomy",
     ) -> "TaskProfile":
         """从旧 RouteDecision 字段推断 TaskProfile，保证双向可转换。"""
         skills = list(matched_skills or [])
+        stable_task_types = {
+            "single_tool_lookup",
+            "observation_recommendation",
+            "celestial_event_analysis",
+            "deep_sky_guidance",
+            "astrophotography_advice",
+        }
 
         if route == "direct_task" and task_type == "smalltalk":
             complexity, openness, tool_need = "low", "low", "none"
@@ -141,12 +157,21 @@ class TaskProfile:
         else:
             complexity, openness, tool_need = "medium", "medium", "single"
 
+        inferred_stable_flow = (
+            bool(skills)
+            and openness != "high"
+            and task_type in stable_task_types
+        )
+
         return cls(
             task_type=task_type,
             complexity=complexity,
             openness=openness,
             tool_need=tool_need,
             matched_skills=skills,
+            capability_hints=list(capability_hints or skills),
+            stable_flow=inferred_stable_flow if stable_flow is None else bool(stable_flow),
+            domain=domain,
             confidence=confidence,
             reason=reason,
             expected_output_schema=expected_output_schema,

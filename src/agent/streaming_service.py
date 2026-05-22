@@ -28,6 +28,7 @@ from src.agent.streaming_events import (
     StreamEventProcessor,
     apply_event_processors,
 )
+from src.capabilities.selector import CapabilitySelector
 from src.core.errors import ErrorHandler
 from src.core.logger import logger
 from src.core.mcp_protocol import extract_tool_data, is_tool_error
@@ -81,6 +82,7 @@ class BaseStreamingGenerator:
         self._event_processors = list(event_processors or [])
         self._execution_policy = execution_policy or AgentExecutionPolicy.from_settings()
         self._frontend_event_adapter = FrontendExecutionEventAdapter()
+        self._capability_selector = CapabilitySelector()
         self._governance_metrics = governance_metrics
         self._audit_logger = audit_logger
         self._agent_executor_factory = agent_executor_factory
@@ -923,7 +925,17 @@ class BaseStreamingGenerator:
                 use_long_term_memory=use_long_term_memory,
             ),
         )
-        return policy.decide(profile, context), profile, context
+        execution_decision = policy.decide(profile, context)
+        capability_selector = getattr(self, "_capability_selector", None)
+        if capability_selector is None:
+            capability_selector = CapabilitySelector()
+            self._capability_selector = capability_selector
+        context.capability_decision = capability_selector.select(
+            profile=profile,
+            execution_decision=execution_decision,
+            query=query,
+        )
+        return execution_decision, profile, context
 
     def _resolve_legacy_route_decision(
         self,

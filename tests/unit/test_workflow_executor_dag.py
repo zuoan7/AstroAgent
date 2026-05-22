@@ -167,6 +167,38 @@ def test_workflow_executor_retries_failed_step_before_success():
     assert manager.calls["event-tool"] == 2
 
 
+def test_workflow_executor_uses_capability_name_when_skill_field_is_absent():
+    plan = ExecutionPlan(
+        task_type="single_tool_lookup",
+        output_schema="tool_answer_v1",
+        steps=[
+            PlanStep(
+                id="capability_step",
+                kind="tool",
+                capability_kind="skill",
+                capability_name="weather-lookup",
+            )
+        ],
+    )
+    manager = _SkillManagerStub()
+    executor = WorkflowExecutor(skill_manager=manager)
+
+    outcome = asyncio.run(
+        executor.execute(
+            WorkflowGraph.from_execution_plan(plan),
+            plan,
+            query="北京天气",
+            param_builder=_params,
+            budget_tracker=_budget(),
+        )
+    )
+
+    assert not outcome.halted
+    assert manager.calls["weather-lookup"] == 1
+    assert outcome.step_results[0].capability_name == "weather-lookup"
+    assert outcome.step_results[0].skill is None
+
+
 def test_optional_failure_does_not_block_dependent_continue_strategy():
     plan = ExecutionPlan(
         task_type="observation_recommendation",

@@ -20,6 +20,10 @@ class WorkflowNode:
     title: str = ""
     kind: str = "tool"
     skill: Optional[str] = None
+    capability_kind: str = ""
+    capability_name: str = ""
+    operation: Optional[str] = None
+    allowed_tools: List[str] = field(default_factory=list)
     inputs: Dict[str, Any] = field(default_factory=dict)
     depends_on: List[str] = field(default_factory=list)
     timeout_ms: Optional[int] = None
@@ -32,6 +36,10 @@ class WorkflowNode:
             "title": self.title,
             "kind": self.kind,
             "skill": self.skill,
+            "capability_kind": self.capability_kind,
+            "capability_name": self.capability_name,
+            "operation": self.operation,
+            "allowed_tools": list(self.allowed_tools),
             "inputs": dict(self.inputs),
             "depends_on": list(self.depends_on),
             "timeout_ms": self.timeout_ms,
@@ -228,6 +236,14 @@ class WorkflowGraph:
             title=step.title,
             kind=step.kind,
             skill=step.skill,
+            capability_kind=getattr(step, "capability_kind", "") or (
+                "skill" if getattr(step, "skill", None) else ""
+            ),
+            capability_name=getattr(step, "capability_name", "") or (
+                getattr(step, "skill", None) or ""
+            ),
+            operation=getattr(step, "operation", None),
+            allowed_tools=list(getattr(step, "allowed_tools", []) or []),
             inputs=dict(step.params or {}),
             depends_on=list(getattr(step, "depends_on", []) or depends_on or []),
             timeout_ms=step.timeout_ms,

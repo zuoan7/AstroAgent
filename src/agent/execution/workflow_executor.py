@@ -7,9 +7,11 @@ step retry policy, failure strategy, and evidence aggregation.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from src.core.mcp_protocol import is_tool_error, parse_tool_response
 from src.agent.executor import (
     EvidenceAggregator,
     EventCallback,
@@ -351,12 +353,21 @@ class WorkflowExecutor:
     ) -> tuple[StepExecutionResult, Optional[SkillResult]]:
         params: Dict[str, Any] = {}
         param_builder_source = ""
-        if node.skill:
+        capability_kind = getattr(node, "capability_kind", "") or (
+            "skill" if node.skill else ""
+        )
+        capability_name = getattr(node, "capability_name", "") or node.skill or ""
+        executable_skill = node.skill or (
+            capability_name if capability_kind == "skill" else None
+        )
+        executable_tool = capability_name if capability_kind == "tool" else None
+
+        if executable_skill:
             if node.inputs:
-                params = dict(param_builder(node.skill, query))
+                params = dict(param_builder(executable_skill, query))
                 param_builder_source = "plan"
             else:
-                params = dict(param_builder(node.skill, query))
+                params = dict(param_builder(executable_skill, query))
                 param_builder_source = "fallback_builder"
         if node.inputs:
             params.update(node.inputs)
@@ -369,6 +380,8 @@ class WorkflowExecutor:
                 "title": node.title or node.skill or node.id,
                 "description": "",
                 "skill": node.skill,
+                "capability_kind": capability_kind,
+                "capability_name": capability_name,
                 "kind": node.kind,
                 "depends_on": list(dependencies),
                 "evidence_key": self._evidence_key(node, step_by_id),
@@ -383,16 +396,23 @@ class WorkflowExecutor:
 
         for attempts in range(1, self._retry_policy(node, step_by_id) + 2):
             try:
-                if node.kind != "tool" or not node.skill:
+                if node.kind != "tool" or not (executable_skill or executable_tool):
                     raise ValueError(f"unsupported node kind: {node.kind!r}")
                 if budget_tracker:
                     budget_tracker.register_tool_call()
 
-                coro = asyncio.to_thread(
-                    self._skill_manager.call_skill,
-                    node.skill,
-                    **params,
-                )
+                if executable_tool:
+                    coro = asyncio.to_thread(
+                        self._call_atomic_tool_as_skill_result,
+                        executable_tool,
+                        params,
+                    )
+                else:
+                    coro = asyncio.to_thread(
+                        self._skill_manager.call_skill,
+                        executable_skill,
+                        **params,
+                    )
                 if node.timeout_ms:
                     skill_result = await asyncio.wait_for(
                         coro, timeout=node.timeout_ms / 1000.0
@@ -402,14 +422,14 @@ class WorkflowExecutor:
             except asyncio.TimeoutError:
                 last_error = f"node timeout after {node.timeout_ms} ms"
                 skill_result = SkillResult.from_error(
-                    skill_name=node.skill or node.id,
+                    skill_name=executable_skill or executable_tool or node.id,
                     error_code="NODE_TIMEOUT",
                     error_message=last_error,
                 )
             except Exception as exc:
                 last_error = str(exc)
                 skill_result = SkillResult.from_error(
-                    skill_name=node.skill or node.id,
+                    skill_name=executable_skill or executable_tool or node.id,
                     error_code="NODE_EXECUTION_ERROR",
                     error_message=last_error,
                 )
@@ -432,6 +452,11 @@ class WorkflowExecutor:
             kind=node.kind,
             status=status,
             skill=node.skill,
+            capability_kind=capability_kind,
+            capability_name=capability_name,
+            capability_reason=(
+                "workflow_node_capability" if capability_name else ""
+            ),
             input_params=params,
             param_builder_source=param_builder_source,
             mcp_tools_used=_extract_mcp_tools_from_sources(
@@ -466,9 +491,11 @@ class WorkflowExecutor:
                 event_callback,
                 "step_result",
                 {
-                    "step_id": node.id,
-                    "skill": node.skill,
-                    "status": status,
+                "step_id": node.id,
+                "skill": node.skill,
+                "capability_kind": capability_kind,
+                "capability_name": capability_name,
+                "status": status,
                     "summary": skill_result.summary,
                     "latency_ms": latency_ms,
                 },
@@ -484,6 +511,8 @@ class WorkflowExecutor:
                 "title": node.title or node.skill or node.id,
                 "status": status,
                 "skill": node.skill,
+                "capability_kind": capability_kind,
+                "capability_name": capability_name,
                 "latency_ms": latency_ms,
                 "error": last_error if status == "error" else None,
                 "depends_on": list(dependencies),
@@ -508,6 +537,11 @@ class WorkflowExecutor:
             kind=node.kind,
             status="skipped",
             skill=node.skill,
+            capability_kind=getattr(node, "capability_kind", "") or (
+                "skill" if node.skill else ""
+            ),
+            capability_name=getattr(node, "capability_name", "") or node.skill or "",
+            capability_reason="workflow_node_capability",
             attempts=0,
             required=self._is_required(node, step_by_id),
             error=reason,
@@ -523,6 +557,8 @@ class WorkflowExecutor:
                 "title": step_result.title,
                 "status": "skipped",
                 "skill": node.skill,
+                "capability_kind": step_result.capability_kind,
+                "capability_name": step_result.capability_name,
                 "error": reason,
                 "depends_on": list(dependencies),
                 "evidence_key": step_result.evidence_key,
@@ -542,3 +578,60 @@ class WorkflowExecutor:
         maybe_result = event_callback(event_type, payload)
         if asyncio.iscoroutine(maybe_result):
             await maybe_result
+
+    def _call_atomic_tool_as_skill_result(
+        self,
+        tool_name: str,
+        params: Dict[str, Any],
+    ) -> SkillResult:
+        if not hasattr(self._skill_manager, "call_mcp_tool"):
+            raise ValueError(
+                f"skill manager does not support atomic tool calls: {tool_name}"
+            )
+
+        raw = self._skill_manager.call_mcp_tool(tool_name, **params)
+        if is_tool_error(raw):
+            envelope = parse_tool_response(raw)
+            error_msg = ""
+            if envelope is not None and hasattr(envelope, "error"):
+                error_msg = getattr(envelope.error, "message", "")
+            result = SkillResult.from_error(
+                skill_name=tool_name,
+                error_code="TOOL_CALL_FAILED",
+                error_message=error_msg or str(raw)[:500],
+            )
+            result.logical_skill = tool_name
+            result.expected_mcp_tools = [tool_name]
+            result.allowed_child_tools = [tool_name]
+            result.sources = [
+                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+            ]
+            return result
+
+        envelope = parse_tool_response(raw)
+        if envelope is not None and hasattr(envelope, "data"):
+            payload = envelope.data
+        else:
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                payload = raw
+
+        data = payload if isinstance(payload, dict) else {"raw": payload}
+        summary = (
+            payload
+            if isinstance(payload, str)
+            else json.dumps(payload, ensure_ascii=False)
+        )
+        return SkillResult(
+            skill_name=tool_name,
+            success=True,
+            data=data,
+            summary=summary,
+            sources=[
+                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+            ],
+            logical_skill=tool_name,
+            expected_mcp_tools=[tool_name],
+            allowed_child_tools=[tool_name],
+        )

@@ -7,6 +7,7 @@ Phase 9 起作为主路径，循环依赖已消除（改用 SkillParamBuilder）
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Dict, Optional
 
 from src.agent.executor import _extract_mcp_tools_from_sources
@@ -17,6 +18,7 @@ from src.agent.prompts import get_prompt_renderer
 from src.agent.request_router import RouteDecision
 from src.agent.skill_param_builder import SkillParamBuilder
 from src.core.config import settings
+from src.core.mcp_protocol import is_tool_error, parse_tool_response
 
 
 class DirectExecutor:
@@ -42,6 +44,7 @@ class DirectExecutor:
         *,
         chat_history: str = "",
         user_profile: str = "",
+        context: Optional[Any] = None,
     ) -> FinalResponse:
         if decision.task_type == "smalltalk":
             response = self._synthesizer.synthesize_smalltalk(
@@ -69,6 +72,7 @@ class DirectExecutor:
                 query,
                 chat_history=chat_history,
                 user_profile=user_profile,
+                context=context,
             )
 
         if decision.task_type == "simple_qa":
@@ -137,23 +141,42 @@ class DirectExecutor:
         *,
         chat_history: str = "",
         user_profile: str = "",
+        context: Optional[Any] = None,
     ) -> FinalResponse:
         from src.agent.models.skill_result import SkillResult
-        from src.agent.param_parser import ParamParser
-        from src.skills import registry
 
-        skill_name = decision.matched_skills[0]
-        params = self._build_skill_params(
-            skill_name,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
-        )
-        result: SkillResult = await asyncio.to_thread(
-            self._skill_manager.call_skill,
-            skill_name,
-            **params,
-        )
+        capability = getattr(context, "capability_decision", None)
+        capability_kind = getattr(capability, "kind", "") if capability else ""
+        capability_name = getattr(capability, "name", "") if capability else ""
+        capability_reason = getattr(capability, "reason", "") if capability else ""
+
+        if capability_kind == "tool" and capability_name:
+            params = self._build_atomic_tool_params(capability, query)
+            result = await asyncio.to_thread(
+                self._call_atomic_tool_as_skill_result,
+                capability_name,
+                params,
+            )
+            tool_name = capability_name
+        else:
+            skill_name = (
+                capability_name
+                if capability_kind == "skill" and capability_name
+                else decision.matched_skills[0]
+            )
+            params = self._build_skill_params(
+                skill_name,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
+            result: SkillResult = await asyncio.to_thread(
+                self._skill_manager.call_skill,
+                skill_name,
+                **params,
+            )
+            tool_name = skill_name
+
         mcp_tools_used = _extract_mcp_tools_from_sources(result.sources)
         response = self._synthesizer.synthesize_direct(
             query=query,
@@ -165,20 +188,26 @@ class DirectExecutor:
             decision=decision,
             param_builder_source="fallback_builder",
             handler_mcp_tools_used=mcp_tools_used,
-            logical_skill=getattr(result, "logical_skill", None) or skill_name,
+            logical_skill=getattr(result, "logical_skill", None) or tool_name,
             operation=getattr(result, "operation", None),
             expected_mcp_tools=getattr(result, "expected_mcp_tools", []),
+            capability_kind=capability_kind,
+            capability_name=capability_name,
+            capability_reason=capability_reason,
         )
         self._attach_execution_events(
             response,
-            tool_name=skill_name,
+            tool_name=tool_name,
             tool_input=params,
             tool_summary=result.summary,
             tool_status="success" if result.success else "error",
-            logical_skill=getattr(result, "logical_skill", None) or skill_name,
+            logical_skill=getattr(result, "logical_skill", None) or tool_name,
             operation=getattr(result, "operation", None),
             mcp_tools_used=mcp_tools_used,
             expected_mcp_tools=getattr(result, "expected_mcp_tools", []),
+            capability_kind=capability_kind,
+            capability_name=capability_name,
+            capability_reason=capability_reason,
         )
         return response
 
@@ -192,6 +221,9 @@ class DirectExecutor:
         logical_skill: Optional[str] = None,
         operation: Optional[str] = None,
         expected_mcp_tools: Optional[list[str]] = None,
+        capability_kind: str = "",
+        capability_name: str = "",
+        capability_reason: str = "",
     ) -> None:
         route_meta = decision.to_meta()
         response.route = decision.route
@@ -223,6 +255,9 @@ class DirectExecutor:
             "logical_skill": logical_skill,
             "operation": operation,
             "expected_mcp_tools": list(expected_mcp_tools or []),
+            "capability_kind": capability_kind,
+            "capability_name": capability_name,
+            "capability_reason": capability_reason,
         }
 
     async def _run_simple_qa(
@@ -274,6 +309,9 @@ class DirectExecutor:
         operation: Optional[str] = None,
         mcp_tools_used: Optional[list[str]] = None,
         expected_mcp_tools: Optional[list[str]] = None,
+        capability_kind: str = "",
+        capability_name: str = "",
+        capability_reason: str = "",
     ) -> None:
         events = []
         if tool_name:
@@ -289,6 +327,9 @@ class DirectExecutor:
                         "operation": operation,
                         "mcp_tools_used": list(mcp_tools_used or []),
                         "expected_mcp_tools": list(expected_mcp_tools or []),
+                        "capability_kind": capability_kind,
+                        "capability_name": capability_name,
+                        "capability_reason": capability_reason,
                     },
                     source="direct",
                 ).to_dict()
@@ -305,6 +346,9 @@ class DirectExecutor:
                         "operation": operation,
                         "mcp_tools_used": list(mcp_tools_used or []),
                         "expected_mcp_tools": list(expected_mcp_tools or []),
+                        "capability_kind": capability_kind,
+                        "capability_name": capability_name,
+                        "capability_reason": capability_reason,
                     },
                     source="direct",
                 ).to_dict()
@@ -355,4 +399,77 @@ class DirectExecutor:
             query,
             chat_history=chat_history,
             user_profile=user_profile,
+        )
+
+    @staticmethod
+    def _build_atomic_tool_params(capability: Any, query: str) -> Dict[str, Any]:
+        metadata = getattr(capability, "metadata", {}) or {}
+        explicit_params = metadata.get("params")
+        if isinstance(explicit_params, dict):
+            return dict(explicit_params)
+
+        tool_name = getattr(capability, "name", "")
+        if tool_name == "web_search":
+            return {"query": query, "max_results": 5}
+        if tool_name == "get_weather":
+            return {"city": query, "extensions": "all"}
+        return {"query": query}
+
+    def _call_atomic_tool_as_skill_result(
+        self,
+        tool_name: str,
+        params: Dict[str, Any],
+    ) -> "SkillResult":
+        from src.agent.models.skill_result import SkillResult
+
+        if not hasattr(self._skill_manager, "call_mcp_tool"):
+            raise ValueError(
+                f"skill manager does not support atomic tool calls: {tool_name}"
+            )
+
+        raw = self._skill_manager.call_mcp_tool(tool_name, **params)
+        if is_tool_error(raw):
+            envelope = parse_tool_response(raw)
+            error_msg = ""
+            if envelope is not None and hasattr(envelope, "error"):
+                error_msg = getattr(envelope.error, "message", "")
+            result = SkillResult.from_error(
+                skill_name=tool_name,
+                error_code="TOOL_CALL_FAILED",
+                error_message=error_msg or str(raw)[:500],
+            )
+            result.logical_skill = tool_name
+            result.expected_mcp_tools = [tool_name]
+            result.allowed_child_tools = [tool_name]
+            result.sources = [
+                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+            ]
+            return result
+
+        envelope = parse_tool_response(raw)
+        if envelope is not None and hasattr(envelope, "data"):
+            payload = envelope.data
+        else:
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                payload = raw
+
+        data = payload if isinstance(payload, dict) else {"raw": payload}
+        summary = (
+            payload
+            if isinstance(payload, str)
+            else json.dumps(payload, ensure_ascii=False)
+        )
+        return SkillResult(
+            skill_name=tool_name,
+            success=True,
+            data=data,
+            summary=summary,
+            sources=[
+                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+            ],
+            logical_skill=tool_name,
+            expected_mcp_tools=[tool_name],
+            allowed_child_tools=[tool_name],
         )

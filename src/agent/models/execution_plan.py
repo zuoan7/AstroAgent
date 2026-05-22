@@ -11,6 +11,10 @@ class PlanStep:
     title: str = ""
     description: str = ""
     skill: Optional[str] = None
+    capability_kind: str = ""
+    capability_name: str = ""
+    operation: Optional[str] = None
+    allowed_tools: List[str] = field(default_factory=list)
     params: Dict[str, Any] = field(default_factory=dict)
     purpose: str = ""
     success_criteria: str = ""
@@ -31,6 +35,10 @@ class PlanStep:
             title=str(data.get("title", "")),
             description=str(data.get("description", "")),
             skill=data.get("skill"),
+            capability_kind=str(data.get("capability_kind", "") or ""),
+            capability_name=str(data.get("capability_name", "") or ""),
+            operation=data.get("operation"),
+            allowed_tools=list(data.get("allowed_tools", []) or []),
             params=dict(data.get("params", {}) or {}),
             purpose=str(data.get("purpose", "")),
             success_criteria=str(data.get("success_criteria", "")),
@@ -51,6 +59,10 @@ class PlanStep:
             "title": self.title,
             "description": self.description,
             "skill": self.skill,
+            "capability_kind": self.capability_kind,
+            "capability_name": self.capability_name,
+            "operation": self.operation,
+            "allowed_tools": list(self.allowed_tools),
             "params": dict(self.params),
             "purpose": self.purpose,
             "success_criteria": self.success_criteria,
@@ -112,6 +124,8 @@ class ExecutionPlan:
                     "status": "pending",
                     "kind": step.kind,
                     "skill": step.skill,
+                    "capability_kind": step.capability_kind,
+                    "capability_name": step.capability_name,
                     "required": step.required,
                     "parallel_group": step.parallel_group,
                     "depends_on": list(step.depends_on),
@@ -165,6 +179,10 @@ class ExecutionPlan:
                     kind=node.kind,
                     title=node.title,
                     skill=node.skill,
+                    capability_kind=getattr(node, "capability_kind", ""),
+                    capability_name=getattr(node, "capability_name", ""),
+                    operation=getattr(node, "operation", None),
+                    allowed_tools=list(getattr(node, "allowed_tools", []) or []),
                     params=dict(node.inputs or {}),
                     planner_source=str(metadata.get("planner_type", "graph_native")),
                     required=not node.optional,

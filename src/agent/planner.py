@@ -6,6 +6,7 @@ from typing import Any, List, Optional
 
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.workflow_graph import WorkflowGraph
+from src.capabilities.registry import CapabilityRegistry
 from src.agent.prompts import get_prompt_renderer
 from src.agent.skill_param_builder import SkillParamBuilder
 from src.core.config import settings
@@ -22,6 +23,7 @@ class Planner:
     def __init__(self, llm: Optional[Any] = None) -> None:
         self._llm = llm
         self._param_builder = SkillParamBuilder(None)
+        self._capabilities = CapabilityRegistry()
 
     def plan(
         self,
@@ -543,12 +545,26 @@ class Planner:
                 user_profile=user_profile,
             )
         )
+        capability_kind = "skill"
+        capability_name = skill
+        operation = step_params.get("operation")
+        allowed_tools: list[str] = []
+        try:
+            capability_spec = self._capabilities.get_skill(skill)
+            allowed_tools = list(capability_spec.allowed_tools)
+        except Exception:
+            allowed_tools = []
+
         return PlanStep(
             id=id,
             kind="tool",
             title=title,
             description=description,
             skill=skill,
+            capability_kind=capability_kind,
+            capability_name=capability_name,
+            operation=operation,
+            allowed_tools=allowed_tools,
             params=step_params,
             purpose=purpose,
             success_criteria=success_criteria,
