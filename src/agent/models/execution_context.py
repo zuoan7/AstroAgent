@@ -74,6 +74,7 @@ class ExecutionContext:
         user_profile: str = "",
         request_id: Optional[str] = None,
         matched_skills: Optional[list] = None,
+        capability_hints: Optional[list] = None,
         expected_output_schema: str = "generic_answer_v1",
         use_long_term_memory: bool = True,
     ) -> "ExecutionContext":
@@ -86,7 +87,67 @@ class ExecutionContext:
             task_type=task_type,
             confidence=confidence,
             matched_skills=matched_skills,
+            capability_hints=capability_hints,
             expected_output_schema=expected_output_schema,
+        )
+        request = RequestContext.from_legacy_params(
+            query=query,
+            chat_history=chat_history,
+            user_profile=user_profile,
+            request_id=request_id,
+            use_long_term_memory=use_long_term_memory,
+        )
+        return cls(profile=profile, request=request)
+
+    @classmethod
+    def from_legacy_decision(
+        cls,
+        decision: Any,
+        query: str,
+        *,
+        chat_history: str = "",
+        user_profile: str = "",
+        request_id: Optional[str] = None,
+        use_long_term_memory: bool = True,
+        default_route: str = "fallback_react",
+        default_task_type: str = "open_domain_reasoning",
+        default_output_schema: str = "generic_answer_v1",
+    ) -> "ExecutionContext":
+        """[Legacy adapter] Convert RouteDecision-like objects to context.
+
+        This is the only executor-side place that mirrors legacy
+        `matched_skills` into the context model. New execution paths should
+        construct ExecutionContext directly from TaskProfile and RequestContext.
+        """
+        profile = TaskProfile.from_legacy_route(
+            route=getattr(decision, "route", default_route),
+            task_type=getattr(decision, "task_type", default_task_type),
+            confidence=getattr(decision, "confidence", 0.0),
+            matched_skills=list(getattr(decision, "matched_skills", []) or []),
+            capability_hints=list(getattr(decision, "capability_hints", []) or []),
+            reason=getattr(decision, "reason", ""),
+            expected_output_schema=getattr(
+                decision, "expected_output_schema", default_output_schema
+            ),
+            router_source=getattr(decision, "router_source", "rule"),
+            rule_confidence=getattr(decision, "rule_confidence", None),
+            llm_confidence=getattr(decision, "llm_confidence", None),
+            tool_necessity_action=getattr(decision, "tool_necessity_action", ""),
+            tool_necessity_reason=getattr(decision, "tool_necessity_reason", ""),
+            tool_necessity_confidence=getattr(
+                decision, "tool_necessity_confidence", None
+            ),
+            answer_hint=getattr(decision, "answer_hint", ""),
+            clarification_prompt=getattr(decision, "clarification_prompt", ""),
+            tool_necessity_missing_params=list(
+                getattr(decision, "tool_necessity_missing_params", []) or []
+            ),
+            tool_necessity_allowed_skill_hints=list(
+                getattr(decision, "tool_necessity_allowed_skill_hints", []) or []
+            ),
+            tool_necessity_forbidden_skill_hints=list(
+                getattr(decision, "tool_necessity_forbidden_skill_hints", []) or []
+            ),
         )
         request = RequestContext.from_legacy_params(
             query=query,

@@ -1,9 +1,10 @@
 """ExecutionEngine — 统一执行引擎（Phase 4 引入，Phase 8/9 为主路径）。
 
 根据 ExecutionDecision.mode 分发到 DirectExecutor / PlannedExecutor / ReactExecutor。
-Phase 9 起：ENABLE_UNIFIED_EXECUTION_ENGINE=True，本引擎为默认主路径；
-            ENABLE_WORKFLOW_GRAPH flag 已移除，PlannedExecutor 直接使用 WorkflowExecutor。
+Phase 10 起：本引擎为在线唯一主路径；ENABLE_WORKFLOW_GRAPH flag 已移除，
+             PlannedExecutor 直接使用 WorkflowExecutor。
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Optional
@@ -17,7 +18,6 @@ from src.agent.models.final_response import FinalResponse
 from src.agent.planner import Planner
 from src.agent.policies.budget_policy import RequestBudgetTracker
 from src.agent.policies.fallback_policy import FallbackPolicy
-from src.agent.request_router import RouteDecision
 from src.agent.response_synthesizer import ResponseSynthesizer
 
 if TYPE_CHECKING:
@@ -76,7 +76,7 @@ class ExecutionEngine:
     async def run(
         self,
         decision: "ExecutionDecision",
-        legacy_decision: RouteDecision,
+        legacy_decision: Any,
         query: str,
         *,
         chat_history: str = "",
@@ -86,65 +86,63 @@ class ExecutionEngine:
         budget_tracker: Optional[RequestBudgetTracker] = None,
         context: Optional["ExecutionContext"] = None,
     ) -> FinalResponse:
-        """根据 ExecutionDecision.mode 分发到对应执行器。
+        """Legacy route adapter. New code should call run_context()."""
+        from src.agent.models.execution_context import ExecutionContext
 
-        参数：
-            decision: Phase 3 引入的 ExecutionDecision，驱动分发逻辑。
-            legacy_decision: 原有 RouteDecision，传递给各 Executor 的内部逻辑。
-            query / chat_history / user_profile: 请求参数。
-            execution_plan: 可选预构建计划（planned 路径）。
-            event_callback: 步骤事件回调（planned 路径）。
-            budget_tracker: 预算追踪器（planned 路径）。
-            context: ExecutionContext（可选，Phase 2 引入），当前仅用于观测。
-        """
-        mode = decision.mode
-
-        if mode == "direct":
-            response = await self._direct.run(
+        return await self.run_context(
+            decision,
+            context
+            or ExecutionContext.from_legacy_decision(
                 legacy_decision,
                 query,
                 chat_history=chat_history,
                 user_profile=user_profile,
-                context=context,
-            )
+            ),
+            execution_plan=execution_plan,
+            event_callback=event_callback,
+            budget_tracker=budget_tracker,
+        )
+
+    async def run_context(
+        self,
+        decision: "ExecutionDecision",
+        context: "ExecutionContext",
+        *,
+        execution_plan: Optional["ExecutionPlan"] = None,
+        event_callback: Optional[EventCallback] = None,
+        budget_tracker: Optional[RequestBudgetTracker] = None,
+    ) -> FinalResponse:
+        """Context-first unified execution entry."""
+        mode = decision.mode
+
+        if mode == "direct":
+            response = await self._direct.run_context(context)
             self._attach_engine_events(
                 response,
                 decision=decision,
-                legacy_decision=legacy_decision,
                 context=context,
             )
             return response
 
         if mode == "planned":
             response = await self._run_planned_with_recovery(
-                legacy_decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
+                context,
                 execution_plan=execution_plan,
                 event_callback=event_callback,
                 budget_tracker=budget_tracker,
-                context=context,
             )
             self._attach_engine_events(
                 response,
                 decision=decision,
-                legacy_decision=legacy_decision,
                 context=context,
             )
             return response
 
         if mode == "react":
-            response = await self._react.run(
-                legacy_decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
-            )
+            response = await self._react.run_context(context)
             self._attach_engine_events(
                 response,
                 decision=decision,
-                legacy_decision=legacy_decision,
                 context=context,
             )
             return response
@@ -153,56 +151,39 @@ class ExecutionEngine:
 
     async def _run_planned_with_recovery(
         self,
-        legacy_decision: RouteDecision,
-        query: str,
+        context: "ExecutionContext",
         *,
-        chat_history: str,
-        user_profile: str,
         execution_plan: Optional["ExecutionPlan"],
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
-        context: Optional["ExecutionContext"],
     ) -> FinalResponse:
         try:
-            response = await self._planned.run(
-                legacy_decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
+            response = await self._run_planned_executor(
+                context,
                 execution_plan=execution_plan,
                 event_callback=event_callback,
                 budget_tracker=budget_tracker,
-                context=context,
             )
         except Exception as exc:
             return await self._recover_from_planned_exception(
-                legacy_decision,
-                query,
+                context,
                 error=exc,
-                chat_history=chat_history,
-                user_profile=user_profile,
                 event_callback=event_callback,
                 budget_tracker=budget_tracker,
             )
 
         return await self._recover_planned_response(
             response,
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+            context,
             event_callback=event_callback,
             budget_tracker=budget_tracker,
         )
 
     async def _recover_from_planned_exception(
         self,
-        legacy_decision: RouteDecision,
-        query: str,
+        context: "ExecutionContext",
         *,
         error: Exception,
-        chat_history: str,
-        user_profile: str,
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> FinalResponse:
@@ -211,17 +192,14 @@ class ExecutionEngine:
             "reason": "planned_execution_exception",
             "metadata": {
                 "halt_reason": str(error),
-                "task_type": legacy_decision.task_type,
+                "task_type": context.task_type,
                 "recovery_mode": "plan_repair",
                 "executed": False,
                 "source_plan_step_ids": [],
             },
         }
         repaired_plan = self._build_repair_plan(
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+            context,
             failed_response=None,
             error=str(error),
         )
@@ -233,11 +211,8 @@ class ExecutionEngine:
                 source_plan_step_ids=[],
             )
             try:
-                repaired_response = await self._planned.run(
-                    legacy_decision,
-                    query,
-                    chat_history=chat_history,
-                    user_profile=user_profile,
+                repaired_response = await self._run_planned_executor(
+                    context,
                     execution_plan=repaired_plan,
                     event_callback=event_callback,
                     budget_tracker=budget_tracker,
@@ -252,10 +227,7 @@ class ExecutionEngine:
                 ]
                 return await self._finalize_repaired_response(
                     repaired_response,
-                    legacy_decision,
-                    query,
-                    chat_history=chat_history,
-                    user_profile=user_profile,
+                    context,
                 )
             except Exception as repair_error:
                 fallback = {
@@ -263,36 +235,32 @@ class ExecutionEngine:
                     "reason": "plan_repair_failed",
                     "metadata": {
                         "halt_reason": str(repair_error),
-                        "task_type": legacy_decision.task_type,
+                        "task_type": context.task_type,
                     },
                 }
 
         return await self._run_react_fallback(
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+            context,
             planned_response=None,
-            fallback_entry=fallback
-            if fallback.get("strategy") == "react_fallback"
-            else {
-                "strategy": "react_fallback",
-                "reason": "planned_execution_exception",
-                "metadata": {
-                    "halt_reason": str(error),
-                    "task_type": legacy_decision.task_type,
-                },
-            },
+            fallback_entry=(
+                fallback
+                if fallback.get("strategy") == "react_fallback"
+                else {
+                    "strategy": "react_fallback",
+                    "reason": "planned_execution_exception",
+                    "metadata": {
+                        "halt_reason": str(error),
+                        "task_type": context.task_type,
+                    },
+                }
+            ),
         )
 
     async def _recover_planned_response(
         self,
         response: FinalResponse,
-        legacy_decision: RouteDecision,
-        query: str,
+        context: "ExecutionContext",
         *,
-        chat_history: str,
-        user_profile: str,
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> FinalResponse:
@@ -321,11 +289,8 @@ class ExecutionEngine:
         if strategy == "plan_repair":
             repaired = await self._attempt_plan_repair(
                 response,
-                legacy_decision,
-                query,
+                context,
                 fallback_entry=fallback,
-                chat_history=chat_history,
-                user_profile=user_profile,
                 event_callback=event_callback,
                 budget_tracker=budget_tracker,
             )
@@ -339,10 +304,7 @@ class ExecutionEngine:
 
         if strategy == "react_fallback" or fallback.get("strategy") == "react_fallback":
             return await self._run_react_fallback(
-                legacy_decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
+                context,
                 planned_response=response,
                 fallback_entry=fallback,
             )
@@ -352,20 +314,14 @@ class ExecutionEngine:
     async def _attempt_plan_repair(
         self,
         response: FinalResponse,
-        legacy_decision: RouteDecision,
-        query: str,
+        context: "ExecutionContext",
         *,
         fallback_entry: Dict[str, Any],
-        chat_history: str,
-        user_profile: str,
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> Optional[FinalResponse]:
         repaired_plan = self._build_repair_plan(
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+            context,
             failed_response=response,
             error=str((fallback_entry.get("metadata") or {}).get("halt_reason") or ""),
         )
@@ -378,11 +334,8 @@ class ExecutionEngine:
             executed=True,
             source_plan_step_ids=self._trace_step_ids(response),
         )
-        repaired_response = await self._planned.run(
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+        repaired_response = await self._run_planned_executor(
+            context,
             execution_plan=repaired_plan,
             event_callback=event_callback,
             budget_tracker=budget_tracker,
@@ -399,20 +352,13 @@ class ExecutionEngine:
 
         return await self._finalize_repaired_response(
             repaired_response,
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+            context,
         )
 
     async def _finalize_repaired_response(
         self,
         repaired_response: FinalResponse,
-        legacy_decision: RouteDecision,
-        query: str,
-        *,
-        chat_history: str,
-        user_profile: str,
+        context: "ExecutionContext",
     ) -> FinalResponse:
         next_fallback = (
             repaired_response.fallback_path[1]
@@ -442,10 +388,7 @@ class ExecutionEngine:
 
         if next_strategy in {"react_fallback", "plan_repair"}:
             return await self._run_react_fallback(
-                legacy_decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
+                context,
                 planned_response=repaired_response,
                 fallback_entry=next_fallback,
             )
@@ -453,42 +396,39 @@ class ExecutionEngine:
 
     def _build_repair_plan(
         self,
-        legacy_decision: RouteDecision,
-        query: str,
+        context: "ExecutionContext",
         *,
-        chat_history: str,
-        user_profile: str,
         failed_response: Optional[FinalResponse],
         error: str,
     ) -> Optional["ExecutionPlan"]:
-        repair_plan = getattr(self._planned, "repair_plan", None)
+        repair_plan = getattr(self._planned, "repair_plan_context", None)
         if not callable(repair_plan):
             return None
-        return repair_plan(
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
-            failed_response=failed_response,
-            error=error,
+        return repair_plan(context, failed_response=failed_response, error=error)
+
+    async def _run_planned_executor(
+        self,
+        context: "ExecutionContext",
+        *,
+        execution_plan: Optional["ExecutionPlan"],
+        event_callback: Optional[EventCallback],
+        budget_tracker: Optional[RequestBudgetTracker],
+    ) -> FinalResponse:
+        return await self._planned.run_context(
+            context,
+            execution_plan=execution_plan,
+            event_callback=event_callback,
+            budget_tracker=budget_tracker,
         )
 
     async def _run_react_fallback(
         self,
-        legacy_decision: RouteDecision,
-        query: str,
+        context: "ExecutionContext",
         *,
-        chat_history: str,
-        user_profile: str,
         planned_response: Optional[FinalResponse],
         fallback_entry: Dict[str, Any],
     ) -> FinalResponse:
-        react_response = await self._react.run(
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
-        )
+        react_response = await self._react.run_context(context)
         source_step_ids = (
             self._trace_step_ids(planned_response) if planned_response else []
         )
@@ -501,13 +441,16 @@ class ExecutionEngine:
 
         if planned_response is not None:
             react_response.execution_plan = planned_response.execution_plan
-            react_response.execution_trace = list(planned_response.execution_trace or [])
+            react_response.execution_trace = list(
+                planned_response.execution_trace or []
+            )
             react_response.route_decision = planned_response.route_decision
             react_response.budget_usage = planned_response.budget_usage
             react_response.versions = planned_response.versions
             react_response.audit_metadata = self._audit_with_recovery(
                 planned_response.audit_metadata,
                 react_entry,
+                react_response.audit_metadata,
             )
             react_response.sources = self._merge_unique_dicts(
                 list(planned_response.sources or []),
@@ -634,9 +577,11 @@ class ExecutionEngine:
         return ExecutionEvent(
             type="plan_repaired",
             payload={
-                "plan": repaired_plan.to_dict()
-                if hasattr(repaired_plan, "to_dict")
-                else repaired_plan,
+                "plan": (
+                    repaired_plan.to_dict()
+                    if hasattr(repaired_plan, "to_dict")
+                    else repaired_plan
+                ),
                 "fallback": fallback_entry,
             },
             source="planned",
@@ -646,8 +591,27 @@ class ExecutionEngine:
     def _audit_with_recovery(
         audit_metadata: Optional[Dict[str, Any]],
         fallback_entry: Dict[str, Any],
+        react_audit_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         payload = dict(audit_metadata or {})
+        planned_expected = set(payload.get("expected_mcp_tools") or [])
+        react_payload = dict(react_audit_metadata or {})
+        if react_payload:
+            payload["react_audit_metadata"] = react_payload
+            for key in (
+                "react_tools_used",
+                "react_mcp_tools_used",
+                "react_expected_mcp_tools",
+                "react_trace_count",
+            ):
+                if key in react_payload:
+                    payload[key] = react_payload[key]
+
+            react_mcp_names = set(react_payload.get("react_mcp_tools_used") or [])
+            react_mcp_names.update(react_payload.get("react_expected_mcp_tools") or [])
+            payload["react_tool_mismatch"] = (
+                sorted(react_mcp_names - planned_expected) if planned_expected else []
+            )
         payload["recovery"] = dict(fallback_entry)
         return payload
 
@@ -675,13 +639,36 @@ class ExecutionEngine:
     async def astream_events(
         self,
         decision: "ExecutionDecision",
-        legacy_decision: RouteDecision,
+        legacy_decision: Any,
         query: str,
         *,
         chat_history: str = "",
         user_profile: str = "",
         version: str = "v1",
         context: Optional["ExecutionContext"] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        if context is None:
+            from src.agent.models.execution_context import ExecutionContext
+
+            context = ExecutionContext.from_legacy_decision(
+                legacy_decision,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
+        async for event in self.astream_events_context(
+            decision,
+            context,
+            version=version,
+        ):
+            yield event
+
+    async def astream_events_context(
+        self,
+        decision: "ExecutionDecision",
+        context: "ExecutionContext",
+        *,
+        version: str = "v1",
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """统一的流式事件入口。
 
@@ -693,9 +680,9 @@ class ExecutionEngine:
             )
 
         agent_input = self._react.build_agent_input(
-            getattr(context, "query", query),
-            chat_history=getattr(context, "chat_history", chat_history),
-            user_profile=getattr(context, "user_profile", user_profile),
+            context.query,
+            chat_history=context.chat_history,
+            user_profile=context.user_profile,
         )
         async for event in self._react.astream_events(agent_input, version=version):
             yield event
@@ -703,21 +690,39 @@ class ExecutionEngine:
     def preview_plan(
         self,
         decision: "ExecutionDecision",
-        legacy_decision: RouteDecision,
+        legacy_decision: Any,
         query: str,
         *,
         chat_history: str = "",
         user_profile: str = "",
         execution_plan: Optional["ExecutionPlan"] = None,
     ) -> Optional["ExecutionPlan"]:
+        """Legacy preview adapter. New code should call preview_plan_context()."""
+        from src.agent.models.execution_context import ExecutionContext
+
+        return self.preview_plan_context(
+            decision,
+            ExecutionContext.from_legacy_decision(
+                legacy_decision,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            ),
+            execution_plan=execution_plan,
+        )
+
+    def preview_plan_context(
+        self,
+        decision: "ExecutionDecision",
+        context: "ExecutionContext",
+        *,
+        execution_plan: Optional["ExecutionPlan"] = None,
+    ) -> Optional["ExecutionPlan"]:
         """为 StreamingService 提供展示层所需的兼容计划视图。"""
         if decision.mode != "planned":
             return None
-        return self._planned.preview_plan(
-            legacy_decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+        return self._planned.preview_plan_context(
+            context,
             execution_plan=execution_plan,
         )
 
@@ -726,8 +731,8 @@ class ExecutionEngine:
         response: FinalResponse,
         *,
         decision: "ExecutionDecision",
-        legacy_decision: RouteDecision,
         context: Optional["ExecutionContext"],
+        legacy_decision: Optional[Any] = None,
     ) -> None:
         events = []
         if context is not None and getattr(context, "profile", None) is not None:
@@ -750,7 +755,16 @@ class ExecutionEngine:
         events.append(
             ExecutionEvent(
                 type="route_decided",
-                payload=legacy_decision.to_meta(),
+                payload=(
+                    context.profile.to_legacy_route_meta()
+                    if context is not None
+                    else (
+                        legacy_decision.to_meta()
+                        if legacy_decision is not None
+                        and hasattr(legacy_decision, "to_meta")
+                        else {}
+                    )
+                ),
                 source="router",
             ).to_dict()
         )

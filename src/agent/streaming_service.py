@@ -86,7 +86,8 @@ class BaseStreamingGenerator:
         self._governance_metrics = governance_metrics
         self._audit_logger = audit_logger
         self._agent_executor_factory = agent_executor_factory
-        # ExecutionEngine 为默认主执行入口；未注入时才回退到旧 TaskOrchestrator。
+        # ExecutionEngine is the online execution entry; legacy orchestrator
+        # injection is accepted only for old callers and is not used here.
         self._execution_engine = execution_engine
         self._task_state_runtime = task_state_runtime or TaskStateRuntimeService(memory)
 
@@ -790,12 +791,7 @@ class BaseStreamingGenerator:
         return self._agent_executor
 
     def _use_unified_execution_engine(self) -> bool:
-        from src.core.config import settings
-
-        return (
-            getattr(settings, "ENABLE_UNIFIED_EXECUTION_ENGINE", False)
-            and getattr(self, "_execution_engine", None) is not None
-        )
+        return getattr(self, "_execution_engine", None) is not None
 
     def _preview_execution_plan_for_streaming(
         self,
@@ -805,32 +801,28 @@ class BaseStreamingGenerator:
         *,
         chat_history: str,
         user_profile: str,
+        exec_context: Optional[Any] = None,
     ) -> Optional[ExecutionPlan]:
         """Return the planned-task preview used by legacy frontend events.
 
-        主展示路径应优先使用 `ExecutionEngine.preview_plan()`。
-        只有 unified engine 不可用时，才回退到
-        `TaskOrchestrator.build_execution_plan()` 以维持旧 planned 展示兼容。
+        主展示路径使用 `ExecutionEngine.preview_plan()`；legacy orchestrator
+        不再作为在线展示 fallback。
         """
-        if self._use_unified_execution_engine():
-            return self._execution_engine.preview_plan(
-                execution_decision,
-                decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
-            )
+        if not self._use_unified_execution_engine():
+            return None
 
-        if self._task_orchestrator and hasattr(
-            self._task_orchestrator, "build_execution_plan"
-        ):
-            return self._task_orchestrator.build_execution_plan(
-                decision,
-                query,
-                chat_history=chat_history,
-                user_profile=user_profile,
+        if hasattr(self._execution_engine, "preview_plan_context") and exec_context:
+            return self._execution_engine.preview_plan_context(
+                execution_decision,
+                exec_context,
             )
-        return None
+        return self._execution_engine.preview_plan(
+            execution_decision,
+            decision,
+            query,
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
 
     def _build_request_context(
         self,
@@ -867,8 +859,7 @@ class BaseStreamingGenerator:
     ) -> tuple[Any, Optional[Any], Optional[Any]]:
         """优先走 TaskProfile/ExecutionContext -> ExecutionDecision，保留 legacy 回退。
 
-        ENABLE_TASK_PROFILE / ENABLE_EXECUTION_CONTEXT / ENABLE_EXECUTION_DECISION
-        现仅为历史配置兼容位，不再切换此主流程。
+        历史 profile/context/decision feature flags 已退场，不再切换此主流程。
         """
         from src.agent.models.execution_context import ExecutionContext
         from src.agent.models.request_context import RequestContext
@@ -888,6 +879,7 @@ class BaseStreamingGenerator:
                 task_type=getattr(legacy_decision, "task_type", "open_domain_reasoning"),
                 confidence=getattr(legacy_decision, "confidence", 0.0),
                 matched_skills=getattr(legacy_decision, "matched_skills", []),
+                capability_hints=getattr(legacy_decision, "capability_hints", None),
                 reason=getattr(legacy_decision, "reason", ""),
                 expected_output_schema=getattr(
                     legacy_decision, "expected_output_schema", "generic_answer_v1"
@@ -943,19 +935,11 @@ class BaseStreamingGenerator:
         *,
         precomputed_profile: Optional[Any] = None,
     ) -> Optional[Any]:
-        """优先从 TaskProfile 派生 RouteDecision；仅无 profile 时回退 route()。"""
+        """Derive legacy metadata only from an already resolved TaskProfile."""
         if precomputed_profile is not None and hasattr(
             precomputed_profile, "to_legacy_route_decision"
         ):
             return precomputed_profile.to_legacy_route_decision()
-
-        router = getattr(self, "_request_router", None)
-        if router and hasattr(router, "route"):
-            candidate = router.route(query)
-            if isinstance(getattr(candidate, "route", None), str) and hasattr(
-                candidate, "to_meta"
-            ):
-                return candidate
         return None
 
     def _build_frontend_plan_steps(
@@ -1172,22 +1156,28 @@ class BaseStreamingGenerator:
                     else "本轮对话已禁用长期记忆"
                 )
 
-        # 默认主路径：ExecutionEngine。
-        # 兼容层：flag=False 或 execution_engine 未配置时，回退到旧 TaskOrchestrator。
-        use_new_engine = self._use_unified_execution_engine()
+        if not self._use_unified_execution_engine():
+            raise ValueError("execution engine is not configured")
 
-        if use_new_engine:
-            exec_decision = execution_decision
-            if exec_decision is None or exec_context is None:
-                exec_decision, _, exec_context = self._resolve_execution_decision(
-                    query,
-                    decision,
-                    use_long_term_memory=use_long_term_memory,
-                    chat_history=chat_history,
-                    user_profile=user_profile,
+        exec_decision = execution_decision
+        if exec_decision is None or exec_context is None:
+            exec_decision, _, exec_context = self._resolve_execution_decision(
+                query,
+                decision,
+                use_long_term_memory=use_long_term_memory,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
+
+        with latency.measure("agent_total_ms"):
+            if hasattr(self._execution_engine, "run_context") and exec_context:
+                result = await self._execution_engine.run_context(
+                    exec_decision,
+                    exec_context,
+                    execution_plan=execution_plan,
+                    event_callback=event_callback,
                 )
-
-            with latency.measure("agent_total_ms"):
+            else:
                 result = await self._execution_engine.run(
                     exec_decision,
                     decision,
@@ -1198,22 +1188,8 @@ class BaseStreamingGenerator:
                     event_callback=event_callback,
                     context=exec_context,
                 )
-            latency.set_meta("execution_engine", "unified")
-            latency.set_meta("exec_mode", exec_decision.mode)
-        else:
-            # 旧路径兼容层（ENABLE_UNIFIED_EXECUTION_ENGINE=False 时或 engine 未注入时）
-            if not self._task_orchestrator:
-                raise ValueError("task orchestrator is not configured")
-            with latency.measure("agent_total_ms"):
-                result = await self._task_orchestrator.run(
-                    decision,
-                    query,
-                    chat_history=chat_history,
-                    user_profile=user_profile,
-                    execution_plan=execution_plan,
-                    event_callback=event_callback,
-                )
-            latency.set_meta("execution_engine", "legacy_orchestrator")
+        latency.set_meta("execution_engine", "unified")
+        latency.set_meta("exec_mode", exec_decision.mode)
 
         return result
 
@@ -1385,9 +1361,6 @@ class BaseStreamingGenerator:
                         effective_query,
                         precomputed_profile=precomputed_profile,
                     )
-            elif router and hasattr(router, "route"):
-                with latency.measure("route_decision_ms"):
-                    decision = self._resolve_legacy_route_decision(effective_query)
 
             execution_decision, profile, _exec_context = self._resolve_execution_decision(
                 effective_query,
@@ -1436,6 +1409,7 @@ class BaseStreamingGenerator:
                     effective_query,
                     chat_history=request_context.chat_history,
                     user_profile=request_context.user_profile,
+                    exec_context=_exec_context,
                 )
                 if actual_plan is not None:
                     plan_steps = self._build_frontend_plan_steps(
@@ -1540,11 +1514,9 @@ class BaseStreamingGenerator:
                     "user_profile": request_context.user_profile,
                 }
                 agent_started = time.perf_counter()
-                if (
-                    execution_path == "react"
-                    and decision
-                    and self._use_unified_execution_engine()
-                ):
+                if execution_path == "react" and decision:
+                    if not self._use_unified_execution_engine():
+                        raise ValueError("execution engine is not configured")
                     _, _, exec_context = self._resolve_execution_decision(
                         effective_query,
                         decision,
@@ -1552,19 +1524,25 @@ class BaseStreamingGenerator:
                         chat_history=agent_input.get("chat_history", ""),
                         user_profile=agent_input.get("user_profile", ""),
                     )
-                    raw_events = self._execution_engine.astream_events(
-                        execution_decision,
-                        decision,
-                        effective_query,
-                        chat_history=agent_input.get("chat_history", ""),
-                        user_profile=agent_input.get("user_profile", ""),
-                        version="v1",
-                        context=exec_context,
-                    )
+                    if hasattr(self._execution_engine, "astream_events_context"):
+                        raw_events = self._execution_engine.astream_events_context(
+                            execution_decision,
+                            exec_context,
+                            version="v1",
+                        )
+                    else:
+                        raw_events = self._execution_engine.astream_events(
+                            execution_decision,
+                            decision,
+                            effective_query,
+                            chat_history=agent_input.get("chat_history", ""),
+                            user_profile=agent_input.get("user_profile", ""),
+                            version="v1",
+                            context=exec_context,
+                        )
                 else:
-                    raw_events = self._ensure_agent_executor().astream_events(
-                        agent_input,
-                        version="v1",
+                    raise ValueError(
+                        f"unsupported streaming execution path: {execution_path!r}"
                     )
 
                 async for raw_event in raw_events:
@@ -2167,10 +2145,8 @@ class StreamingService(BaseStreamingGenerator):
                     effective_query,
                     precomputed_profile=precomputed_profile,
                 )
-            elif router and hasattr(router, "route"):
-                decision = self._resolve_legacy_route_decision(effective_query)
 
-            execution_decision, profile, _ = self._resolve_execution_decision(
+            execution_decision, profile, exec_context = self._resolve_execution_decision(
                 effective_query,
                 decision,
                 use_long_term_memory=True,
@@ -2184,7 +2160,6 @@ class StreamingService(BaseStreamingGenerator):
                     precomputed_profile=profile,
                 )
             execution_path = execution_decision.mode
-            use_unified_engine = self._use_unified_execution_engine()
             task_state_started = self._apply_task_state_turn_started(
                 session_id=self._memory_session_id(),
                 turn_id=request_id,
@@ -2197,7 +2172,7 @@ class StreamingService(BaseStreamingGenerator):
             )
             if decision and (
                 execution_path in ("direct", "planned")
-                or (execution_path == "react" and use_unified_engine)
+                or execution_path == "react"
             ):
                 final_resp = asyncio.run(
                     self._run_orchestrated_path(
@@ -2208,6 +2183,7 @@ class StreamingService(BaseStreamingGenerator):
                         chat_history=self._format_chat_history(memory_context),
                         user_profile=self._format_user_profile(),
                         execution_decision=execution_decision,
+                        exec_context=exec_context,
                     )
                 )
                 output = final_resp.answer

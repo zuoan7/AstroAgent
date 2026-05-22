@@ -243,6 +243,7 @@ def test_streaming_updates_task_state_before_assistant_message(tmp_path, monkeyp
         confidence=0.82,
         reason="test",
         matched_skills=["weather-lookup"],
+        capability_hints=["weather-lookup"],
         expected_output_schema="observation_answer_v1",
     )
     plan = ExecutionPlan(
@@ -250,14 +251,23 @@ def test_streaming_updates_task_state_before_assistant_message(tmp_path, monkeyp
         output_schema="observation_answer_v1",
         steps=[PlanStep(id="weather", kind="tool", title="查询天气", skill="weather-lookup")],
     )
+    profile = TaskProfile.from_legacy_route(
+        route=decision.route,
+        task_type=decision.task_type,
+        confidence=decision.confidence,
+        matched_skills=decision.matched_skills,
+        capability_hints=decision.capability_hints,
+        reason=decision.reason,
+        expected_output_schema=decision.expected_output_schema,
+    )
 
-    async def fake_run(dec, query, **kwargs):
+    async def fake_run_context(exec_decision, context, **kwargs):
         return FinalResponse(
             answer="今晚适合观测。",
             summary="今晚适合观测。",
             confidence=0.88,
-            route=dec.route,
-            task_type=dec.task_type,
+            route=context.profile.legacy_route,
+            task_type=context.profile.task_type,
             execution_plan=plan.to_dict(),
             execution_trace=[
                 {"step_id": "weather", "title": "查询天气", "status": "success"},
@@ -268,10 +278,15 @@ def test_streaming_updates_task_state_before_assistant_message(tmp_path, monkeyp
         agent_executor=None,
         memory=memory,
         user_id="user",
-        request_router=SimpleNamespace(route=lambda q: decision),
-        task_orchestrator=SimpleNamespace(
-            build_execution_plan=lambda *a, **kw: plan,
-            run=fake_run,
+        request_router=SimpleNamespace(
+            profile=lambda q: profile,
+            route=lambda q: (_ for _ in ()).throw(
+                AssertionError("streaming should not call route()")
+            ),
+        ),
+        execution_engine=SimpleNamespace(
+            preview_plan_context=lambda *a, **kw: plan,
+            run_context=fake_run_context,
         ),
     )
 
@@ -316,22 +331,33 @@ def test_streaming_smalltalk_does_not_update_task_state(tmp_path, monkeypatch):
         confidence=0.98,
         reason="matched_smalltalk_pattern",
     )
+    profile = TaskProfile.from_legacy_route(
+        route=decision.route,
+        task_type=decision.task_type,
+        confidence=decision.confidence,
+        reason=decision.reason,
+    )
 
-    async def fake_run(dec, query, **kwargs):
+    async def fake_run_context(exec_decision, context, **kwargs):
         return FinalResponse(
             answer="你好。",
             summary="你好。",
             confidence=0.98,
-            route=dec.route,
-            task_type=dec.task_type,
+            route=context.profile.legacy_route,
+            task_type=context.profile.task_type,
         )
 
     service = StreamingService(
         agent_executor=None,
         memory=memory,
         user_id="user",
-        request_router=SimpleNamespace(route=lambda q: decision),
-        task_orchestrator=SimpleNamespace(run=fake_run),
+        request_router=SimpleNamespace(
+            profile=lambda q: profile,
+            route=lambda q: (_ for _ in ()).throw(
+                AssertionError("streaming should not call route()")
+            ),
+        ),
+        execution_engine=SimpleNamespace(run_context=fake_run_context),
     )
 
     asyncio.run(_collect_events(service.generate_events("你好")))
@@ -357,30 +383,35 @@ def test_follow_up_query_is_augmented_for_router(tmp_path, monkeypatch):
     )
     captured_queries: list[str] = []
 
-    def route(query):
+    def profile(query):
         captured_queries.append(query)
-        return RouteDecision(
+        return TaskProfile.from_legacy_route(
             route="direct_task",
             task_type="simple_qa",
             confidence=0.8,
             reason="test",
         )
 
-    async def fake_run(dec, query, **kwargs):
+    async def fake_run_context(exec_decision, context, **kwargs):
         return FinalResponse(
             answer="继续处理 M42。",
             summary="继续处理 M42。",
             confidence=0.7,
-            route=dec.route,
-            task_type=dec.task_type,
+            route=context.profile.legacy_route,
+            task_type=context.profile.task_type,
         )
 
     service = StreamingService(
         agent_executor=None,
         memory=memory,
         user_id="user",
-        request_router=SimpleNamespace(route=route),
-        task_orchestrator=SimpleNamespace(run=fake_run),
+        request_router=SimpleNamespace(
+            profile=profile,
+            route=lambda q: (_ for _ in ()).throw(
+                AssertionError("streaming should not call route()")
+            ),
+        ),
+        execution_engine=SimpleNamespace(run_context=fake_run_context),
     )
 
     asyncio.run(_collect_events(service.generate_events("下一步")))

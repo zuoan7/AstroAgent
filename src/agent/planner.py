@@ -13,6 +13,7 @@ from src.agent.prompts import get_prompt_renderer
 from src.agent.skill_param_builder import SkillParamBuilder
 from src.core.config import settings
 from src.skills import registry
+from src.tools.selector import ToolSelector
 
 
 class Planner:
@@ -27,6 +28,7 @@ class Planner:
         self._param_builder = SkillParamBuilder(None)
         self._capabilities = CapabilityRegistry()
         self._capability_plan_adapter = CapabilityPlanAdapter(self._capabilities)
+        self._tool_selector = ToolSelector()
 
     def plan(
         self,
@@ -38,7 +40,7 @@ class Planner:
     ) -> ExecutionPlan:
         """Deprecated compatibility entry returning ExecutionPlan.
 
-        新 planned 主路径应优先使用 `plan_graph()` 获取 WorkflowGraph；
+        新 planned 主路径应优先使用 `plan_graph_for_profile()` 获取 WorkflowGraph；
         本方法仅为旧调用方/旧序列化输出提供兼容表示。
         """
         graph = self.plan_graph(
@@ -65,31 +67,58 @@ class Planner:
         初版复用现有模板/通用规划逻辑，但对外直接返回 WorkflowGraph，
         使 graph 成为 planned 路径的优先计划表达。
         """
-        plan = self._resolve_plan(
+        plan = self._resolve_plan_from_fields(
             query=query,
-            route_decision=route_decision,
+            task_type=getattr(
+                route_decision, "task_type", "observation_recommendation"
+            ),
+            output_schema=getattr(
+                route_decision, "expected_output_schema", "generic_answer_v1"
+            ),
+            capability_hints=list(
+                getattr(route_decision, "capability_hints", []) or []
+            ),
             chat_history=chat_history,
             user_profile=user_profile,
         )
         return WorkflowGraph.from_execution_plan(plan)
 
-    def _resolve_plan(
+    def plan_graph_for_profile(
         self,
         *,
         query: str,
-        route_decision: Any,
+        profile: Any,
+        chat_history: str = "",
+        user_profile: str = "",
+    ) -> WorkflowGraph:
+        """Primary planned-path entry returning a WorkflowGraph from TaskProfile."""
+        plan = self._resolve_plan_from_fields(
+            query=query,
+            task_type=getattr(profile, "task_type", "observation_recommendation"),
+            output_schema=getattr(
+                profile, "expected_output_schema", "generic_answer_v1"
+            ),
+            capability_hints=list(getattr(profile, "capability_hints", []) or []),
+            chat_history=chat_history,
+            user_profile=user_profile,
+        )
+        return WorkflowGraph.from_execution_plan(plan)
+
+    def _resolve_plan_from_fields(
+        self,
+        *,
+        query: str,
+        task_type: str,
+        output_schema: str,
+        capability_hints: List[str],
         chat_history: str = "",
         user_profile: str = "",
     ) -> ExecutionPlan:
-        task_type = getattr(route_decision, "task_type", "observation_recommendation")
-        output_schema = getattr(route_decision, "expected_output_schema", "generic_answer_v1")
-        matched_skills = list(getattr(route_decision, "matched_skills", []) or [])
-
         plan = self._build_template_plan(
             query=query,
             task_type=task_type,
             output_schema=output_schema,
-            matched_skills=matched_skills,
+            capability_hints=capability_hints,
             chat_history=chat_history,
             user_profile=user_profile,
         )
@@ -100,7 +129,7 @@ class Planner:
             query=query,
             task_type=task_type,
             output_schema=output_schema,
-            matched_skills=matched_skills,
+            capability_hints=capability_hints,
             chat_history=chat_history,
             user_profile=user_profile,
         )
@@ -122,11 +151,11 @@ class Planner:
         query: str,
         task_type: str,
         output_schema: str,
-        matched_skills: List[str],
+        capability_hints: List[str],
         chat_history: str = "",
         user_profile: str = "",
     ) -> ExecutionPlan:
-        skill_set = set(matched_skills)
+        skill_set = set(capability_hints)
         steps: List[PlanStep] = []
         rationale = ""
 
@@ -192,7 +221,7 @@ class Planner:
                         retry_policy=1,
                         timeout_ms=15000,
                     )
-            )
+                )
             if self._observation_plan_needs_position_step(query):
                 steps.append(
                     make_step(
@@ -213,7 +242,11 @@ class Planner:
                 )
         elif task_type == "celestial_event_analysis":
             rationale = "天象分析以天象事件检索为核心，必要时补充观测条件。"
-            event_group = "event_context" if ("weather-lookup" in skill_set or "天气" in query) else None
+            event_group = (
+                "event_context"
+                if ("weather-lookup" in skill_set or "天气" in query)
+                else None
+            )
             steps.append(
                 make_step(
                     planner_source="template",
@@ -249,8 +282,14 @@ class Planner:
                     )
                 )
         elif task_type == "deep_sky_guidance":
-            rationale = "深空指导以目标资料为核心；涉及今晚可见性或目标比较时补充位置计算。"
-            deep_sky_group = "deep_sky_context" if self._deep_sky_needs_position_step(query) else None
+            rationale = (
+                "深空指导以目标资料为核心；涉及今晚可见性或目标比较时补充位置计算。"
+            )
+            deep_sky_group = (
+                "deep_sky_context"
+                if self._deep_sky_needs_position_step(query)
+                else None
+            )
             steps.append(
                 make_step(
                     planner_source="template",
@@ -361,31 +400,75 @@ class Planner:
         query: str,
         task_type: str,
         output_schema: str,
-        matched_skills: List[str],
+        capability_hints: List[str],
         chat_history: str,
         user_profile: str,
     ) -> ExecutionPlan:
         steps: List[PlanStep] = []
-        for index, skill_name in enumerate(matched_skills, start=1):
-            steps.append(
-                self._make_step(
-                    query=query,
-                    chat_history=chat_history,
-                    user_profile=user_profile,
-                    planner_source="generic",
-                    id=f"tool_{index}",
-                    title=f"执行 {skill_name}",
-                    description=f"调用 {skill_name} 获取回答所需信息",
-                    skill=skill_name,
-                    purpose=f"调用 {skill_name} 获取回答证据",
-                    success_criteria="返回可用于回答用户问题的工具结果",
-                    evidence_key=skill_name,
-                    fallback_strategy="react_fallback",
-                    parallel_group="generic_parallel" if len(matched_skills) > 1 else None,
-                    retry_policy=1,
-                    timeout_ms=10000,
+        capability_hints = list(dict.fromkeys(capability_hints))
+        if not capability_hints:
+            selected_tool = self._tool_selector.select(query)
+            if selected_tool is not None:
+                steps.append(
+                    self._make_tool_step(
+                        query=query,
+                        planner_source="generic",
+                        id="tool_1",
+                        title=f"执行 {selected_tool.tool_name}",
+                        description=f"调用 {selected_tool.tool_name} 获取回答所需信息",
+                        tool_name=selected_tool.tool_name,
+                        params=selected_tool.params,
+                        purpose=f"调用 {selected_tool.tool_name} 获取回答证据",
+                        success_criteria="返回可用于回答用户问题的工具结果",
+                        evidence_key=selected_tool.tool_name,
+                        fallback_strategy="react_fallback",
+                        retry_policy=1,
+                        timeout_ms=10000,
+                    )
                 )
-            )
+
+        parallel_group = "generic_parallel" if len(capability_hints) > 1 else None
+        for index, capability_name in enumerate(capability_hints, start=1):
+            if self._capabilities.has_skill(capability_name):
+                steps.append(
+                    self._make_step(
+                        query=query,
+                        chat_history=chat_history,
+                        user_profile=user_profile,
+                        planner_source="generic",
+                        id=f"tool_{index}",
+                        title=f"执行 {capability_name}",
+                        description=f"调用 {capability_name} 获取回答所需信息",
+                        skill=capability_name,
+                        purpose=f"调用 {capability_name} 获取回答证据",
+                        success_criteria="返回可用于回答用户问题的工具结果",
+                        evidence_key=capability_name,
+                        fallback_strategy="react_fallback",
+                        parallel_group=parallel_group,
+                        retry_policy=1,
+                        timeout_ms=10000,
+                    )
+                )
+                continue
+
+            if self._capabilities.has_tool(capability_name):
+                steps.append(
+                    self._make_tool_step(
+                        query=query,
+                        planner_source="generic",
+                        id=f"tool_{index}",
+                        title=f"执行 {capability_name}",
+                        description=f"调用 {capability_name} 获取回答所需信息",
+                        tool_name=capability_name,
+                        purpose=f"调用 {capability_name} 获取回答证据",
+                        success_criteria="返回可用于回答用户问题的工具结果",
+                        evidence_key=capability_name,
+                        fallback_strategy="react_fallback",
+                        parallel_group=parallel_group,
+                        retry_policy=1,
+                        timeout_ms=10000,
+                    )
+                )
 
         planner_type = "template"
         rationale = "按已识别技能生成通用执行计划。"
@@ -418,7 +501,10 @@ class Planner:
         chat_history: str,
         user_profile: str,
     ) -> Optional[ExecutionPlan]:
-        if not getattr(settings, "ENABLE_LLM_PLANNER_FALLBACK", False) or self._llm is None:
+        if (
+            not getattr(settings, "ENABLE_LLM_PLANNER_FALLBACK", False)
+            or self._llm is None
+        ):
             return None
 
         skill_specs = registry.get_skill_specs()
@@ -470,7 +556,11 @@ class Planner:
                     purpose=str(item.get("reason") or f"调用 {skill} 获取信息"),
                     success_criteria="返回可用于回答用户问题的工具结果",
                     evidence_key=skill,
-                    fallback_strategy="react_fallback" if bool(item.get("required", True)) else "continue",
+                    fallback_strategy=(
+                        "react_fallback"
+                        if bool(item.get("required", True))
+                        else "continue"
+                    ),
                     required=bool(item.get("required", True)),
                     retry_policy=1,
                     timeout_ms=12000,
@@ -568,6 +658,49 @@ class Planner:
             timeout_ms=timeout_ms,
         )
 
+    def _make_tool_step(
+        self,
+        *,
+        query: str,
+        planner_source: str,
+        id: str,
+        title: str,
+        description: str,
+        tool_name: str,
+        params: Optional[dict[str, Any]] = None,
+        purpose: str = "",
+        success_criteria: str = "",
+        fallback_strategy: str = "",
+        evidence_key: str = "",
+        depends_on: Optional[list[str]] = None,
+        required: bool = True,
+        parallel_group: Optional[str] = None,
+        retry_policy: int = 0,
+        timeout_ms: Optional[int] = None,
+    ) -> PlanStep:
+        step_params = (
+            dict(params)
+            if isinstance(params, dict)
+            else self._build_tool_step_params(tool_name, query)
+        )
+        return self._capability_plan_adapter.make_tool_step(
+            tool_name=tool_name,
+            id=id,
+            title=title,
+            description=description,
+            params=step_params,
+            purpose=purpose,
+            success_criteria=success_criteria,
+            fallback_strategy=fallback_strategy,
+            evidence_key=evidence_key,
+            depends_on=list(depends_on or []),
+            planner_source=planner_source,
+            required=required,
+            parallel_group=parallel_group,
+            retry_policy=retry_policy,
+            timeout_ms=timeout_ms,
+        )
+
     def _build_step_params(
         self,
         skill_name: str,
@@ -583,6 +716,16 @@ class Planner:
                 user_profile=user_profile,
             )
             return builder.build_for_capability("skill", skill_name, query)
+        except Exception:
+            return {}
+
+    def _build_tool_step_params(
+        self,
+        tool_name: str,
+        query: str,
+    ) -> dict[str, Any]:
+        try:
+            return CapabilityParamBuilder.build_atomic_tool_params(tool_name, query)
         except Exception:
             return {}
 
@@ -695,18 +838,21 @@ class Planner:
         has_equipment_constraint = bool(
             re.search(r"\b\d{1,2}\s*x\s*\d{2}\b", query, re.IGNORECASE)
         ) or bool(re.search(r"\d{1,2}\s*寸", query))
-        return any(
-            token in query
-            for token in (
-                "双筒",
-                "DOB",
-                "深空",
-                "星云",
-                "星系",
-                "星团",
-                "从月亮到深空",
+        return (
+            any(
+                token in query
+                for token in (
+                    "双筒",
+                    "DOB",
+                    "深空",
+                    "星云",
+                    "星系",
+                    "星团",
+                    "从月亮到深空",
+                )
             )
-        ) or has_equipment_constraint
+            or has_equipment_constraint
+        )
 
     def _observation_plan_needs_position_step(self, query: str) -> bool:
         target_count = sum(
@@ -715,18 +861,24 @@ class Planner:
             if target in query
         )
         has_sequence_intent = any(
-            token in query for token in ("先看", "先观测", "优先看", "观测顺序", "顺序", "还是")
+            token in query
+            for token in ("先看", "先观测", "优先看", "观测顺序", "顺序", "还是")
         )
         return target_count >= 2 and has_sequence_intent
 
     def _deep_sky_needs_position_step(self, query: str) -> bool:
-        has_time = any(token in query for token in ("今晚", "明晚", "这周末", "周末", "今天", "明天"))
-        has_visibility = any(token in query for token in ("能看到", "能看见", "适合", "哪个更", "差别"))
+        has_time = any(
+            token in query
+            for token in ("今晚", "明晚", "这周末", "周末", "今天", "明天")
+        )
+        has_visibility = any(
+            token in query for token in ("能看到", "能看见", "适合", "哪个更", "差别")
+        )
         return has_time and has_visibility
 
     def _photography_needs_deep_sky_context(self, query: str) -> bool:
         return bool(
-            re.search(r"\b(M\s?\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b", query, re.IGNORECASE)
-        ) or any(
-            token in query for token in ("猎户座大星云", "仙女座星系")
-        )
+            re.search(
+                r"\b(M\s?\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b", query, re.IGNORECASE
+            )
+        ) or any(token in query for token in ("猎户座大星云", "仙女座星系"))

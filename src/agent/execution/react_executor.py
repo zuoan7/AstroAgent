@@ -1,10 +1,5 @@
-"""ReactExecutor — ReAct 任务执行器（Phase 4 引入）。
+"""ReactExecutor — context-first ReAct executor."""
 
-React 执行逻辑的独立入口，解耦其与 StreamingService 的强绑定。
-当前同时提供：
-1. 非流式 run()：返回统一 FinalResponse，供 ExecutionEngine.run() 主路径使用
-2. 流式 astream_events()：保留给前端事件适配层消费
-"""
 from __future__ import annotations
 
 import asyncio
@@ -16,23 +11,21 @@ from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.execution_trace_entry import ExecutionTraceEntry
 from src.agent.models.final_response import FinalResponse
 from src.agent.output_parser import extract_final_answer_text
-from src.agent.request_router import RouteDecision
+from src.agent.execution.react_trace_adapter import ReactToolTraceAdapter
 
 
 class ReactExecutor:
-    """React 执行器。
-
-    非流式 run() 用于统一主执行入口；
-    astream_events() 继续承担原始流式事件代理职责。
-    """
+    """React 执行器。"""
 
     def __init__(
         self,
         agent_executor: Optional[Any] = None,
         agent_executor_factory: Optional[Callable[[], Any]] = None,
+        trace_adapter: Optional[ReactToolTraceAdapter] = None,
     ) -> None:
         self._agent_executor = agent_executor
         self._agent_executor_factory = agent_executor_factory
+        self._trace_adapter = trace_adapter or ReactToolTraceAdapter()
 
     def ensure_executor(self) -> Any:
         if self._agent_executor is not None:
@@ -55,30 +48,24 @@ class ReactExecutor:
             "user_profile": user_profile,
         }
 
-    async def run(
-        self,
-        decision: RouteDecision,
-        query: str,
-        *,
-        chat_history: str = "",
-        user_profile: str = "",
-    ) -> FinalResponse:
-        """统一的 react 非流式执行入口。
+    async def run_context(self, context: Any) -> FinalResponse:
+        """Context-first react non-streaming execution entry.
 
         优先复用 executor.invoke()；若底层只支持流式，则退化为聚合 astream_events()。
         """
         agent_input = self.build_agent_input(
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+            context.query,
+            chat_history=context.chat_history,
+            user_profile=context.user_profile,
         )
         executor = self.ensure_executor()
+        route_meta = context.profile.to_legacy_route_meta()
 
         if hasattr(executor, "invoke"):
             result = await asyncio.to_thread(executor.invoke, agent_input)
-            return self._final_response_from_invoke(decision, result)
+            return self._final_response_from_invoke(route_meta, result)
 
-        return await self._final_response_from_stream(decision, agent_input)
+        return await self._final_response_from_stream(route_meta, agent_input)
 
     async def astream_events(
         self,
@@ -93,7 +80,7 @@ class ReactExecutor:
 
     def _final_response_from_invoke(
         self,
-        decision: RouteDecision,
+        route_meta: Dict[str, Any],
         result: Any,
     ) -> FinalResponse:
         payload = result if isinstance(result, dict) else {}
@@ -107,29 +94,43 @@ class ReactExecutor:
         if not answer and output:
             answer = output.strip()
 
+        execution_trace = self._trace_from_intermediate_steps(
+            payload.get("intermediate_steps") if isinstance(payload, dict) else None
+        )
+        tools_used = [
+            self._trace_adapter.tool_usage_from_entry(entry)
+            for entry in execution_trace
+        ]
+        execution_events = self._events_from_trace(execution_trace)
+        execution_events.append(
+            ExecutionEvent(
+                type="answer_ready",
+                payload={
+                    "answer": answer,
+                    "summary": answer,
+                    "route": route_meta.get("route", ""),
+                    "task_type": route_meta.get("task_type", ""),
+                },
+                source="react",
+            ).to_dict()
+        )
+
+        trace_payload = [entry.to_dict() for entry in execution_trace]
         return FinalResponse(
             answer=answer,
             summary=answer,
-            route=decision.route,
-            task_type=decision.task_type,
-            route_decision=decision.to_meta() if hasattr(decision, "to_meta") else None,
-            execution_events=[
-                ExecutionEvent(
-                    type="answer_ready",
-                    payload={
-                        "answer": answer,
-                        "summary": answer,
-                        "route": decision.route,
-                        "task_type": decision.task_type,
-                    },
-                    source="react",
-                ).to_dict()
-            ],
+            tools_used=tools_used,
+            execution_trace=trace_payload,
+            route=str(route_meta.get("route", "")),
+            task_type=str(route_meta.get("task_type", "")),
+            route_decision=route_meta,
+            execution_events=execution_events,
+            audit_metadata=self._build_react_audit_metadata(trace_payload),
         )
 
     async def _final_response_from_stream(
         self,
-        decision: RouteDecision,
+        route_meta: Dict[str, Any],
         agent_input: Dict[str, Any],
     ) -> FinalResponse:
         chunks: List[str] = []
@@ -147,64 +148,38 @@ class ReactExecutor:
             if event_type == "on_tool_start":
                 tool_runs[run_id] = {
                     "name": data.get("name") or data.get("tool") or "unknown_tool",
-                    "input": "" if data.get("input") is None else str(data.get("input")),
+                    "input": data.get("input"),
                     "start_time": time.perf_counter(),
                 }
-                execution_events.append(
-                    ExecutionEvent(
-                        type="tool_called",
-                        payload={
-                            "run_id": run_id,
-                            "tool": tool_runs[run_id]["name"],
-                            "input": tool_runs[run_id]["input"],
-                            "status": "running",
-                        },
-                        source="react",
-                    ).to_dict()
-                )
                 continue
 
             if event_type == "on_tool_end":
                 meta = tool_runs.pop(run_id, {})
-                tool_name = meta.get("name") or data.get("name") or data.get("tool") or "unknown_tool"
+                tool_name = (
+                    meta.get("name")
+                    or data.get("name")
+                    or data.get("tool")
+                    or "unknown_tool"
+                )
                 tool_input = meta.get("input", "")
-                tool_output = "" if data.get("output") is None else str(data.get("output"))
+                tool_output = data.get("output")
                 duration_sec = None
                 if meta.get("start_time") is not None:
                     duration_sec = time.perf_counter() - meta["start_time"]
-                status = "error" if "error" in tool_output.lower() else "success"
+                trace_entry = self._trace_adapter.build_entry(
+                    step_id=run_id,
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    tool_output=tool_output,
+                    duration_sec=duration_sec,
+                )
+                execution_trace.append(trace_entry.to_dict())
                 tools_used.append(
-                    {
-                        "run_id": run_id,
-                        "tool": tool_name,
-                        "input": tool_input,
-                        "output_summary": self._preview_text(tool_output, 240),
-                        "duration_sec": duration_sec,
-                        "status": status,
-                    }
+                    self._trace_adapter.tool_usage_from_entry(trace_entry)
                 )
-                execution_trace.append(
-                    ExecutionTraceEntry.from_react_tool(
-                        step_id=run_id,
-                        tool_name=tool_name,
-                        tool_input=tool_input,
-                        output_summary=self._preview_text(tool_output, 240),
-                        status=status,
-                        duration_sec=duration_sec,
-                    ).to_dict()
-                )
-                execution_events.append(
-                    ExecutionEvent(
-                        type="tool_result",
-                        payload={
-                            "run_id": run_id,
-                            "tool": tool_name,
-                            "output_summary": self._preview_text(tool_output, 240),
-                            "status": status,
-                            "duration_sec": duration_sec,
-                        },
-                        source="react",
-                    ).to_dict()
+                execution_events.extend(
+                    event.to_dict()
+                    for event in trace_entry.to_execution_events(source="react")
                 )
                 continue
 
@@ -225,8 +200,8 @@ class ReactExecutor:
                 payload={
                     "answer": answer,
                     "summary": answer,
-                    "route": decision.route,
-                    "task_type": decision.task_type,
+                    "route": route_meta.get("route", ""),
+                    "task_type": route_meta.get("task_type", ""),
                 },
                 source="react",
             ).to_dict()
@@ -238,10 +213,77 @@ class ReactExecutor:
             tools_used=tools_used,
             execution_trace=execution_trace,
             execution_events=execution_events,
-            route=decision.route,
-            task_type=decision.task_type,
-            route_decision=decision.to_meta() if hasattr(decision, "to_meta") else None,
+            route=str(route_meta.get("route", "")),
+            task_type=str(route_meta.get("task_type", "")),
+            route_decision=route_meta,
+            audit_metadata=self._build_react_audit_metadata(execution_trace),
         )
+
+    def _trace_from_intermediate_steps(
+        self,
+        intermediate_steps: Any,
+    ) -> List[ExecutionTraceEntry]:
+        entries: List[ExecutionTraceEntry] = []
+        if not isinstance(intermediate_steps, list):
+            return entries
+
+        for index, item in enumerate(intermediate_steps, start=1):
+            action, observation = self._split_intermediate_step(item)
+            if action is None:
+                continue
+            tool_name = self._action_tool_name(action)
+            entries.append(
+                self._trace_adapter.build_entry(
+                    step_id=f"react_{index}",
+                    tool_name=tool_name,
+                    tool_input=self._action_tool_input(action),
+                    tool_output=observation,
+                )
+            )
+        return entries
+
+    @staticmethod
+    def _split_intermediate_step(item: Any) -> tuple[Any, Any]:
+        if isinstance(item, (tuple, list)) and len(item) >= 2:
+            return item[0], item[1]
+        if isinstance(item, dict):
+            return item.get("action") or item.get("agent_action"), item.get(
+                "observation"
+            )
+        return None, None
+
+    @staticmethod
+    def _action_tool_name(action: Any) -> str:
+        if isinstance(action, dict):
+            return str(action.get("tool") or action.get("name") or "unknown_tool")
+        return str(
+            getattr(action, "tool", None)
+            or getattr(action, "name", None)
+            or "unknown_tool"
+        )
+
+    @staticmethod
+    def _action_tool_input(action: Any) -> Any:
+        if isinstance(action, dict):
+            return action.get("tool_input", action.get("input", ""))
+        return getattr(action, "tool_input", getattr(action, "input", ""))
+
+    @staticmethod
+    def _events_from_trace(
+        execution_trace: List[ExecutionTraceEntry],
+    ) -> List[Dict[str, Any]]:
+        events: List[Dict[str, Any]] = []
+        for entry in execution_trace:
+            events.extend(
+                event.to_dict() for event in entry.to_execution_events(source="react")
+            )
+        return events
+
+    @staticmethod
+    def _build_react_audit_metadata(
+        execution_trace: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return ReactToolTraceAdapter.summarize_audit(execution_trace)
 
     @staticmethod
     def _preview_text(value: Any, max_len: int) -> str:

@@ -109,7 +109,7 @@ class AgentExecutionPolicy:
 
         当前阶段：decide() 已是 Policy 层主决策接口。
         choose_path() 仅保留为旧字符串接口兼容包装。
-        ENABLE_EXECUTION_DECISION 配置位仅为历史兼容保留，不再切换此逻辑。
+        历史 ENABLE_EXECUTION_DECISION 配置位已退场，不再切换此逻辑。
         """
         from src.agent.models.execution_decision import ExecutionDecision
 
@@ -199,6 +199,8 @@ def load_phase0_benchmark_cases(
 def evaluate_router_benchmark(
     router: Any,
     cases: Iterable[BenchmarkCase],
+    *,
+    allow_legacy_route: bool = False,
 ) -> Dict[str, Any]:
     evaluated = 0
     mismatches = 0
@@ -208,9 +210,12 @@ def evaluate_router_benchmark(
     for case in cases:
         if hasattr(router, "profile"):
             actual_route = getattr(router.profile(case.query), "legacy_route", None)
-        else:
+        elif allow_legacy_route and hasattr(router, "route"):
+            # Explicit legacy fixture path for older benchmark adapters.
             decision = router.route(case.query)
             actual_route = getattr(decision, "route", None)
+        else:
+            raise ValueError("router benchmark requires profile()")
         category_stats = by_category.setdefault(
             case.category,
             {"total": 0, "mismatch": 0},

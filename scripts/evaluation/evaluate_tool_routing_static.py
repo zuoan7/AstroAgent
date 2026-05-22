@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.agent.planner import Planner
 from src.agent.request_router import RequestRouter
+from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.skill_param_builder import SkillParamBuilder
 from src.skills import registry
 
@@ -150,12 +151,15 @@ def build_static_plan(
     planner: Planner,
     param_builder: SkillParamBuilder,
 ) -> tuple[list[str], list[str], list[dict[str, Any]], dict[str, Any] | None]:
-    route_decision = profile.to_legacy_route_decision()
     plan_dict: dict[str, Any] | None = None
     plan_steps: list[dict[str, Any]] = []
 
     if profile.legacy_route == "planned_task":
-        plan = planner.plan(query=query, route_decision=route_decision)
+        graph = planner.plan_graph_for_profile(query=query, profile=profile)
+        plan = ExecutionPlan.from_workflow_graph(
+            graph,
+            task_type=getattr(profile, "task_type", None),
+        )
         plan_dict = plan.to_dict()
         for step in plan.steps:
             if step.kind != "tool" or not step.skill:
@@ -173,8 +177,8 @@ def build_static_plan(
                     "operation": params.get("operation"),
                 }
             )
-    elif profile.task_type == "single_tool_lookup" and profile.matched_skills:
-        skill = profile.matched_skills[0]
+    elif profile.task_type == "single_tool_lookup" and profile.capability_hints:
+        skill = profile.capability_hints[0]
         params = dict(param_builder.build(skill, query))
         mcp_tools = infer_operation_mcp_tools(skill, params)
         plan_steps.append(

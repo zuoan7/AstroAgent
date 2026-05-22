@@ -3,6 +3,7 @@
 目标：验证 WorkflowNode / WorkflowEdge / WorkflowGraph 的构造、序列化、
       拓扑排序、验证，以及从 ExecutionPlan 的线性转换正确性。
 """
+
 from __future__ import annotations
 
 import json
@@ -19,10 +20,10 @@ from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.planner import Planner
 from src.agent.request_router import RouteDecision
 
-
 # ─────────────────────────────────────────────────────────────────
 # 辅助工厂
 # ─────────────────────────────────────────────────────────────────
+
 
 class _PlannerLLMStub:
     def __init__(self, content: str) -> None:
@@ -39,8 +40,20 @@ def _simple_plan(task_type: str = "observation_recommendation") -> ExecutionPlan
         task_type=task_type,
         output_schema="observation_answer_v1",
         steps=[
-            PlanStep(id="s1", kind="tool", title="天气", skill="weather-lookup", timeout_ms=8000),
-            PlanStep(id="s2", kind="tool", title="观测", skill="observation-planner", timeout_ms=12000),
+            PlanStep(
+                id="s1",
+                kind="tool",
+                title="天气",
+                skill="weather-lookup",
+                timeout_ms=8000,
+            ),
+            PlanStep(
+                id="s2",
+                kind="tool",
+                title="观测",
+                skill="observation-planner",
+                timeout_ms=12000,
+            ),
         ],
     )
 
@@ -50,11 +63,26 @@ def _parallel_plan() -> ExecutionPlan:
         task_type="astrophotography_advice",
         output_schema="photo_answer_v1",
         steps=[
-            PlanStep(id="p1", kind="tool", title="摄影参数", skill="astrophotography-calculator",
-                     parallel_group="img", timeout_ms=15000),
-            PlanStep(id="p2", kind="tool", title="摄影天气", skill="weather-lookup",
-                     parallel_group="img", required=False, timeout_ms=8000),
-            PlanStep(id="p3", kind="tool", title="后续步骤", skill="observation-planner"),
+            PlanStep(
+                id="p1",
+                kind="tool",
+                title="摄影参数",
+                skill="astrophotography-calculator",
+                parallel_group="img",
+                timeout_ms=15000,
+            ),
+            PlanStep(
+                id="p2",
+                kind="tool",
+                title="摄影天气",
+                skill="weather-lookup",
+                parallel_group="img",
+                required=False,
+                timeout_ms=8000,
+            ),
+            PlanStep(
+                id="p3", kind="tool", title="后续步骤", skill="observation-planner"
+            ),
         ],
     )
 
@@ -70,6 +98,7 @@ def _route_decision(
         confidence=0.9,
         reason="test",
         matched_skills=matched_skills or [],
+        capability_hints=matched_skills or [],
         expected_output_schema=output_schema,
     )
 
@@ -357,7 +386,10 @@ class TestFromExecutionPlan:
         graph = WorkflowGraph.from_execution_plan(plan)
         assert graph.node("right").depends_on == ["root"]
         assert set(graph.node("sink").depends_on) == {"left", "right"}
-        assert [[node.id for node in generation] for generation in graph.topological_generations()] == [
+        assert [
+            [node.id for node in generation]
+            for generation in graph.topological_generations()
+        ] == [
             ["root"],
             ["left", "right"],
             ["sink"],
@@ -500,6 +532,22 @@ class TestPlannerGraphPlanning:
         assert step.skill == "observation-planner"
         assert "get_weather" in step.allowed_tools
 
+    def test_planner_does_not_use_unmirrored_legacy_matched_skills(self):
+        planner = Planner()
+        plan = planner.plan(
+            query="普通问题",
+            route_decision=RouteDecision(
+                route="planned_task",
+                task_type="unknown_task",
+                confidence=0.9,
+                reason="legacy_only",
+                matched_skills=["weather-lookup"],
+                expected_output_schema="generic_answer_v1",
+            ),
+        )
+
+        assert plan.steps == []
+
     def test_plan_is_compat_wrapper_over_plan_graph(self, monkeypatch):
         planner = Planner()
         graph = WorkflowGraph.from_execution_plan(_simple_plan())
@@ -557,7 +605,9 @@ class TestPlannerGraphPlanning:
             "明晚上海拍星野天气和云量怎么样？",
         ],
     )
-    def test_astrophotography_observability_plan_adds_weather_when_relevant(self, query):
+    def test_astrophotography_observability_plan_adds_weather_when_relevant(
+        self, query
+    ):
         planner = Planner()
         plan = planner.plan(
             query=query,
@@ -573,14 +623,15 @@ class TestPlannerGraphPlanning:
             "weather-lookup",
         ]
 
-    def test_llm_planner_fallback_builds_valid_steps_when_templates_empty(self, monkeypatch):
+    def test_llm_planner_fallback_builds_valid_steps_when_templates_empty(
+        self, monkeypatch
+    ):
         monkeypatch.setattr(
             "src.agent.planner.settings.ENABLE_LLM_PLANNER_FALLBACK",
             True,
             raising=False,
         )
-        llm = _PlannerLLMStub(
-            """```json
+        llm = _PlannerLLMStub("""```json
             {
               "steps": [
                 {"skill": "weather-lookup", "required": true, "reason": "查云量"},
@@ -588,8 +639,7 @@ class TestPlannerGraphPlanning:
               ],
               "rationale": "需要先看条件，再安排目标"
             }
-            ```"""
-        )
+            ```""")
         planner = Planner(llm=llm)
 
         plan = planner.plan(
@@ -607,6 +657,45 @@ class TestPlannerGraphPlanning:
             "observation-planner",
         ]
         assert "weather-lookup" in llm.prompts[0]
+
+    def test_generic_planner_emits_tool_step_from_atomic_tool_rule(self):
+        planner = Planner()
+        plan = planner.plan(
+            query="帮我查一下最近韦布望远镜有什么新结果",
+            route_decision=_route_decision(
+                task_type="unknown_complex_task",
+                matched_skills=[],
+                output_schema="generic_answer_v1",
+            ),
+        )
+
+        assert len(plan.steps) == 1
+        assert plan.steps[0].skill is None
+        assert plan.steps[0].capability_kind == "tool"
+        assert plan.steps[0].capability_name == "web_search"
+        assert plan.steps[0].allowed_tools == ["web_search"]
+        assert plan.steps[0].params == {
+            "query": "最近韦布望远镜有什么新结果",
+            "max_results": 5,
+        }
+
+    def test_generic_planner_can_mix_skill_and_tool_steps(self):
+        planner = Planner()
+        plan = planner.plan(
+            query="北京今晚天气怎么样，也查一下 JWST 最新结果",
+            route_decision=_route_decision(
+                task_type="unknown_complex_task",
+                matched_skills=["weather-lookup", "get_weather"],
+                output_schema="generic_answer_v1",
+            ),
+        )
+
+        assert [step.capability_kind for step in plan.steps] == ["skill", "tool"]
+        assert [step.skill for step in plan.steps] == ["weather-lookup", None]
+        assert [step.capability_name for step in plan.steps] == [
+            "weather-lookup",
+            "get_weather",
+        ]
 
     def test_llm_planner_fallback_rejects_unknown_skills(self, monkeypatch):
         monkeypatch.setattr(
@@ -687,7 +776,9 @@ class TestPlannerGraphPlanning:
         assert isinstance(plan, ExecutionPlan)
         assert plan.task_type == "observation_recommendation"
         assert plan.output_schema == "observation_answer_v1"
-        assert {step.id for step in plan.steps} == {node.id for node in graph.topological_order()}
+        assert {step.id for step in plan.steps} == {
+            node.id for node in graph.topological_order()
+        }
         assert plan.steps[0].id == "observation_plan"
 
     def test_execution_plan_roundtrip_keeps_legacy_step_fields(self):

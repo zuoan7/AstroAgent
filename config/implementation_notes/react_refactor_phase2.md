@@ -1,5 +1,7 @@
 # AstroAgent ReAct Refactor 实现说明（阶段2）
 
+> 历史记录：本文保留阶段性实现说明原貌。当前工具层兼容状态以 `docs/agent_compatibility_matrix.md` 为准。
+
 本文档记录基于 `docs/AstroAgent_ReAct_Refactor_Plan.md` 已完成的阶段2实际改动。重点说明当前代码中已经落地的结构化执行契约、主链路接线方式，以及阶段2涉及的主要模块。
 
 ## 1. 阶段2目标与当前结论

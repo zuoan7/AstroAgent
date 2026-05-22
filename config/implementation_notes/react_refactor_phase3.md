@@ -1,5 +1,7 @@
 # AstroAgent ReAct Refactor 实现说明（阶段3）
 
+> 历史记录：本文保留阶段性实现说明原貌。当前工具层兼容状态以 `docs/agent_compatibility_matrix.md` 为准。
+
 本文档记录基于 `docs/AstroAgent_ReAct_Refactor_Plan.md` 已完成的阶段3实际改动。重点说明当前代码中已经落地的 `Planner + StepExecutor` 主链路、流式执行对齐方式，以及本阶段涉及的主要模块。
 
 ## 1. 阶段3目标与当前结论

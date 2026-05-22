@@ -212,13 +212,13 @@ class SessionData:
                 request_router=getattr(self._base_agent, "__dict__", {}).get(
                     "request_router"
                 ),
-                task_orchestrator=getattr(self._base_agent, "__dict__", {}).get(
-                    "task_orchestrator"
-                ),
                 skill_manager=getattr(self._base_agent, "__dict__", {}).get(
                     "skill_manager"
                 ),
                 rag_retriever=getattr(self._base_agent, "__dict__", {}).get("rag"),
+                execution_engine=getattr(self._base_agent, "__dict__", {}).get(
+                    "execution_engine"
+                ),
             )
             self.agent_executor = getattr(self._base_agent, "_agent_executor", None)
             self.model_provider = payload["model_provider"]

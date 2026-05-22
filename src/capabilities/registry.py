@@ -41,8 +41,6 @@ _HANDLER_ALLOWED_TOOLS: Dict[str, List[str]] = {
 
 _REQUIRED_PARAMS: Dict[str, List[str]] = {
     "weather-lookup": [],
-    "get_nasa_apod": [],
-    "web_search": ["query"],
     "observation-planner": ["location"],
     "celestial-events-forecast": [],
     "deep-sky-observing-guide": ["target"],

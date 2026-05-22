@@ -2,7 +2,7 @@
 RequestContext — 统一请求上下文，Phase 2 引入。
 
 打包 query / chat_history / user_profile / request_id，
-目标替代散落在 TaskOrchestrator.run() 和 StreamingService 中的同名参数。
+目标替代执行入口和 StreamingService 中散落传递的同名参数。
 
 当前状态：StreamingService 已优先构造 RequestContext 并传入新主链路；
           from_legacy_params() 仅保留给历史兼容入口。

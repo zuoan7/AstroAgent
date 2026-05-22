@@ -84,6 +84,7 @@ class TaskProfile:
             confidence=self.confidence,
             reason=self.reason,
             matched_skills=list(self.matched_skills),
+            capability_hints=list(self.capability_hints),
             expected_output_schema=self.expected_output_schema,
             router_source=self.router_source,
             rule_confidence=self.rule_confidence,
@@ -101,6 +102,33 @@ class TaskProfile:
                 self.tool_necessity_forbidden_skill_hints
             ),
         )
+
+    def to_legacy_route_meta(self) -> Dict[str, object]:
+        """Context-first equivalent of RouteDecision.to_meta()."""
+        return {
+            "route": self.legacy_route,
+            "task_type": self.task_type,
+            "route_confidence": self.confidence,
+            "route_reason": self.reason,
+            "matched_skills": list(self.matched_skills),
+            "capability_hints": list(self.capability_hints or self.matched_skills),
+            "expected_output_schema": self.expected_output_schema,
+            "router_source": self.router_source,
+            "rule_confidence": self.rule_confidence,
+            "llm_confidence": self.llm_confidence,
+            "tool_necessity_action": self.tool_necessity_action,
+            "tool_necessity_reason": self.tool_necessity_reason,
+            "tool_necessity_confidence": self.tool_necessity_confidence,
+            "tool_necessity_missing_params": list(
+                self.tool_necessity_missing_params
+            ),
+            "tool_necessity_allowed_skill_hints": list(
+                self.tool_necessity_allowed_skill_hints
+            ),
+            "tool_necessity_forbidden_skill_hints": list(
+                self.tool_necessity_forbidden_skill_hints
+            ),
+        }
 
     @classmethod
     def from_legacy_route(
@@ -128,6 +156,8 @@ class TaskProfile:
     ) -> "TaskProfile":
         """从旧 RouteDecision 字段推断 TaskProfile，保证双向可转换。"""
         skills = list(matched_skills or [])
+        hints = list(capability_hints) if capability_hints is not None else list(skills)
+        legacy_skill_aliases = list(skills or hints)
         stable_task_types = {
             "single_tool_lookup",
             "observation_recommendation",
@@ -148,7 +178,7 @@ class TaskProfile:
         elif route == "direct_task" and task_type == "single_tool_lookup":
             complexity, openness, tool_need = "low", "low", "single"
         elif route == "planned_task":
-            skill_count = len(skills)
+            skill_count = len(hints or legacy_skill_aliases)
             complexity = "high" if skill_count >= 2 else "medium"
             openness = "low"
             tool_need = "multi" if skill_count >= 2 else "single"
@@ -158,7 +188,7 @@ class TaskProfile:
             complexity, openness, tool_need = "medium", "medium", "single"
 
         inferred_stable_flow = (
-            bool(skills)
+            bool(hints or legacy_skill_aliases)
             and openness != "high"
             and task_type in stable_task_types
         )
@@ -168,8 +198,8 @@ class TaskProfile:
             complexity=complexity,
             openness=openness,
             tool_need=tool_need,
-            matched_skills=skills,
-            capability_hints=list(capability_hints or skills),
+            matched_skills=legacy_skill_aliases,
+            capability_hints=list(hints or legacy_skill_aliases),
             stable_flow=inferred_stable_flow if stable_flow is None else bool(stable_flow),
             domain=domain,
             confidence=confidence,

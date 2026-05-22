@@ -1,14 +1,13 @@
 """Phase 8 DAG Agent 收口测试
 
 目标：
-1. config flags（ENABLE_UNIFIED_EXECUTION_ENGINE / ENABLE_WORKFLOW_GRAPH /
-   ENABLE_UNIFIED_EXECUTION_TRACE / ENABLE_UNIFIED_EXECUTION_EVENTS）默认均为 True
+1. ENABLE_UNIFIED_EXECUTION_ENGINE 已删除，旧 env var 由 settings extra=ignore 忽略
 2. ExecutionEngine 新主路径可被正确调用（direct / planned / react 三种模式）
-3. ENABLE_UNIFIED_EXECUTION_ENGINE=False 时回退到旧 TaskOrchestrator 路径
+3. ExecutionEngine 未注入时明确失败，不再回退旧 orchestrator
 4. planned 主路径通过 WorkflowExecutor 稳定执行
 5. 旧兼容接口仍可用，并带有 deprecated/legacy 标记
 6. StreamingService._run_orchestrated_path 在新主路径下能正常返回 FinalResponse
-7. TaskOrchestrator 保留可用（兼容层不被误删）
+7. 旧 orchestrator / StepExecutor 已删除
 """
 from __future__ import annotations
 
@@ -34,7 +33,6 @@ from src.agent.models.skill_result import SkillResult
 from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RouteDecision
 from src.agent.request_router import RequestRouter
-from src.agent.task_orchestrator import TaskOrchestrator
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -87,21 +85,22 @@ def _skill_manager_mock() -> MagicMock:
 
 class TestPhase8FlagsDefault:
 
-    def test_enable_unified_execution_engine_default_true(self):
+    def test_enable_unified_execution_engine_flag_removed(self):
         from src.core.config import settings
-        assert getattr(settings, "ENABLE_UNIFIED_EXECUTION_ENGINE", False) is True
+        assert not hasattr(settings, "ENABLE_UNIFIED_EXECUTION_ENGINE")
 
-    def test_enable_workflow_graph_default_true(self):
+    def test_deprecated_non_branching_flags_are_removed(self):
         from src.core.config import settings
-        assert getattr(settings, "ENABLE_WORKFLOW_GRAPH", False) is True
-
-    def test_enable_unified_execution_trace_default_true(self):
-        from src.core.config import settings
-        assert getattr(settings, "ENABLE_UNIFIED_EXECUTION_TRACE", False) is True
-
-    def test_enable_unified_execution_events_default_true(self):
-        from src.core.config import settings
-        assert getattr(settings, "ENABLE_UNIFIED_EXECUTION_EVENTS", False) is True
+        removed = {
+            "ENABLE_TASK_PROFILE",
+            "ENABLE_EXECUTION_CONTEXT",
+            "ENABLE_EXECUTION_DECISION",
+            "ENABLE_WORKFLOW_GRAPH",
+            "ENABLE_UNIFIED_EXECUTION_TRACE",
+            "ENABLE_UNIFIED_EXECUTION_EVENTS",
+            "ENABLE_UNIFIED_EXECUTION_ENGINE",
+        }
+        assert all(not hasattr(settings, name) for name in removed)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -158,7 +157,7 @@ class TestExecutionEngineNewPaths:
 
     def test_engine_react_mode(self):
         engine = self._make_engine()
-        engine._react.run = AsyncMock(return_value=_make_final_response("react 答案"))
+        engine._react.run_context = AsyncMock(return_value=_make_final_response("react 答案"))
         decision = ExecutionDecision(mode="react", reason="test")
         route_decision = _route_decision()
 
@@ -223,9 +222,9 @@ class TestExecutionEngineNewPaths:
             ],
         )
         engine._planned = MagicMock()
-        engine._planned.run = AsyncMock(return_value=planned_response)
+        engine._planned.run_context = AsyncMock(return_value=planned_response)
         engine._react = MagicMock()
-        engine._react.run = AsyncMock(return_value=react_response)
+        engine._react.run_context = AsyncMock(return_value=react_response)
 
         result = asyncio.run(
             engine.run(
@@ -235,7 +234,7 @@ class TestExecutionEngineNewPaths:
             )
         )
 
-        engine._react.run.assert_awaited_once()
+        engine._react.run_context.assert_awaited_once()
         assert result.answer == "react recovered answer"
         assert result.execution_plan == planned_response.execution_plan
         assert result.execution_trace == planned_response.execution_trace
@@ -276,9 +275,9 @@ class TestExecutionEngineNewPaths:
             ],
         )
         engine._planned = MagicMock()
-        engine._planned.run = AsyncMock(return_value=planned_response)
+        engine._planned.run_context = AsyncMock(return_value=planned_response)
         engine._react = MagicMock()
-        engine._react.run = AsyncMock()
+        engine._react.run_context = AsyncMock()
 
         result = asyncio.run(
             engine.run(
@@ -288,7 +287,7 @@ class TestExecutionEngineNewPaths:
             )
         )
 
-        engine._react.run.assert_not_awaited()
+        engine._react.run_context.assert_not_awaited()
         assert result.answer == "partial planned answer"
         assert result.fallback_path[0]["metadata"]["executed"] is True
         assert result.fallback_path[0]["metadata"]["recovery_mode"] == "partial_answer"
@@ -356,10 +355,10 @@ class TestExecutionEngineNewPaths:
             steps=[PlanStep(id="fixed", kind="tool", skill="weather-lookup")],
         )
         engine._planned = MagicMock()
-        engine._planned.run = AsyncMock(side_effect=[failed_response, repaired_response])
-        engine._planned.repair_plan.return_value = repaired_plan
+        engine._planned.run_context = AsyncMock(side_effect=[failed_response, repaired_response])
+        engine._planned.repair_plan_context.return_value = repaired_plan
         engine._react = MagicMock()
-        engine._react.run = AsyncMock()
+        engine._react.run_context = AsyncMock()
 
         result = asyncio.run(
             engine.run(
@@ -369,8 +368,8 @@ class TestExecutionEngineNewPaths:
             )
         )
 
-        assert engine._planned.run.await_count == 2
-        engine._react.run.assert_not_awaited()
+        assert engine._planned.run_context.await_count == 2
+        engine._react.run_context.assert_not_awaited()
         assert result.answer == "repaired planned answer"
         assert result.fallback_path[0]["strategy"] == "plan_repair"
         assert result.fallback_path[0]["metadata"]["executed"] is True
@@ -379,11 +378,11 @@ class TestExecutionEngineNewPaths:
 
 
 # ─────────────────────────────────────────────────────────────────
-# 3. StreamingService._run_orchestrated_path 分支切换
+# 3. StreamingService._run_orchestrated_path engine requirement
 # ─────────────────────────────────────────────────────────────────
 
 class TestOrchestratedPathBranching:
-    """验证 flag 控制下 _run_orchestrated_path 走正确分支。"""
+    """验证 _run_orchestrated_path 只接受 ExecutionEngine 主路径。"""
 
     def _make_service(self, with_engine: bool):
         from src.agent.streaming_service import BaseStreamingGenerator
@@ -415,43 +414,32 @@ class TestOrchestratedPathBranching:
             svc._task_orchestrator = None
         else:
             svc._execution_engine = None
-            orch = MagicMock()
-            orch.run = AsyncMock(return_value=_make_final_response("旧路径答案"))
-            svc._task_orchestrator = orch
+            svc._task_orchestrator = MagicMock()
 
         return svc
 
-    def test_new_engine_path_used_when_flag_true(self):
+    def test_engine_path_used_when_engine_present(self):
         svc = self._make_service(with_engine=True)
         decision = _route_decision("direct_task", "smalltalk")
         from src.agent.latency import LatencyTracker
-        from src.core import config as config_module
 
-        orig = config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE
-        try:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = True
-            result = asyncio.run(
-                svc._run_orchestrated_path(
-                    "你好",
-                    decision,
-                    use_long_term_memory=False,
-                    latency=LatencyTracker(),
-                )
+        result = asyncio.run(
+            svc._run_orchestrated_path(
+                "你好",
+                decision,
+                use_long_term_memory=False,
+                latency=LatencyTracker(),
             )
-        finally:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = orig
+        )
         assert isinstance(result, FinalResponse)
 
-    def test_legacy_path_used_when_flag_false(self):
+    def test_no_legacy_path_when_engine_missing(self):
         svc = self._make_service(with_engine=False)
         decision = _route_decision("direct_task", "smalltalk")
         from src.agent.latency import LatencyTracker
-        from src.core import config as config_module
 
-        orig = config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE
-        try:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = False
-            result = asyncio.run(
+        with pytest.raises(ValueError, match="execution engine is not configured"):
+            asyncio.run(
                 svc._run_orchestrated_path(
                     "你好",
                     decision,
@@ -459,22 +447,15 @@ class TestOrchestratedPathBranching:
                     latency=LatencyTracker(),
                 )
             )
-        finally:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = orig
-        assert isinstance(result, FinalResponse)
-        assert result.answer == "旧路径答案"
 
-    def test_legacy_path_used_when_engine_not_injected(self):
-        """engine 为 None 时即使 flag=True 也回退到旧路径。"""
+    def test_engine_not_injected_fails_instead_of_legacy_orchestrator(self):
+        """engine 为 None 时不再回退旧路径。"""
         svc = self._make_service(with_engine=False)
         decision = _route_decision("direct_task", "smalltalk")
         from src.agent.latency import LatencyTracker
-        from src.core import config as config_module
 
-        orig = config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE
-        try:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = True
-            result = asyncio.run(
+        with pytest.raises(ValueError, match="execution engine is not configured"):
+            asyncio.run(
                 svc._run_orchestrated_path(
                     "你好",
                     decision,
@@ -482,13 +463,10 @@ class TestOrchestratedPathBranching:
                     latency=LatencyTracker(),
                 )
             )
-        finally:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_ENGINE = orig
-        assert result.answer == "旧路径答案"
 
 
 class TestDeprecatedRefactorFlagsCompatibility:
-    """已 deprecated 的重构配置位不应再切换 profile/context/decision 主路径。"""
+    """已退场的重构配置位不再参与 profile/context/decision 主路径。"""
 
     @pytest.mark.parametrize(
         ("query", "expected_mode", "expected_route"),
@@ -498,14 +476,13 @@ class TestDeprecatedRefactorFlagsCompatibility:
             ("帮我写一篇关于宇宙的科幻小说", "react", "fallback_react"),
         ],
     )
-    def test_deprecated_profile_context_decision_flags_do_not_change_main_path(
+    def test_profile_context_decision_main_path_is_fixed(
         self,
         query: str,
         expected_mode: str,
         expected_route: str,
     ):
         from src.agent.streaming_service import BaseStreamingGenerator
-        from src.core import config as config_module
 
         svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
         svc._execution_policy = AgentExecutionPolicy(
@@ -514,45 +491,17 @@ class TestDeprecatedRefactorFlagsCompatibility:
         )
         svc._request_router = RequestRouter()
 
-        orig_profile = config_module.settings.ENABLE_TASK_PROFILE
-        orig_context = config_module.settings.ENABLE_EXECUTION_CONTEXT
-        orig_decision = config_module.settings.ENABLE_EXECUTION_DECISION
-        try:
-            config_module.settings.ENABLE_TASK_PROFILE = False
-            config_module.settings.ENABLE_EXECUTION_CONTEXT = False
-            config_module.settings.ENABLE_EXECUTION_DECISION = False
-            result_false = svc._resolve_execution_decision(
-                query,
-                legacy_decision=None,
-                use_long_term_memory=False,
-            )
+        decision, profile, context = svc._resolve_execution_decision(
+            query,
+            legacy_decision=None,
+            use_long_term_memory=False,
+        )
 
-            config_module.settings.ENABLE_TASK_PROFILE = True
-            config_module.settings.ENABLE_EXECUTION_CONTEXT = True
-            config_module.settings.ENABLE_EXECUTION_DECISION = True
-            result_true = svc._resolve_execution_decision(
-                query,
-                legacy_decision=None,
-                use_long_term_memory=False,
-            )
-        finally:
-            config_module.settings.ENABLE_TASK_PROFILE = orig_profile
-            config_module.settings.ENABLE_EXECUTION_CONTEXT = orig_context
-            config_module.settings.ENABLE_EXECUTION_DECISION = orig_decision
+        assert decision.mode == expected_mode
+        assert profile is not None and profile.legacy_route == expected_route
+        assert context is not None and isinstance(context, ExecutionContext)
 
-        decision_false, profile_false, context_false = result_false
-        decision_true, profile_true, context_true = result_true
-
-        assert decision_false.mode == expected_mode
-        assert decision_true.mode == expected_mode
-        assert profile_false is not None and profile_false.legacy_route == expected_route
-        assert profile_true is not None and profile_true.legacy_route == expected_route
-        assert context_false is not None and isinstance(context_false, ExecutionContext)
-        assert context_true is not None and isinstance(context_true, ExecutionContext)
-
-    def test_deprecated_trace_and_event_flags_do_not_disable_execution_artifacts(self):
-        from src.core import config as config_module
-
+    def test_trace_and_event_artifacts_are_always_attached(self):
         engine = ExecutionEngine.__new__(ExecutionEngine)
         response = FinalResponse(
             answer="测试答案",
@@ -572,20 +521,12 @@ class TestDeprecatedRefactorFlagsCompatibility:
             request=RequestContext(query="你好"),
         )
 
-        orig_trace = config_module.settings.ENABLE_UNIFIED_EXECUTION_TRACE
-        orig_events = config_module.settings.ENABLE_UNIFIED_EXECUTION_EVENTS
-        try:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_TRACE = False
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_EVENTS = False
-            engine._attach_engine_events(
-                response,
-                decision=decision,
-                legacy_decision=legacy_decision,
-                context=context,
-            )
-        finally:
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_TRACE = orig_trace
-            config_module.settings.ENABLE_UNIFIED_EXECUTION_EVENTS = orig_events
+        engine._attach_engine_events(
+            response,
+            decision=decision,
+            legacy_decision=legacy_decision,
+            context=context,
+        )
 
         assert response.execution_trace == [{"step_id": "s1", "status": "success"}]
         event_types = [event["type"] for event in response.execution_events]
@@ -624,7 +565,7 @@ class TestDeprecatedRefactorFlagsCompatibility:
 
 
 # ─────────────────────────────────────────────────────────────────
-# 4. PlannedExecutor ENABLE_WORKFLOW_GRAPH 分支
+# 4. PlannedExecutor WorkflowExecutor branch
 # ─────────────────────────────────────────────────────────────────
 
 class TestPlannedExecutorWorkflowBranch:
@@ -655,14 +596,20 @@ class TestPlannedExecutorWorkflowBranch:
 
         wf_executor = MagicMock()
         wf_executor.execute = AsyncMock(
-            return_value=MagicMock(
+            return_value=SimpleNamespace(
                 step_results=[],
                 skill_results=[],
+                evidence_by_key={},
+                evidence_items=[],
+                skipped_step_ids=[],
                 halted=False,
             )
         )
         executor._workflow_executor = wf_executor
-        result = asyncio.run(executor.run(decision, "今晚天气", execution_plan=plan))
+        context = ExecutionContext.from_legacy_decision(decision, "今晚天气")
+        result = asyncio.run(
+            executor.run_context(context, execution_plan=plan)
+        )
         wf_executor.execute.assert_called_once()
         assert isinstance(result, FinalResponse)
 
@@ -720,19 +667,22 @@ class TestPlannedRecoveryPolicy:
 
 
 # ─────────────────────────────────────────────────────────────────
-# 5. TaskOrchestrator 兼容层完好
+# 5. Legacy boundary compatibility
 # ─────────────────────────────────────────────────────────────────
 
-class TestTaskOrchestratorCompatibility:
-    """TaskOrchestrator 保留可用，不被误删。"""
+class TestLegacyBoundaryCompatibility:
+    """仅保留明确的外部兼容壳。"""
 
-    def test_task_orchestrator_importable(self):
-        from src.agent.task_orchestrator import TaskOrchestrator
-        assert TaskOrchestrator is not None
+    def test_task_orchestrator_file_removed(self):
+        from pathlib import Path
 
-    def test_task_orchestrator_has_deprecated_notice(self):
-        """docstring 中含有 deprecated 标记。"""
-        assert "deprecated" in TaskOrchestrator.__doc__.lower()
+        root = Path(__file__).resolve().parents[2]
+        assert not (root / "src" / "agent" / "task_orchestrator.py").exists()
+
+    def test_step_executor_removed(self):
+        import src.agent.executor as executor_module
+
+        assert not hasattr(executor_module, "StepExecutor")
 
     def test_request_router_route_has_compatibility_notice(self):
         from src.agent.request_router import RequestRouter
@@ -743,24 +693,3 @@ class TestTaskOrchestratorCompatibility:
         from src.agent.governance import AgentExecutionPolicy
 
         assert "deprecated" in (AgentExecutionPolicy.choose_path.__doc__ or "").lower()
-
-    def test_task_orchestrator_run_direct(self):
-        skill_mgr = _skill_manager_mock()
-        synth = _mock_synthesizer()
-        orch = TaskOrchestrator.__new__(TaskOrchestrator)
-        orch._skill_manager = skill_mgr
-        orch._synthesizer = synth
-        orch._rag = MagicMock()
-        orch._llm = MagicMock()
-        from src.agent.planner import Planner
-        from src.agent.executor import StepExecutor
-        from src.agent.policies.fallback_policy import FallbackPolicy
-        orch._planner = MagicMock()
-        orch._executor = StepExecutor(skill_manager=skill_mgr)
-        orch._fallback_policy = FallbackPolicy()
-
-        decision = _route_decision("direct_task", "smalltalk")
-        result = asyncio.run(
-            orch.run(decision, "你好", chat_history="", user_profile="")
-        )
-        assert isinstance(result, FinalResponse)

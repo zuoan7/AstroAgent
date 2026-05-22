@@ -33,7 +33,7 @@ def test_router_gate_blocks_no_tool_cases_before_skill_matching(
 
 
 @pytest.mark.parametrize(
-    ("query", "expected_skill", "expected_route"),
+    ("query", "expected_capability", "expected_route"),
     [
         ("广州今晚适合出门观星吗？", "weather-lookup", "direct_task"),
         ("我这边今晚月亮高度怎么样？", "celestial-position-calculator", "direct_task"),
@@ -45,15 +45,16 @@ def test_router_gate_blocks_no_tool_cases_before_skill_matching(
         ("帮我查一下最近韦布望远镜有什么新结果", "web_search", "direct_task"),
     ],
 )
-def test_router_gate_promotes_tool_cases_with_constrained_skill_hints(
+def test_router_gate_promotes_tool_cases_with_constrained_capability_hints(
     query: str,
-    expected_skill: str,
+    expected_capability: str,
     expected_route: str,
 ):
     profile = RequestRouter().profile(query)
 
     assert profile.legacy_route == expected_route
-    assert profile.matched_skills == [expected_skill]
+    assert profile.capability_hints == [expected_capability]
+    assert profile.matched_skills == [expected_capability]
     assert profile.tool_necessity_action == "use_tool"
 
 

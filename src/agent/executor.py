@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import asyncio
-import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.models.skill_result import SkillResult
-from src.agent.policies.budget_policy import RequestBudgetTracker
 from src.core.mcp_protocol import TOOL_INPUT_MODELS
 
 KNOWN_MCP_TOOL_NAMES = frozenset(TOOL_INPUT_MODELS)
@@ -124,6 +121,8 @@ class EvidenceAggregator:
             "key": evidence_key,
             "step_id": step_result.step_id,
             "skill": step_result.skill,
+            "capability_kind": step_result.capability_kind,
+            "capability_name": step_result.capability_name,
             "status": step_result.status,
             "summary": step_result.summary,
             "sources": list(step_result.sources),
@@ -140,9 +139,10 @@ class EvidenceAggregator:
                     "kind": "tool_evidence",
                     "title": step_result.title
                     or step_result.skill
+                    or step_result.capability_name
                     or step_result.step_id,
                     "snippet": step_result.summary[:240],
-                    "tool": step_result.skill,
+                    "tool": step_result.skill or step_result.capability_name,
                     "step_id": step_result.step_id,
                     "status": step_result.status,
                 }
@@ -164,247 +164,3 @@ class EvidenceAggregator:
 
     def snapshot(self) -> tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
         return dict(self._by_key), list(self._items)
-
-
-class StepExecutor:
-    """Deprecated linear ExecutionPlan executor.
-
-    主 planned 路径已迁移到 WorkflowExecutor；本类仍保留给 TaskOrchestrator
-    与历史测试/回退路径使用。新 planned 代码不得新增对本类的依赖。
-    """
-
-    def __init__(self, skill_manager: Any) -> None:
-        self._skill_manager = skill_manager
-
-    async def execute(
-        self,
-        plan: ExecutionPlan,
-        *,
-        query: str,
-        param_builder: ParamBuilder,
-        event_callback: Optional[EventCallback] = None,
-        budget_tracker: Optional[RequestBudgetTracker] = None,
-    ) -> ExecutionOutcome:
-        """Execute a legacy ExecutionPlan linearly for compatibility only."""
-        outcome = ExecutionOutcome(plan=plan)
-        steps = list(plan.steps)
-        index = 0
-
-        while index < len(steps):
-            step = steps[index]
-            if step.parallel_group:
-                group = [step]
-                index += 1
-                while (
-                    index < len(steps)
-                    and steps[index].parallel_group == step.parallel_group
-                ):
-                    group.append(steps[index])
-                    index += 1
-                if budget_tracker:
-                    budget_tracker.register_parallelism(len(group))
-                results = await asyncio.gather(
-                    *[
-                        self._execute_step(
-                            group_step,
-                            query=query,
-                            param_builder=param_builder,
-                            event_callback=event_callback,
-                            budget_tracker=budget_tracker,
-                        )
-                        for group_step in group
-                    ]
-                )
-            else:
-                results = [
-                    await self._execute_step(
-                        step,
-                        query=query,
-                        param_builder=param_builder,
-                        event_callback=event_callback,
-                        budget_tracker=budget_tracker,
-                    )
-                ]
-                index += 1
-
-            for step_result, skill_result in results:
-                outcome.step_results.append(step_result)
-                if skill_result is not None:
-                    outcome.skill_results.append(skill_result)
-                if step_result.status == "error" and step_result.required:
-                    outcome.halted = True
-                    outcome.halt_reason = (
-                        step_result.error
-                        or f"required step failed: {step_result.step_id}"
-                    )
-                    return outcome
-
-        return outcome
-
-    async def _execute_step(
-        self,
-        step: PlanStep,
-        *,
-        query: str,
-        param_builder: ParamBuilder,
-        event_callback: Optional[EventCallback],
-        budget_tracker: Optional[RequestBudgetTracker],
-    ) -> tuple[StepExecutionResult, Optional[SkillResult]]:
-        params = {}
-        param_builder_source = ""
-        capability_kind = getattr(step, "capability_kind", "") or (
-            "skill" if step.skill else ""
-        )
-        capability_name = getattr(step, "capability_name", "") or step.skill or ""
-        if step.skill:
-            if step.params:
-                params = dict(param_builder(step.skill, query))
-                param_builder_source = "plan"
-            else:
-                params = dict(param_builder(step.skill, query))
-                param_builder_source = "fallback_builder"
-        if step.params:
-            params.update(step.params)
-
-        await self._emit(
-            event_callback,
-            "step_start",
-            {
-                "step_id": step.id,
-                "title": step.title or step.skill or step.id,
-                "description": step.description,
-                "skill": step.skill,
-                "capability_kind": capability_kind,
-                "capability_name": capability_name,
-                "kind": step.kind,
-            },
-        )
-
-        started = time.perf_counter()
-        attempts = 0
-        last_error: Optional[str] = None
-        skill_result: Optional[SkillResult] = None
-        for attempts in range(1, step.retry_policy + 2):
-            try:
-                if step.kind != "tool" or not step.skill:
-                    raise ValueError(f"unsupported step kind: {step.kind}")
-                if budget_tracker:
-                    budget_tracker.register_tool_call()
-                coro = asyncio.to_thread(
-                    self._skill_manager.call_skill, step.skill, **params
-                )
-                if step.timeout_ms:
-                    skill_result = await asyncio.wait_for(
-                        coro,
-                        timeout=step.timeout_ms / 1000.0,
-                    )
-                else:
-                    skill_result = await coro
-            except asyncio.TimeoutError:
-                last_error = f"step timeout after {step.timeout_ms} ms"
-                skill_result = SkillResult.from_error(
-                    skill_name=step.skill or step.id,
-                    error_code="STEP_TIMEOUT",
-                    error_message=last_error,
-                )
-            except Exception as exc:
-                last_error = str(exc)
-                skill_result = SkillResult.from_error(
-                    skill_name=step.skill or step.id,
-                    error_code="STEP_EXECUTION_ERROR",
-                    error_message=last_error,
-                )
-
-            if skill_result.success:
-                break
-            last_error = skill_result.error_message or last_error or "unknown error"
-
-        latency_ms = round((time.perf_counter() - started) * 1000.0, 2)
-        if skill_result and skill_result.latency_ms is None:
-            skill_result.latency_ms = latency_ms
-
-        status = "success" if skill_result and skill_result.success else "error"
-        step_result = StepExecutionResult(
-            step_id=step.id,
-            title=step.title or step.skill or step.id,
-            kind=step.kind,
-            status=status,
-            skill=step.skill,
-            capability_kind=capability_kind,
-            capability_name=capability_name,
-            capability_reason=(
-                "plan_step_capability" if capability_name else ""
-            ),
-            input_params=params,
-            param_builder_source=param_builder_source,
-            mcp_tools_used=_extract_mcp_tools_from_sources(
-                list(skill_result.sources) if skill_result else []
-            ),
-            logical_skill=(
-                (getattr(skill_result, "logical_skill", None) or step.skill)
-                if skill_result
-                else None
-            ),
-            operation=(
-                getattr(skill_result, "operation", None) if skill_result else None
-            ),
-            expected_mcp_tools=(
-                list(getattr(skill_result, "expected_mcp_tools", []) or [])
-                if skill_result
-                else []
-            ),
-            attempts=attempts,
-            required=step.required,
-            latency_ms=latency_ms,
-            error=None if status == "success" else last_error,
-            summary=skill_result.summary if skill_result else "",
-            sources=list(skill_result.sources) if skill_result else [],
-            evidence_key=step.evidence_key or step.id,
-            fallback_strategy=step.fallback_strategy
-            or ("halt" if step.required else "continue"),
-        )
-
-        if skill_result:
-            await self._emit(
-                event_callback,
-                "step_result",
-                {
-                    "step_id": step.id,
-                    "skill": step.skill,
-                    "capability_kind": capability_kind,
-                    "capability_name": capability_name,
-                    "status": status,
-                    "summary": skill_result.summary,
-                    "latency_ms": latency_ms,
-                },
-            )
-            for source in skill_result.sources:
-                await self._emit(event_callback, "evidence_found", source)
-
-        await self._emit(
-            event_callback,
-            "step_end",
-            {
-                "step_id": step.id,
-                "title": step.title or step.skill or step.id,
-                "status": status,
-                "skill": step.skill,
-                "capability_kind": capability_kind,
-                "capability_name": capability_name,
-                "latency_ms": latency_ms,
-                "error": last_error if status == "error" else None,
-            },
-        )
-        return step_result, skill_result
-
-    async def _emit(
-        self,
-        event_callback: Optional[EventCallback],
-        event_type: str,
-        payload: Dict[str, Any],
-    ) -> None:
-        if not event_callback:
-            return
-        maybe_result = event_callback(event_type, payload)
-        if asyncio.iscoroutine(maybe_result):
-            await maybe_result

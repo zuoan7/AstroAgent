@@ -503,7 +503,11 @@ class TaskStateRuntimeService:
         execution_decision: Optional[Any],
     ) -> list[str]:
         mode = getattr(execution_decision, "mode", "") if execution_decision else ""
-        skills = list(getattr(profile, "matched_skills", []) or []) if profile else []
+        skills = (
+            list(getattr(profile, "capability_hints", []) or [])
+            if profile
+            else []
+        )
         task_type = getattr(profile, "task_type", "") if profile else ""
         if task_type == "clarification":
             return ["向用户澄清关键信息"]

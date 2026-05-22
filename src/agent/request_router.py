@@ -240,12 +240,11 @@ class RouteDecision:
     新代码应优先消费 TaskProfile；RouteDecision 仅保留给兼容调用链：
     1. 外部兼容 API（仍直接依赖 route() / RouteDecision 的调用方）
     2. 旧 stream event 输出（仍需要 legacy route/task_type 元信息）
-    3. TaskOrchestrator 兼容层
-    4. 历史基线测试
+    3. 历史基线测试
 
     删除条件：
     - StreamingService 主路径不再需要 legacy route 元信息适配
-    - TaskOrchestrator 及所有外部调用方迁移到 TaskProfile/ExecutionDecision
+    - 所有外部调用方迁移到 TaskProfile/ExecutionDecision
     - 基线/兼容测试完成退场
     """
     route: str
@@ -253,6 +252,7 @@ class RouteDecision:
     confidence: float
     reason: str
     matched_skills: List[str] = field(default_factory=list)
+    capability_hints: List[str] = field(default_factory=list)
     expected_output_schema: str = "generic_answer_v1"
     router_source: str = "rule"
     rule_confidence: Optional[float] = None
@@ -273,6 +273,7 @@ class RouteDecision:
             "route_confidence": self.confidence,
             "route_reason": self.reason,
             "matched_skills": list(self.matched_skills),
+            "capability_hints": list(self.capability_hints or self.matched_skills),
             "expected_output_schema": self.expected_output_schema,
             "router_source": self.router_source,
             "rule_confidence": self.rule_confidence,
@@ -298,6 +299,7 @@ class RouteDecision:
             confidence=profile.confidence,
             reason=profile.reason,
             matched_skills=list(profile.matched_skills),
+            capability_hints=list(getattr(profile, "capability_hints", []) or []),
             expected_output_schema=profile.expected_output_schema,
             router_source=getattr(profile, "router_source", "rule"),
             rule_confidence=getattr(profile, "rule_confidence", None),
@@ -375,20 +377,18 @@ class RequestRouter:
         新代码应优先调用 profile() 获取 TaskProfile；route() 仅保留给：
         1. 外部兼容 API
         2. 旧 stream event 输出适配
-        3. TaskOrchestrator 兼容层
-        4. 历史测试/基线快照
+        3. 历史测试/基线快照
 
         删除条件：
         - 所有主路径调用已改为 profile() / TaskProfile
         - 不再有外部调用方依赖 RouteDecision
-        - TaskOrchestrator 兼容层完成清理
         """
         return RouteDecision.from_task_profile(self.profile(query))
 
     def profile(self, query: str) -> TaskProfile:
         """Router 内部主分类入口，返回 TaskProfile。
 
-        ENABLE_TASK_PROFILE 配置位仅为历史兼容保留，不再切换该主路径。
+        历史 ENABLE_TASK_PROFILE 配置位已退场，不再切换该主路径。
         """
         gate_decision = self._tool_necessity_gate.evaluate(query)
         if gate_decision.action in {"clarify", "answer_without_tool"}:
@@ -400,7 +400,7 @@ class RequestRouter:
 
         route_gate_decision = self._tool_necessity_gate.validate_tool_route(
             query,
-            list(profile.matched_skills),
+            list(profile.capability_hints),
         )
         if route_gate_decision.action in {"clarify", "answer_without_tool"}:
             return self._profile_from_gate_decision(route_gate_decision)
@@ -444,32 +444,32 @@ class RequestRouter:
                 return profile
             return self._with_gate_decision(profile, gate_decision)
 
-        skills = [
-            skill
-            for skill in (allowed or list(profile.matched_skills))
-            if skill not in forbidden
+        capability_hints = [
+            capability
+            for capability in (allowed or list(profile.capability_hints))
+            if capability not in forbidden
         ]
-        if not skills:
+        if not capability_hints:
             return self._with_gate_decision(profile, gate_decision)
 
         if (
-            list(profile.matched_skills) == skills
+            list(profile.capability_hints) == capability_hints
             and not forbidden
             and (
-                len(skills) != 1
-                or skills[0] == "observation-planner"
+                len(capability_hints) != 1
+                or capability_hints[0] == "observation-planner"
                 or profile.legacy_route == "direct_task"
             )
         ):
             return self._with_gate_decision(profile, gate_decision)
 
-        if len(skills) == 1 and skills[0] != "observation-planner":
+        if len(capability_hints) == 1 and capability_hints[0] != "observation-planner":
             return self._profile(
                 task_type="single_tool_lookup",
                 legacy_route="direct_task",
                 confidence=max(profile.confidence, gate_decision.confidence),
                 reason=f"tool_necessity_gate_hint:{gate_decision.reason}",
-                matched_skills=skills,
+                capability_hints=capability_hints,
                 router_source=profile.router_source,
                 rule_confidence=profile.rule_confidence,
                 llm_confidence=profile.llm_confidence,
@@ -477,11 +477,11 @@ class RequestRouter:
             )
 
         return self._profile(
-            task_type=self._infer_task_type(query, skills),
+            task_type=self._infer_task_type(query, capability_hints),
             legacy_route="planned_task",
             confidence=max(profile.confidence, gate_decision.confidence),
             reason=f"tool_necessity_gate_hint:{gate_decision.reason}",
-            matched_skills=skills,
+            capability_hints=capability_hints,
             router_source=profile.router_source,
             rule_confidence=profile.rule_confidence,
             llm_confidence=profile.llm_confidence,
@@ -528,48 +528,48 @@ class RequestRouter:
                 reason="matched_open_ended_hint",
             )
 
-        matched_skills = self._match_skills(text, lowered)
-        if matched_skills:
-            if matched_skills == ["observation-planner"]:
+        capability_hints = self._match_capability_hints(text, lowered)
+        if capability_hints:
+            if capability_hints == ["observation-planner"]:
                 return self._profile(
                     task_type="observation_recommendation",
                     legacy_route="planned_task",
                     confidence=0.78,
                     reason="matched_observation_recommendation_intent",
-                    matched_skills=matched_skills,
+                    capability_hints=capability_hints,
                 )
 
-            if len(matched_skills) == 1 and not self._is_complex(text):
+            if len(capability_hints) == 1 and not self._is_complex(text):
                 return self._profile(
                     task_type="single_tool_lookup",
                     legacy_route="direct_task",
                     confidence=0.9,
                     reason="matched_single_skill",
-                    matched_skills=matched_skills,
+                    capability_hints=capability_hints,
                 )
 
             if (
-                len(matched_skills) == 1
-                and self._should_keep_single_skill_direct(matched_skills[0], text)
+                len(capability_hints) == 1
+                and self._should_keep_single_skill_direct(capability_hints[0], text)
             ):
                 return self._profile(
                     task_type="single_tool_lookup",
                     legacy_route="direct_task",
                     confidence=0.88,
                     reason="matched_single_skill_direct_intent",
-                    matched_skills=matched_skills,
+                    capability_hints=capability_hints,
                 )
 
             return self._profile(
-                task_type=self._infer_task_type(text, matched_skills),
+                task_type=self._infer_task_type(text, capability_hints),
                 legacy_route="planned_task",
-                confidence=0.82 if len(matched_skills) > 1 else 0.74,
+                confidence=0.82 if len(capability_hints) > 1 else 0.74,
                 reason=(
                     "matched_multiple_skills"
-                    if len(matched_skills) > 1
+                    if len(capability_hints) > 1
                     else "complex_single_skill_promoted_to_planned_task"
                 ),
-                matched_skills=matched_skills,
+                capability_hints=capability_hints,
             )
 
         if self._is_simple_qa(text):
@@ -582,11 +582,11 @@ class RequestRouter:
 
         if self._is_complex(text):
             return self._profile(
-                task_type=self._infer_task_type(text, matched_skills),
+                task_type=self._infer_task_type(text, capability_hints),
                 legacy_route="planned_task",
                 confidence=0.7,
                 reason="matched_complex_hint",
-                matched_skills=self._infer_supporting_skills(text),
+                capability_hints=self._infer_supporting_skills(text),
             )
 
         return self._profile(
@@ -631,7 +631,7 @@ class RequestRouter:
             return False
 
         if (
-            rule_profile.matched_skills
+            rule_profile.capability_hints
             and rule_profile.confidence >= self._llm_confidence_threshold
         ):
             return False
@@ -705,7 +705,7 @@ class RequestRouter:
             legacy_route=normalized_route,
             confidence=normalized_confidence,
             reason=f"llm_intent_fallback:{reason}",
-            matched_skills=skills,
+            capability_hints=skills,
             router_source="llm_fallback",
             rule_confidence=rule_profile.confidence,
             llm_confidence=normalized_confidence,
@@ -719,6 +719,7 @@ class RequestRouter:
         confidence: float,
         reason: str,
         matched_skills: List[str] | None = None,
+        capability_hints: List[str] | None = None,
         router_source: str = "rule",
         rule_confidence: Optional[float] = None,
         llm_confidence: Optional[float] = None,
@@ -730,7 +731,8 @@ class RequestRouter:
             task_type=task_type,
             confidence=confidence,
             reason=reason,
-            matched_skills=list(matched_skills or []),
+            matched_skills=list(matched_skills or capability_hints or []),
+            capability_hints=list(capability_hints or matched_skills or []),
             expected_output_schema=TASK_TYPE_TO_OUTPUT_SCHEMA.get(
                 task_type, "generic_answer_v1"
             ),
@@ -782,8 +784,8 @@ class RequestRouter:
             token in text for token in ("天气", "观测", "天象", "摄影", "星云", "星系")
         )
 
-    def _infer_task_type(self, text: str, matched_skills: List[str]) -> str:
-        skill_set = set(matched_skills)
+    def _infer_task_type(self, text: str, capability_hints: List[str]) -> str:
+        skill_set = set(capability_hints)
         if "observation-planner" in skill_set and any(
             token in text for token in ("计划", "安排", "推荐", "观测顺序", "看什么", "先看")
         ):
@@ -801,7 +803,7 @@ class RequestRouter:
         return "observation_recommendation"
 
     def _infer_supporting_skills(self, text: str) -> List[str]:
-        matched = self._match_skills(text, text.lower())
+        matched = self._match_capability_hints(text, text.lower())
         if matched:
             return matched
 
@@ -820,6 +822,14 @@ class RequestRouter:
             inferred.append("celestial-position-calculator")
         return inferred
 
+    def _match_capability_hints(self, text: str, lowered: str) -> List[str]:
+        hints = self._match_skills(text, lowered)
+        if self._is_apod_lookup_intent(text):
+            hints.append("get_nasa_apod")
+        if self._is_web_search_intent(text):
+            hints.append("web_search")
+        return list(dict.fromkeys(hints))
+
     def _match_skills(self, text: str, lowered: str) -> List[str]:
         matched: List[str] = []
         for spec in self._skill_specs:
@@ -833,11 +843,7 @@ class RequestRouter:
                 continue
 
             skill_name = spec.skill_name
-            if skill_name == "get_nasa_apod" and self._is_apod_lookup_intent(text):
-                matched.append(skill_name)
-            elif skill_name == "web_search" and self._is_web_search_intent(text):
-                matched.append(skill_name)
-            elif skill_name == "weather-lookup" and self._is_weather_intent(text):
+            if skill_name == "weather-lookup" and self._is_weather_intent(text):
                 matched.append(skill_name)
             elif (
                 skill_name == "observation-planner"

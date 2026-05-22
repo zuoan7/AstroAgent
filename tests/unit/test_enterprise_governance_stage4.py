@@ -11,11 +11,14 @@ mock_heavy_dependencies()
 sys.modules.pop("src.agent.streaming_service", None)
 
 from src.agent.audit import RequestAuditLogger
+from src.agent.execution.planned_executor import PlannedExecutor
+from src.agent.models.execution_context import ExecutionContext
+from src.agent.models.final_response import FinalResponse
 from src.agent.models.skill_result import SkillResult
+from src.agent.models.task_profile import TaskProfile
 from src.agent.policies import BudgetExceededError, ModelPolicy, RequestBudget, RequestBudgetTracker
 from src.agent.request_router import RouteDecision
 from src.agent.streaming_service import StreamingService
-from src.agent.task_orchestrator import TaskOrchestrator
 
 
 class _MemoryStub:
@@ -66,18 +69,9 @@ def test_model_policy_selects_small_model_for_router(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_task_orchestrator_planned_response_contains_enterprise_metadata():
+async def test_planned_executor_response_contains_enterprise_metadata():
     class _SkillManagerStub:
         def call_skill(self, name, **params):
-            if name == "weather-lookup":
-                return SkillResult(
-                    skill_name=name,
-                    success=False,
-                    data={},
-                    summary="[错误] weather unavailable",
-                    error_code="TOOL_FAIL",
-                    error_message="weather unavailable",
-                )
             return SkillResult(
                 skill_name=name,
                 success=True,
@@ -90,10 +84,27 @@ async def test_task_orchestrator_planned_response_contains_enterprise_metadata()
         def invoke(self, prompt):
             return SimpleNamespace(content="综合后建议今晚仍可先进行目标筛选。")
 
-    orchestrator = TaskOrchestrator(
+    class _SynthesizerStub:
+        prompt_version = "test_synth"
+
+        def synthesize(self, **kwargs):
+            return FinalResponse(
+                answer="综合后建议今晚仍可先进行目标筛选。",
+                summary="综合后建议今晚仍可先进行目标筛选。",
+                route=kwargs.get("route", ""),
+                task_type=kwargs.get("task_type", ""),
+                execution_plan=kwargs.get("execution_plan"),
+                execution_trace=kwargs.get("execution_trace", []),
+                route_decision=kwargs.get("route_decision"),
+                fallback_path=kwargs.get("fallback_path", []),
+                budget_usage=kwargs.get("budget_usage"),
+                versions=kwargs.get("versions"),
+            )
+
+    executor = PlannedExecutor(
         skill_manager=_SkillManagerStub(),
-        rag_retriever=SimpleNamespace(retrieve=lambda *args, **kwargs: {"context": ""}),
         llm=_LLMStub(),
+        synthesizer=_SynthesizerStub(),
     )
     decision = RouteDecision(
         route="planned_task",
@@ -101,14 +112,17 @@ async def test_task_orchestrator_planned_response_contains_enterprise_metadata()
         confidence=0.9,
         reason="matched_multiple_skills",
         matched_skills=["weather-lookup", "observation-planner"],
+        capability_hints=["weather-lookup", "observation-planner"],
         expected_output_schema="observation_answer_v1",
     )
 
-    result = await orchestrator.run(
-        decision,
-        "帮我看下今晚适合观测什么",
-        chat_history="",
-        user_profile="",
+    result = await executor.run_context(
+        ExecutionContext.from_legacy_decision(
+            decision,
+            "帮我看下今晚适合观测什么",
+            chat_history="",
+            user_profile="",
+        )
     )
 
     assert result.execution_plan is not None
@@ -129,6 +143,7 @@ async def test_streaming_service_writes_audit_log(tmp_path):
         confidence=0.8,
         reason="matched_multiple_skills",
         matched_skills=["weather-lookup", "observation-planner"],
+        capability_hints=["weather-lookup", "observation-planner"],
         expected_output_schema="observation_answer_v1",
     )
 
@@ -139,7 +154,17 @@ async def test_streaming_service_writes_audit_log(tmp_path):
         def to_frontend_steps(self):
             return []
 
-    async def fake_run(decision, query, **kwargs):
+    profile = TaskProfile.from_legacy_route(
+        route=decision.route,
+        task_type=decision.task_type,
+        confidence=decision.confidence,
+        matched_skills=decision.matched_skills,
+        capability_hints=decision.capability_hints,
+        reason=decision.reason,
+        expected_output_schema=decision.expected_output_schema,
+    )
+
+    async def fake_run_context(exec_decision, context, **kwargs):
         from src.agent.models.final_response import FinalResponse
 
         return FinalResponse(
@@ -152,7 +177,7 @@ async def test_streaming_service_writes_audit_log(tmp_path):
             task_type="observation_recommendation",
             execution_plan={"task_type": "observation_recommendation", "steps": []},
             execution_trace=[],
-            route_decision=decision.to_meta(),
+            route_decision=context.profile.to_legacy_route_meta(),
             fallback_path=[],
             budget_usage={"usage": {"llm_calls": 1}},
             versions={"planner_version": "planner_v2", "schema_version": "schema_v2"},
@@ -162,10 +187,15 @@ async def test_streaming_service_writes_audit_log(tmp_path):
         agent_executor=None,
         memory=_MemoryStub(),
         user_id="test_user",
-        request_router=SimpleNamespace(route=lambda query: decision),
-        task_orchestrator=SimpleNamespace(
-            build_execution_plan=lambda *args, **kwargs: _PlanStub(),
-            run=fake_run,
+        request_router=SimpleNamespace(
+            profile=lambda query: profile,
+            route=lambda query: (_ for _ in ()).throw(
+                AssertionError("streaming should not call route()")
+            ),
+        ),
+        execution_engine=SimpleNamespace(
+            preview_plan_context=lambda *args, **kwargs: _PlanStub(),
+            run_context=fake_run_context,
         ),
         audit_logger=logger,
     )

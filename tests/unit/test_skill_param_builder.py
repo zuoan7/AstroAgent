@@ -7,6 +7,7 @@ from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 
 from src.agent.skill_param_builder import SkillParamBuilder
+from src.capabilities.param_builder import CapabilityParamBuilder
 
 
 def _builder() -> SkillParamBuilder:
@@ -174,11 +175,15 @@ def test_celestial_position_radec_query_builds_coordinate_operation():
     assert params["dec"] == pytest.approx(-(5 + 23 / 60))
 
 
-def test_atomic_mcp_tool_params_for_apod_and_web_search():
-    builder = _builder()
-
-    apod = builder.build("get_nasa_apod", "帮我查一下 2026-01-01 的 APOD")
-    search = builder.build("web_search", "帮我查一下最近韦布望远镜有什么新结果")
+def test_atomic_mcp_tool_params_use_capability_param_builder():
+    apod = CapabilityParamBuilder.build_atomic_tool_params(
+        "get_nasa_apod",
+        "帮我查一下 2026-01-01 的 APOD",
+    )
+    search = CapabilityParamBuilder.build_atomic_tool_params(
+        "web_search",
+        "帮我查一下最近韦布望远镜有什么新结果",
+    )
 
     assert apod["date"] == "2026-01-01"
     assert apod["hd"] is False

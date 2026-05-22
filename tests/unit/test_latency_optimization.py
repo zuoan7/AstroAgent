@@ -95,12 +95,11 @@ async def test_streaming_service_smalltalk_uses_direct_route():
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=RequestRouter(),
-        task_orchestrator=SimpleNamespace(),
     )
 
-    async def fake_run(decision, query, **kwargs):
-        assert decision.route == "direct_task"
-        assert decision.task_type == "smalltalk"
+    async def fake_run_context(decision, context, **kwargs):
+        assert context.profile.legacy_route == "direct_task"
+        assert context.profile.task_type == "smalltalk"
         return FinalResponse(
             answer="你好，我可以帮你查询天象、观测条件、天体位置和天文知识。",
             summary="你好，我可以帮你查询天象、观测条件、天体位置和天文知识。",
@@ -111,7 +110,7 @@ async def test_streaming_service_smalltalk_uses_direct_route():
             task_type="smalltalk",
         )
 
-    service._task_orchestrator.run = fake_run
+    service._execution_engine = SimpleNamespace(run_context=fake_run_context)
 
     events = []
     async for event in service.generate_events("你好"):
@@ -179,13 +178,17 @@ async def test_streaming_service_generate_events_uses_policy_decide():
         reason="matched_smalltalk_pattern",
         expected_output_schema="chat_answer_v1",
     )
-    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    router = SimpleNamespace(
+        route=lambda query: (_ for _ in ()).throw(
+            AssertionError("streaming should not call route()")
+        ),
+        profile=lambda query: profile,
+    )
     service = StreamingService(
         agent_executor=None,
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=router,
-        task_orchestrator=SimpleNamespace(),
     )
 
     called = {"count": 0, "mode": None}
@@ -213,7 +216,7 @@ async def test_streaming_service_generate_events_uses_policy_decide():
         to_dict=lambda: {"mode": "hybrid"},
     )
 
-    async def fake_run(decision, query, **kwargs):
+    async def fake_run_context(decision, context, **kwargs):
         return FinalResponse(
             answer="你好，我可以帮你查询天象。",
             summary="你好，我可以帮你查询天象。",
@@ -224,7 +227,7 @@ async def test_streaming_service_generate_events_uses_policy_decide():
             task_type="smalltalk",
         )
 
-    service._task_orchestrator.run = fake_run
+    service._execution_engine = SimpleNamespace(run_context=fake_run_context)
 
     events = []
     async for event in service.generate_events("你好"):
@@ -273,13 +276,17 @@ def test_streaming_service_generate_response_uses_policy_decide():
         reason="matched_smalltalk_pattern",
         expected_output_schema="chat_answer_v1",
     )
-    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    router = SimpleNamespace(
+        route=lambda query: (_ for _ in ()).throw(
+            AssertionError("streaming should not call route()")
+        ),
+        profile=lambda query: profile,
+    )
     service = StreamingService(
         agent_executor=None,
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=router,
-        task_orchestrator=SimpleNamespace(),
     )
 
     called = {"count": 0}
@@ -306,7 +313,7 @@ def test_streaming_service_generate_response_uses_policy_decide():
         to_dict=lambda: {"mode": "hybrid"},
     )
 
-    async def fake_run(decision, query, **kwargs):
+    async def fake_run_context(decision, context, **kwargs):
         return FinalResponse(
             answer="你好，我在。",
             summary="你好，我在。",
@@ -317,7 +324,7 @@ def test_streaming_service_generate_response_uses_policy_decide():
             task_type="smalltalk",
         )
 
-    service._task_orchestrator.run = fake_run
+    service._execution_engine = SimpleNamespace(run_context=fake_run_context)
 
     chunks = list(service.generate_response("你好"))
 
@@ -341,7 +348,12 @@ def test_streaming_service_generate_response_uses_engine_for_react():
         reason="open_ended",
         expected_output_schema="react_answer_v1",
     )
-    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    router = SimpleNamespace(
+        route=lambda query: (_ for _ in ()).throw(
+            AssertionError("streaming should not call route()")
+        ),
+        profile=lambda query: profile,
+    )
     service = StreamingService(
         agent_executor=SimpleNamespace(
             invoke=lambda *_args, **_kwargs: (_ for _ in ()).throw(
@@ -351,7 +363,6 @@ def test_streaming_service_generate_response_uses_engine_for_react():
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=router,
-        task_orchestrator=SimpleNamespace(),
     )
 
     called = {"count": 0}
@@ -389,9 +400,6 @@ def test_streaming_service_generate_response_uses_engine_for_react():
         to_dict=lambda: {"mode": "hybrid"},
     )
     service._execution_engine = SimpleNamespace(run=fake_engine_run)
-    service._task_orchestrator.run = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-        AssertionError("legacy orchestrator should not be called")
-    )
 
     chunks = list(service.generate_response("写一段开放式宇宙随笔"))
 
@@ -424,13 +432,17 @@ async def test_streaming_service_generate_events_uses_engine_stream_for_react():
         reason="open_ended",
         expected_output_schema="react_answer_v1",
     )
-    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    router = SimpleNamespace(
+        route=lambda query: (_ for _ in ()).throw(
+            AssertionError("streaming should not call route()")
+        ),
+        profile=lambda query: profile,
+    )
     service = StreamingService(
         agent_executor=None,
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=router,
-        task_orchestrator=SimpleNamespace(),
         agent_executor_factory=lambda: (_ for _ in ()).throw(
             AssertionError("legacy react executor factory should not be called")
         ),
@@ -503,17 +515,17 @@ async def test_streaming_service_planned_events_use_engine_preview_plan():
         matched_skills=["weather-lookup", "observation-planner"],
         expected_output_schema="observation_answer_v1",
     )
-    router = SimpleNamespace(route=lambda query: route_decision, profile=lambda query: profile)
+    router = SimpleNamespace(
+        route=lambda query: (_ for _ in ()).throw(
+            AssertionError("streaming should not call route()")
+        ),
+        profile=lambda query: profile,
+    )
     service = StreamingService(
         agent_executor=None,
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=router,
-        task_orchestrator=SimpleNamespace(
-            build_execution_plan=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                AssertionError("legacy build_execution_plan should not be called")
-            )
-        ),
     )
 
     def decide(p, context=None):

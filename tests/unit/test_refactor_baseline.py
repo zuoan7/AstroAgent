@@ -17,11 +17,13 @@ mock_heavy_dependencies()
 sys.modules.pop("src.agent.streaming_service", None)
 
 from src.agent.governance import AgentExecutionPolicy
+from src.agent.execution.engine import ExecutionEngine
+from src.agent.models.execution_decision import ExecutionDecision
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.final_response import FinalResponse
 from src.agent.models.skill_result import SkillResult
+from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RequestRouter, RouteDecision
-from src.agent.task_orchestrator import TaskOrchestrator
 from src.agent.streaming_service import StreamingService
 from src.core.config import settings
 
@@ -59,6 +61,39 @@ class _SkillManagerStub:
             data={"params": params},
             summary=f"{name} result",
             sources=[{"source_id": name, "kind": "tool_output", "title": name}],
+        )
+
+
+class _SynthesizerStub:
+    prompt_version = "baseline_synth"
+
+    def synthesize_smalltalk(self, answer: str):
+        return FinalResponse(answer=answer, summary=answer)
+
+    def synthesize_qa(self, **kwargs):
+        answer = kwargs.get("answer", "stubbed_answer")
+        return FinalResponse(answer=answer, summary=answer)
+
+    def synthesize_direct(self, **kwargs):
+        return FinalResponse(
+            answer="direct tool response",
+            summary="direct tool response",
+            route="direct_task",
+            task_type=kwargs.get("task_type", "single_tool_lookup"),
+        )
+
+    def synthesize(self, **kwargs):
+        return FinalResponse(
+            answer="planned response",
+            summary="planned response",
+            route=kwargs.get("route", "planned_task"),
+            task_type=kwargs.get("task_type", "observation_recommendation"),
+            execution_plan=kwargs.get("execution_plan"),
+            execution_trace=kwargs.get("execution_trace", []),
+            route_decision=kwargs.get("route_decision"),
+            fallback_path=kwargs.get("fallback_path", []),
+            budget_usage=kwargs.get("budget_usage"),
+            versions=kwargs.get("versions"),
         )
 
 
@@ -190,16 +225,17 @@ class TestAgentExecutionPolicyBaseline:
         assert isinstance(policy.enable_react_fallback, bool)
 
 
-# ─── Task 3: TaskOrchestrator.run 覆盖 ───────────────────────────────────────
+# ─── Task 3: ExecutionEngine legacy adapter 覆盖 ─────────────────────────────
 
-class TestTaskOrchestratorBaseline:
+class TestExecutionEngineBaseline:
     """覆盖 direct_task 和 planned_task 两条路径。"""
 
     def setup_method(self):
-        self.orchestrator = TaskOrchestrator(
+        self.engine = ExecutionEngine(
             skill_manager=_SkillManagerStub(),
             rag_retriever=_RagStub(),
             llm=_LLMStub(),
+            synthesizer=_SynthesizerStub(),
         )
 
     @pytest.mark.asyncio
@@ -210,8 +246,12 @@ class TestTaskOrchestratorBaseline:
             confidence=0.98,
             reason="matched_smalltalk_pattern",
         )
-        result = await self.orchestrator.run(
-            decision, "你好", chat_history="", user_profile=""
+        result = await self.engine.run(
+            ExecutionDecision(mode="direct", reason="baseline"),
+            decision,
+            "你好",
+            chat_history="",
+            user_profile="",
         )
         assert isinstance(result, FinalResponse)
         assert result.answer
@@ -226,8 +266,12 @@ class TestTaskOrchestratorBaseline:
             confidence=0.8,
             reason="matched_simple_qa_hint",
         )
-        result = await self.orchestrator.run(
-            decision, "黑洞是什么", chat_history="", user_profile=""
+        result = await self.engine.run(
+            ExecutionDecision(mode="direct", reason="baseline"),
+            decision,
+            "黑洞是什么",
+            chat_history="",
+            user_profile="",
         )
         assert isinstance(result, FinalResponse)
         assert result.answer
@@ -241,9 +285,14 @@ class TestTaskOrchestratorBaseline:
             confidence=0.9,
             reason="matched_single_skill",
             matched_skills=["weather-lookup"],
+            capability_hints=["weather-lookup"],
         )
-        result = await self.orchestrator.run(
-            decision, "北京今天天气", chat_history="", user_profile=""
+        result = await self.engine.run(
+            ExecutionDecision(mode="direct", reason="baseline"),
+            decision,
+            "北京今天天气",
+            chat_history="",
+            user_profile="",
         )
         assert isinstance(result, FinalResponse)
         assert result.answer
@@ -275,9 +324,11 @@ class TestTaskOrchestratorBaseline:
             confidence=0.82,
             reason="matched_multiple_skills",
             matched_skills=["weather-lookup", "observation-planner"],
+            capability_hints=["weather-lookup", "observation-planner"],
             expected_output_schema="observation_answer_v1",
         )
-        result = await self.orchestrator.run(
+        result = await self.engine.run(
+            ExecutionDecision(mode="planned", reason="baseline"),
             decision,
             "今晚北京适合观测吗",
             chat_history="",
@@ -300,9 +351,13 @@ class TestTaskOrchestratorBaseline:
             confidence=0.45,
             reason="fallback",
         )
-        with pytest.raises(ValueError, match="unsupported orchestrated route"):
-            await self.orchestrator.run(
-                decision, "随便", chat_history="", user_profile=""
+        with pytest.raises(ValueError, match="Invalid mode"):
+            await self.engine.run(
+                ExecutionDecision(mode="unknown", reason="baseline"),
+                decision,
+                "随便",
+                chat_history="",
+                user_profile="",
             )
 
 
@@ -312,15 +367,25 @@ class TestStreamingServiceBaseline:
     """验证 route_decision 事件与 planned 路径的 plan_update 事件。"""
 
     def _make_service(self, decision: RouteDecision, plan: ExecutionPlan) -> StreamingService:
-        async def fake_run(dec, query, **kwargs):
+        profile = TaskProfile.from_legacy_route(
+            route=decision.route,
+            task_type=decision.task_type,
+            confidence=decision.confidence,
+            matched_skills=decision.matched_skills,
+            capability_hints=decision.capability_hints,
+            reason=decision.reason,
+            expected_output_schema=decision.expected_output_schema,
+        )
+
+        async def fake_run_context(exec_decision, context, **kwargs):
             return FinalResponse(
                 answer="今晚适合观测猎户座。",
                 summary="今晚适合观测猎户座。",
                 tools_used=[],
                 sources=[],
                 confidence=0.88,
-                route=dec.route,
-                task_type=dec.task_type,
+                route=context.profile.legacy_route,
+                task_type=context.profile.task_type,
                 execution_plan=plan.to_dict(),
                 execution_trace=[
                     {
@@ -339,10 +404,15 @@ class TestStreamingServiceBaseline:
             agent_executor=None,
             memory=_MemoryStub(),
             user_id="test_user",
-            request_router=SimpleNamespace(route=lambda q: decision),
-            task_orchestrator=SimpleNamespace(
-                build_execution_plan=lambda *a, **kw: plan,
-                run=fake_run,
+            request_router=SimpleNamespace(
+                profile=lambda q: profile,
+                route=lambda q: (_ for _ in ()).throw(
+                    AssertionError("streaming should not call route()")
+                ),
+            ),
+            execution_engine=SimpleNamespace(
+                preview_plan_context=lambda *a, **kw: plan,
+                run_context=fake_run_context,
             ),
         )
 
@@ -391,6 +461,7 @@ class TestStreamingServiceBaseline:
             confidence=0.82,
             reason="matched_multiple_skills",
             matched_skills=["weather-lookup"],
+            capability_hints=["weather-lookup"],
             expected_output_schema="observation_answer_v1",
         )
         service = self._make_service(decision, plan)
@@ -500,35 +571,19 @@ class TestMinimalBehaviorBaseline:
 # ─── Task 6: feature flags 默认值验证 ─────────────────────────────────────────
 
 class TestFeatureFlagsDefaults:
-    """验证 DAG 重构配置位的默认值与兼容语义。"""
+    """验证 DAG 重构配置位的默认值与收敛语义。"""
 
-    def test_enable_task_profile_default_false(self):
-        # Deprecated config: TaskProfile 已固定为 Router 主输出
-        assert settings.ENABLE_TASK_PROFILE is False
-
-    def test_enable_execution_context_default_false(self):
-        # Deprecated config: ExecutionContext 已固定进入主链路
-        assert settings.ENABLE_EXECUTION_CONTEXT is False
-
-    def test_enable_execution_decision_default_false(self):
-        # Deprecated config: ExecutionDecision 已固定为 Policy 主输出
-        assert settings.ENABLE_EXECUTION_DECISION is False
-
-    def test_enable_unified_execution_engine_default_true(self):
-        # Compatibility flag: True 为默认主路径，False 回退 legacy TaskOrchestrator
-        assert settings.ENABLE_UNIFIED_EXECUTION_ENGINE is True
-
-    def test_enable_workflow_graph_default_true(self):
-        # Compatibility flag: True 优先 plan_graph，False 回退 legacy plan()->graph
-        assert settings.ENABLE_WORKFLOW_GRAPH is True
-
-    def test_enable_unified_execution_trace_default_true(self):
-        # Deprecated config: 仅保留历史配置位，不再切换主路径
-        assert settings.ENABLE_UNIFIED_EXECUTION_TRACE is True
-
-    def test_enable_unified_execution_events_default_true(self):
-        # Deprecated config: 仅保留历史配置位，不再切换主路径
-        assert settings.ENABLE_UNIFIED_EXECUTION_EVENTS is True
+    def test_deprecated_non_branching_flags_removed(self):
+        removed = {
+            "ENABLE_TASK_PROFILE",
+            "ENABLE_EXECUTION_CONTEXT",
+            "ENABLE_EXECUTION_DECISION",
+            "ENABLE_WORKFLOW_GRAPH",
+            "ENABLE_UNIFIED_EXECUTION_TRACE",
+            "ENABLE_UNIFIED_EXECUTION_EVENTS",
+            "ENABLE_UNIFIED_EXECUTION_ENGINE",
+        }
+        assert all(not hasattr(settings, name) for name in removed)
 
     def test_existing_flags_unaffected(self):
         # 确保原有 flag 默认值未被改动

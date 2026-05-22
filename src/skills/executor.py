@@ -40,7 +40,12 @@ class SkillExecutor:
         self._register_registry_simple_skills()
 
     def call(self, name: str, **params: Any) -> SkillResult:
-        spec = registry.get_skill_spec(name)
+        try:
+            spec = registry.get_skill_spec(name)
+        except KeyError:
+            if self._capabilities.has_tool(name):
+                return self._call_atomic_tool(name, **dict(params or {}))
+            raise
         normalized = self._normalize_skill_params(spec.skill_name, params)
 
         if spec.skill_name in self._handlers:
@@ -84,19 +89,39 @@ class SkillExecutor:
             )
 
     def _call_simple_skill(self, name: str, **params: Any) -> SkillResult:
-        started = time.perf_counter()
         cfg = self._simple_skills[name]
-        tool_name = cfg["tool_name"]
-        mapping: Dict[str, str] = cfg.get("param_mapping", {})
+        return self._call_atomic_tool(
+            name,
+            tool_name=cfg["tool_name"],
+            param_mapping=cfg.get("param_mapping", {}),
+            **params,
+        )
+
+    def _call_atomic_tool(
+        self,
+        name: str,
+        *,
+        tool_name: Optional[str] = None,
+        param_mapping: Optional[Dict[str, str]] = None,
+        **params: Any,
+    ) -> SkillResult:
+        started = time.perf_counter()
+        resolved_tool_name = tool_name or name
+        mapping: Dict[str, str] = dict(param_mapping or {})
         tool_kwargs: Dict[str, Any] = {}
         for key, value in params.items():
             tool_key = mapping.get(key, key)
             tool_kwargs[tool_key] = value
 
-        raw = self._runtime_for_skill(name, simple=True).call_tool(
-            tool_name,
-            **tool_kwargs,
-        )
+        if tool_name is not None:
+            raw = self._runtime_for_skill(name, simple=True).call_tool(
+                resolved_tool_name,
+                **tool_kwargs,
+            )
+        elif self._simple_tool_caller is not None:
+            raw = self._simple_tool_caller(resolved_tool_name, **tool_kwargs)
+        else:
+            raw = self._tool_runtime.call_tool(resolved_tool_name, **tool_kwargs)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
 
         if is_tool_error(raw):
@@ -111,10 +136,14 @@ class SkillExecutor:
                 latency_ms=round(elapsed_ms, 2),
             )
             result.logical_skill = name
-            result.expected_mcp_tools = [tool_name]
-            result.allowed_child_tools = [tool_name]
+            result.expected_mcp_tools = [resolved_tool_name]
+            result.allowed_child_tools = [resolved_tool_name]
             result.sources = [
-                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+                {
+                    "kind": "mcp_tool",
+                    "tool": resolved_tool_name,
+                    "snippet": str(raw)[:240],
+                }
             ]
             return result
 
@@ -146,12 +175,16 @@ class SkillExecutor:
                 else json.dumps(summary, ensure_ascii=False)
             ),
             sources=[
-                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
+                {
+                    "kind": "mcp_tool",
+                    "tool": resolved_tool_name,
+                    "snippet": str(raw)[:240],
+                }
             ],
             latency_ms=round(elapsed_ms, 2),
             logical_skill=name,
-            expected_mcp_tools=[tool_name],
-            allowed_child_tools=[tool_name],
+            expected_mcp_tools=[resolved_tool_name],
+            allowed_child_tools=[resolved_tool_name],
         )
 
     def _runtime_for_skill(

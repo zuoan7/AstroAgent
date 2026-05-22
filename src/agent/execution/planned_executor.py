@@ -13,7 +13,6 @@ from src.agent.models.workflow_graph import WorkflowGraph
 from src.agent.planner import Planner
 from src.agent.policies.budget_policy import RequestBudgetTracker
 from src.agent.policies.fallback_policy import FallbackPolicy
-from src.agent.request_router import RouteDecision
 from src.agent.skill_param_builder import SkillParamBuilder
 from src.capabilities.param_builder import CapabilityParamBuilder
 from src.core.config import settings
@@ -39,29 +38,31 @@ class PlannedExecutor:
         self._workflow_executor = workflow_executor or WorkflowExecutor(skill_manager=skill_manager)
         self._param_builder = SkillParamBuilder(skill_manager)
 
-    async def run(
+    async def run_context(
         self,
-        decision: RouteDecision,
-        query: str,
+        context: Any,
         *,
-        chat_history: str = "",
-        user_profile: str = "",
         execution_plan: Optional[ExecutionPlan] = None,
         event_callback: Optional[EventCallback] = None,
         budget_tracker: Optional[RequestBudgetTracker] = None,
-        context: Optional[Any] = None,
     ) -> FinalResponse:
         budget_tracker = budget_tracker or RequestBudgetTracker()
+        profile = context.profile
+        query = context.query
+        chat_history = context.chat_history
+        user_profile = context.user_profile
 
-        plan, graph = self._resolve_plan_and_graph(
-            decision,
+        plan, graph = self._resolve_plan_and_graph_for_profile(
+            profile,
             query,
             chat_history=chat_history,
             user_profile=user_profile,
             execution_plan=execution_plan,
         )
         if not graph.nodes:
-            raise ValueError(f"no planned-task steps resolved for {decision.task_type}")
+            raise ValueError(
+                f"no planned-task steps resolved for {getattr(profile, 'task_type', '')}"
+            )
 
         outcome = await self._workflow_executor.execute(
             graph,
@@ -100,33 +101,36 @@ class PlannedExecutor:
             ),
         }
 
+        route_meta = profile.to_legacy_route_meta()
         response = self._synthesizer.synthesize(
             query=query,
-            task_type=decision.task_type,
-            output_schema=decision.expected_output_schema,
+            task_type=getattr(profile, "task_type", ""),
+            output_schema=getattr(
+                profile, "expected_output_schema", "generic_answer_v1"
+            ),
             skill_results=outcome.skill_results,
             chat_history=chat_history,
             user_profile=user_profile,
-            route=decision.route,
+            route=getattr(profile, "legacy_route", ""),
             execution_plan=plan.to_dict(),
             execution_trace=[step.to_dict() for step in outcome.step_results],
-            route_decision=decision.to_meta(),
+            route_decision=route_meta,
             fallback_path=[fallback_decision.to_dict()] if fallback_decision else [],
             budget_usage=budget_tracker.snapshot() if budget_tracker else None,
             versions=versions_payload,
             evidence=outcome.evidence_by_key,
         )
-        response.route = decision.route
-        response.task_type = decision.task_type
+        response.route = getattr(profile, "legacy_route", "")
+        response.task_type = getattr(profile, "task_type", "")
         response.sources = self._merge_sources(response.sources, outcome.evidence_items)
         response.execution_plan = plan.to_dict()
         response.execution_trace = [step.to_dict() for step in outcome.step_results]
-        response.route_decision = decision.to_meta()
+        response.route_decision = route_meta
         response.fallback_path = [fallback_decision.to_dict()] if fallback_decision else []
         response.budget_usage = budget_tracker.snapshot() if budget_tracker else None
         response.versions = response.versions or versions_payload
         response.audit_metadata = self._build_observability_metadata(
-            decision=decision,
+            profile=profile,
             plan=plan,
             execution_trace=response.execution_trace,
             evidence_by_key=outcome.evidence_by_key,
@@ -160,32 +164,26 @@ class PlannedExecutor:
             merged.append(dict(item))
         return merged
 
-    def preview_plan(
+    def preview_plan_context(
         self,
-        decision: RouteDecision,
-        query: str,
+        context: Any,
         *,
-        chat_history: str = "",
-        user_profile: str = "",
         execution_plan: Optional[ExecutionPlan] = None,
     ) -> ExecutionPlan:
         """为展示层提供兼容计划视图，不触发实际执行。"""
-        plan, _ = self._resolve_plan_and_graph(
-            decision,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
+        plan, _ = self._resolve_plan_and_graph_for_profile(
+            context.profile,
+            context.query,
+            chat_history=context.chat_history,
+            user_profile=context.user_profile,
             execution_plan=execution_plan,
         )
         return plan
 
-    def repair_plan(
+    def repair_plan_context(
         self,
-        decision: RouteDecision,
-        query: str,
+        context: Any,
         *,
-        chat_history: str = "",
-        user_profile: str = "",
         failed_response: Optional[FinalResponse] = None,
         error: str = "",
     ) -> Optional[ExecutionPlan]:
@@ -217,6 +215,7 @@ class PlannedExecutor:
         changed = False
 
         for step in plan.steps:
+            step_skill = self._step_skill_capability_name(step)
             valid_depends_on = [
                 dep for dep in step.depends_on if dep in valid_ids and dep != step.id
             ]
@@ -224,7 +223,7 @@ class PlannedExecutor:
                 step.depends_on = valid_depends_on
                 changed = True
 
-            if step.kind != "tool" and step.skill:
+            if step.kind != "tool" and step_skill:
                 step.kind = "tool"
                 changed = True
 
@@ -232,15 +231,15 @@ class PlannedExecutor:
             step_error = str(trace.get("error") or error or "")
             if (
                 step.id in failed_step_ids
-                and step.skill
+                and step_skill
                 and self._is_param_repair_error(step_error)
             ):
                 try:
                     step.params = self._param_builder.build(
-                        step.skill,
-                        query,
-                        chat_history=chat_history,
-                        user_profile=user_profile,
+                        step_skill,
+                        context.query,
+                        chat_history=context.chat_history,
+                        user_profile=context.user_profile,
                     )
                     changed = True
                 except Exception:
@@ -255,6 +254,12 @@ class PlannedExecutor:
             "受控计划修复：规范依赖/节点类型，并为失败步骤重建参数。"
         ).strip()
         return plan
+
+    @staticmethod
+    def _step_skill_capability_name(step: Any) -> str:
+        if getattr(step, "capability_kind", "") == "skill":
+            return str(getattr(step, "capability_name", "") or "")
+        return ""
 
     @staticmethod
     def _failed_step_ids_from_response(response: FinalResponse) -> set[str]:
@@ -286,55 +291,48 @@ class PlannedExecutor:
             )
         )
 
-    def _resolve_plan_and_graph(
+    def _resolve_plan_and_graph_for_profile(
         self,
-        decision: RouteDecision,
+        profile: Any,
         query: str,
         *,
         chat_history: str = "",
         user_profile: str = "",
         execution_plan: Optional[ExecutionPlan] = None,
     ) -> tuple[ExecutionPlan, WorkflowGraph]:
-        """Resolve the native WorkflowGraph and compatibility ExecutionPlan view."""
+        """Resolve native WorkflowGraph from TaskProfile and compatibility plan."""
         if execution_plan is not None:
             return execution_plan, WorkflowGraph.from_execution_plan(execution_plan)
 
-        if hasattr(self._planner, "plan_graph"):
-            try:
-                graph = self._planner.plan_graph(
-                    query=query,
-                    route_decision=decision,
-                    chat_history=chat_history,
-                    user_profile=user_profile,
-                )
-                if graph.nodes:
-                    plan = ExecutionPlan.from_workflow_graph(
-                        graph,
-                        task_type=decision.task_type,
-                    )
-                    return plan, graph
-            except Exception:
-                pass
-
-        plan = self._planner.plan(
+        graph = self._planner.plan_graph_for_profile(
             query=query,
-            route_decision=decision,
+            profile=profile,
             chat_history=chat_history,
             user_profile=user_profile,
         )
-        return plan, WorkflowGraph.from_execution_plan(plan)
+        if graph.nodes:
+            plan = ExecutionPlan.from_workflow_graph(
+                graph,
+                task_type=getattr(profile, "task_type", None),
+            )
+            return plan, graph
+
+        raise ValueError(
+            f"no planned-task graph resolved for {getattr(profile, 'task_type', '')}"
+        )
 
     def _build_observability_metadata(
         self,
         *,
-        decision: RouteDecision,
+        profile: Optional[Any] = None,
+        decision: Optional[Any] = None,
         plan: ExecutionPlan,
         execution_trace: list[dict[str, Any]],
         evidence_by_key: dict[str, Any],
         skipped_step_ids: list[str],
         context: Optional[Any] = None,
     ) -> dict[str, Any]:
-        route_meta = decision.to_meta()
+        route_meta = profile.to_legacy_route_meta() if profile is not None else decision.to_meta()
         capability = getattr(context, "capability_decision", None)
         capability_payload = (
             capability.to_dict()

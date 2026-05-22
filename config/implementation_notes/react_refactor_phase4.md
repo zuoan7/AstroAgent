@@ -1,5 +1,7 @@
 # ReAct Refactor 阶段 4 改动说明
 
+> 历史记录：本文保留阶段性实现说明原貌。当前工具层兼容状态以 `docs/agent_compatibility_matrix.md` 为准。
+
 ## 目标
 
 阶段 4 参考 `docs/AstroAgent_ReAct_Refactor_Plan.md`，把当前 AstroAgent 从“已有 Planner + Executor 的结构化链路”继续补齐到“可治理、可审计、可限制资源消耗”的企业级形态。

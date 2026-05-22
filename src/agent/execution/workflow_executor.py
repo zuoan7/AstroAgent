@@ -368,7 +368,7 @@ class WorkflowExecutor:
             "step_start",
             {
                 "step_id": node.id,
-                "title": node.title or node.skill or node.id,
+                "title": node.title or capability_name or node.skill or node.id,
                 "description": "",
                 "skill": node.skill,
                 "capability_kind": capability_kind,
@@ -432,7 +432,7 @@ class WorkflowExecutor:
 
         step_result = StepExecutionResult(
             step_id=node.id,
-            title=node.title or node.skill or node.id,
+            title=node.title or capability_name or node.skill or node.id,
             kind=node.kind,
             status=status,
             skill=node.skill,
@@ -447,7 +447,11 @@ class WorkflowExecutor:
                 list(skill_result.sources) if skill_result else []
             ),
             logical_skill=(
-                (getattr(skill_result, "logical_skill", None) or node.skill)
+                (
+                    getattr(skill_result, "logical_skill", None)
+                    or executable_skill
+                    or executable_tool
+                )
                 if skill_result
                 else None
             ),
@@ -475,11 +479,11 @@ class WorkflowExecutor:
                 event_callback,
                 "step_result",
                 {
-                "step_id": node.id,
-                "skill": node.skill,
-                "capability_kind": capability_kind,
-                "capability_name": capability_name,
-                "status": status,
+                    "step_id": node.id,
+                    "skill": node.skill,
+                    "capability_kind": capability_kind,
+                    "capability_name": capability_name,
+                    "status": status,
                     "summary": skill_result.summary,
                     "latency_ms": latency_ms,
                 },
@@ -492,7 +496,7 @@ class WorkflowExecutor:
             "step_end",
             {
                 "step_id": node.id,
-                "title": node.title or node.skill or node.id,
+                "title": node.title or capability_name or node.skill or node.id,
                 "status": status,
                 "skill": node.skill,
                 "capability_kind": capability_kind,
@@ -517,14 +521,17 @@ class WorkflowExecutor:
     ) -> StepExecutionResult:
         step_result = StepExecutionResult(
             step_id=node.id,
-            title=node.title or node.skill or node.id,
+            title=(
+                node.title
+                or getattr(node, "capability_name", "")
+                or node.skill
+                or node.id
+            ),
             kind=node.kind,
             status="skipped",
             skill=node.skill,
-            capability_kind=getattr(node, "capability_kind", "") or (
-                "skill" if node.skill else ""
-            ),
-            capability_name=getattr(node, "capability_name", "") or node.skill or "",
+            capability_kind=getattr(node, "capability_kind", "") or "",
+            capability_name=getattr(node, "capability_name", "") or "",
             capability_reason="workflow_node_capability",
             attempts=0,
             required=self._is_required(node, step_by_id),
@@ -565,15 +572,12 @@ class WorkflowExecutor:
 
     @staticmethod
     def _resolve_executable(node: WorkflowNode) -> Dict[str, Optional[str]]:
-        capability_kind = getattr(node, "capability_kind", "") or (
-            "skill" if node.skill else ""
-        )
-        capability_name = getattr(node, "capability_name", "") or node.skill or ""
+        capability_kind = getattr(node, "capability_kind", "") or ""
+        capability_name = getattr(node, "capability_name", "") or ""
         return {
             "capability_kind": capability_kind,
             "capability_name": capability_name,
-            "skill": node.skill
-            or (capability_name if capability_kind == "skill" else None),
+            "skill": capability_name if capability_kind == "skill" else None,
             "tool": capability_name if capability_kind == "tool" else None,
         }
 

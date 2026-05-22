@@ -56,6 +56,19 @@ class TestTaskProfileConstruction:
         assert p.complexity == "low"
         assert p.matched_skills == ["weather-lookup"]
 
+    def test_capability_hints_are_primary_with_legacy_matched_alias(self):
+        p = TaskProfile.from_legacy_route(
+            route="direct_task",
+            task_type="single_tool_lookup",
+            confidence=0.9,
+            capability_hints=["web_search"],
+        )
+
+        assert p.tool_need == "single"
+        assert p.capability_hints == ["web_search"]
+        assert p.matched_skills == ["web_search"]
+        assert p.to_legacy_route_decision().capability_hints == ["web_search"]
+
     def test_from_legacy_planned_multi_skill(self):
         p = TaskProfile.from_legacy_route(
             route="planned_task",
@@ -100,7 +113,7 @@ class TestTaskProfileConstruction:
         d = p.to_dict()
         required = {
             "task_type", "complexity", "openness", "tool_need",
-            "matched_skills", "confidence", "reason", "expected_output_schema", "legacy_route",
+            "matched_skills", "capability_hints", "confidence", "reason", "expected_output_schema", "legacy_route",
         }
         assert required.issubset(d.keys())
         assert d["expected_output_schema"] == "chat_answer_v1"
@@ -122,6 +135,7 @@ class TestTaskProfileConstruction:
         assert decision.confidence == 0.82
         assert decision.reason == "matched_multiple_skills"
         assert decision.matched_skills == ["weather-lookup", "observation-planner"]
+        assert decision.capability_hints == ["weather-lookup", "observation-planner"]
         assert decision.expected_output_schema == "observation_answer_v1"
 
     def test_legacy_route_map_covers_all_routes(self):
@@ -323,6 +337,25 @@ class TestRequestRouterProfile:
         assert decision.reason == profile.reason
         assert decision.matched_skills == profile.matched_skills
         assert decision.expected_output_schema == profile.expected_output_schema
+
+    def test_task_profile_legacy_route_meta_matches_route_decision_meta(self):
+        profile = TaskProfile.from_legacy_route(
+            route="planned_task",
+            task_type="observation_recommendation",
+            confidence=0.66,
+            matched_skills=["weather-lookup"],
+            reason="compat_profile",
+            expected_output_schema="observation_answer_v1",
+            router_source="rule",
+            tool_necessity_action="allow",
+            tool_necessity_reason="complete_params",
+            tool_necessity_missing_params=["city"],
+        )
+
+        assert (
+            profile.to_legacy_route_meta()
+            == profile.to_legacy_route_decision().to_meta()
+        )
 
     @pytest.mark.parametrize(
         ("query", "expected_route", "expected_task_type"),

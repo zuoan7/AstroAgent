@@ -27,6 +27,17 @@ class PlanStep:
     retry_policy: int = 0
     timeout_ms: Optional[int] = None
 
+    def __post_init__(self) -> None:
+        if self.skill and not self.capability_name and not self.capability_kind:
+            self.capability_kind = self.capability_kind or "skill"
+            self.capability_name = self.skill
+        elif (
+            self.skill
+            and not self.capability_name
+            and self.capability_kind == "skill"
+        ):
+            self.capability_name = self.skill
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PlanStep":
         skill = data.get("skill")
@@ -92,8 +103,7 @@ class ExecutionPlan:
     """Compatibility plan model.
 
     planned 主路径已优先使用 WorkflowGraph；ExecutionPlan 不再是主计划表达，
-    继续保留给旧序列化、旧接口输入、展示层兼容视图，以及
-    TaskOrchestrator / StreamingService 兼容回退链路。
+    继续保留给旧序列化、旧接口输入和展示层兼容视图。
     """
     task_type: str
     output_schema: str
@@ -128,9 +138,16 @@ class ExecutionPlan:
             frontend_steps.append(
                 {
                     "id": step.id,
-                    "title": step.title or step.skill or step.id,
+                    "title": step.title
+                    or step.capability_name
+                    or step.skill
+                    or step.id,
                     "description": step.description
-                    or (f"执行技能 {step.skill}" if step.skill else step.kind),
+                    or (
+                        f"执行能力 {step.capability_name}"
+                        if step.capability_name
+                        else step.kind
+                    ),
                     "status": "pending",
                     "kind": step.kind,
                     "skill": step.skill,

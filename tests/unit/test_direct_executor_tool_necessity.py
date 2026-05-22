@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.agent.execution.direct_executor import DirectExecutor
+from src.agent.models.execution_context import ExecutionContext
 from src.agent.request_router import RouteDecision
 
 
@@ -34,6 +35,15 @@ def _executor() -> DirectExecutor:
     )
 
 
+def _context(decision: RouteDecision, query: str) -> ExecutionContext:
+    return ExecutionContext.from_legacy_decision(
+        decision,
+        query,
+        default_route="direct_task",
+        default_task_type=decision.task_type,
+    )
+
+
 @pytest.mark.asyncio
 async def test_clarification_path_does_not_call_rag_or_skill():
     decision = RouteDecision(
@@ -48,7 +58,7 @@ async def test_clarification_path_does_not_call_rag_or_skill():
         tool_necessity_missing_params=["focal_length"],
     )
 
-    response = await _executor().run(decision, "帮我算曝光多久")
+    response = await _executor().run_context(_context(decision, "帮我算曝光多久"))
 
     assert response.answer == "请补充焦距和是否跟踪。"
     assert response.tools_used == []
@@ -69,7 +79,9 @@ async def test_direct_answer_no_tool_path_does_not_call_rag_or_skill():
         tool_necessity_confidence=0.9,
     )
 
-    response = await _executor().run(decision, "湿度很高会不会镜头起雾？")
+    response = await _executor().run_context(
+        _context(decision, "湿度很高会不会镜头起雾？")
+    )
 
     assert "结露" in response.answer
     assert response.tools_used == []

@@ -1,8 +1,4 @@
-"""SkillParamBuilder — 技能参数构建工具（Phase 9 提取）。
-
-原位于 TaskOrchestrator._build_skill_params()，提取为独立类以消除
-DirectExecutor / PlannedExecutor 对 TaskOrchestrator 的循环依赖。
-"""
+"""SkillParamBuilder — 技能参数构建工具。"""
 from __future__ import annotations
 
 import re
@@ -59,22 +55,6 @@ class SkillParamBuilder:
         if self._is_structured_skill_payload(parsed, query):
             return self._finalize(skill_name, parsed)
 
-        if skill_name == "get_nasa_apod":
-            return self._finalize(
-                skill_name,
-                {
-                    "date": self._extract_iso_date(query),
-                    "hd": False,
-                },
-            )
-        if skill_name == "web_search":
-            return self._finalize(
-                skill_name,
-                {
-                    "query": self._extract_web_search_query(query),
-                    "max_results": 5,
-                },
-            )
         if skill_name == "weather-lookup":
             return self._finalize(
                 skill_name,

@@ -6,7 +6,6 @@ from langchain_core.prompts import PromptTemplate
 
 from src.agent.fallback_service import FallbackService
 from src.agent.execution.engine import ExecutionEngine
-from src.agent.executor import StepExecutor
 from src.agent.governance import (
     AgentExecutionPolicy,
     GovernanceMetricsRegistry,
@@ -24,7 +23,6 @@ from src.agent.response_synthesizer import ResponseSynthesizer
 from src.agent.skill_manager import SkillManager
 from src.agent.speech_service import SpeechService
 from src.agent.streaming_service import StreamingService
-from src.agent.task_orchestrator import TaskOrchestrator
 from src.agent.vision_service import VisionService
 from src.core.config import settings
 from src.core.llm_factory import build_chat_model
@@ -75,7 +73,8 @@ class AstroAgent:
             model_name=self.model_name,
         )
         self.llm = runtime["llm"]
-        self.task_orchestrator = runtime["task_orchestrator"]
+        self.execution_engine = runtime["execution_engine"]
+        self.task_orchestrator = runtime.get("task_orchestrator")
         self.streaming_service = runtime["streaming_service"]
         self._agent_executor = runtime["agent_executor"]
         self.model_provider = runtime["model_provider"]
@@ -189,18 +188,8 @@ class AstroAgent:
             )
         response_synthesizer = ResponseSynthesizer(llm=synth_llm)
         planner = Planner(llm=planner_llm)
-        executor = StepExecutor(skill_manager=self.skill_manager)
         fallback_policy = FallbackPolicy()
         agent_executor_factory = lambda: self._get_or_create_agent_executor(llm=main_llm)
-        task_orchestrator = TaskOrchestrator(
-            skill_manager=self.skill_manager,
-            rag_retriever=self.rag,
-            llm=main_llm,
-            response_synthesizer=response_synthesizer,
-            planner=planner,
-            executor=executor,
-            fallback_policy=fallback_policy,
-        )
         execution_engine = ExecutionEngine(
             skill_manager=self.skill_manager,
             rag_retriever=self.rag,
@@ -217,7 +206,6 @@ class AstroAgent:
             user_id=user_id,
             fallback_service=self.fallback_service,
             request_router=self.request_router,
-            task_orchestrator=task_orchestrator,
             skill_manager=self.skill_manager,
             rag_retriever=self.rag,
             execution_policy=self.execution_policy,
@@ -228,7 +216,7 @@ class AstroAgent:
         )
         return {
             "llm": main_llm,
-            "task_orchestrator": task_orchestrator,
+            "task_orchestrator": None,
             "execution_engine": execution_engine,
             "streaming_service": streaming_service,
             "agent_executor": None,

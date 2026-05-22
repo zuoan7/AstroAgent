@@ -16,6 +16,7 @@ from src.agent.governance import (
     load_phase0_benchmark_cases,
 )
 from src.agent.models.final_response import FinalResponse
+from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RequestRouter
 from src.agent.streaming_service import StreamingService
 
@@ -109,14 +110,13 @@ async def test_streaming_service_records_governance_metrics():
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=RequestRouter(),
-        task_orchestrator=SimpleNamespace(),
         execution_policy=AgentExecutionPolicy(mode="hybrid"),
         governance_metrics=registry,
     )
 
-    async def fake_run(decision, query, **kwargs):
-        assert decision.route == "direct_task"
-        assert decision.task_type == "smalltalk"
+    async def fake_run_context(decision, context, **kwargs):
+        assert context.profile.legacy_route == "direct_task"
+        assert context.profile.task_type == "smalltalk"
         return FinalResponse(
             answer="你好，我可以帮你查询天象。",
             summary="你好，我可以帮你查询天象。",
@@ -127,7 +127,10 @@ async def test_streaming_service_records_governance_metrics():
             task_type="smalltalk",
         )
 
-    service._task_orchestrator.run = fake_run
+    service._execution_engine = SimpleNamespace(
+        preview_plan_context=lambda *args, **kwargs: None,
+        run_context=fake_run_context,
+    )
 
     events = []
     async for event in service.generate_events("你好"):
@@ -149,7 +152,6 @@ async def test_streaming_service_runs_planned_task_without_react():
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=RequestRouter(),
-        task_orchestrator=SimpleNamespace(),
         execution_policy=AgentExecutionPolicy(mode="hybrid", enable_planner=True),
         governance_metrics=registry,
         agent_executor_factory=lambda: (_ for _ in ()).throw(
@@ -157,8 +159,8 @@ async def test_streaming_service_runs_planned_task_without_react():
         ),
     )
 
-    async def fake_run(decision, query, **kwargs):
-        assert decision.route == "planned_task"
+    async def fake_run_context(decision, context, **kwargs):
+        assert context.profile.legacy_route == "planned_task"
         return FinalResponse(
             answer="已根据天气和天象生成今晚观测建议。",
             summary="已根据天气和天象生成今晚观测建议。",
@@ -169,7 +171,10 @@ async def test_streaming_service_runs_planned_task_without_react():
             task_type="observation_recommendation",
         )
 
-    service._task_orchestrator.run = fake_run
+    service._execution_engine = SimpleNamespace(
+        preview_plan_context=lambda *args, **kwargs: None,
+        run_context=fake_run_context,
+    )
 
     events = []
     async for event in service.generate_events("请比较今晚用双筒和赤道仪观测方案并给出步骤"):
@@ -183,22 +188,19 @@ async def test_streaming_service_runs_planned_task_without_react():
 @pytest.mark.asyncio
 async def test_streaming_service_only_builds_react_on_fallback():
     class _FallbackRouter:
-        def route(self, query):
-            return SimpleNamespace(
+        def profile(self, query):
+            return TaskProfile.from_legacy_route(
                 route="fallback_react",
                 task_type="open_domain_reasoning",
-                matched_skills=[],
+                confidence=0.8,
                 expected_output_schema="react_answer_v1",
-                to_meta=lambda: {
-                    "route": "fallback_react",
-                    "task_type": "open_domain_reasoning",
-                    "matched_skills": [],
-                    "expected_output_schema": "react_answer_v1",
-                },
             )
 
-    class _AgentExecutorStub:
-        async def astream_events(self, agent_input, version="v1"):
+        def route(self, query):
+            raise AssertionError("streaming should not call route()")
+
+    class _ExecutionEngineStub:
+        async def astream_events_context(self, decision, context, version="v1"):
             yield {
                 "event": "on_llm_stream",
                 "data": {"chunk": SimpleNamespace(content="Final Answer: fallback ok")},
@@ -216,9 +218,9 @@ async def test_streaming_service_only_builds_react_on_fallback():
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=_FallbackRouter(),
-        task_orchestrator=SimpleNamespace(),
         execution_policy=AgentExecutionPolicy(mode="hybrid", enable_react_fallback=True),
         agent_executor_factory=factory,
+        execution_engine=_ExecutionEngineStub(),
     )
 
     events = []
@@ -227,28 +229,25 @@ async def test_streaming_service_only_builds_react_on_fallback():
 
     final_answer = next(event for event in events if event["type"] == "final_answer")
     assert final_answer["final_answer"] == "fallback ok"
-    assert created["count"] == 1
+    assert created["count"] == 0
 
 
 @pytest.mark.asyncio
 async def test_generate_response_stream_emits_clean_final_answer_for_react():
     class _FallbackRouter:
-        def route(self, query):
-            return SimpleNamespace(
+        def profile(self, query):
+            return TaskProfile.from_legacy_route(
                 route="fallback_react",
                 task_type="open_domain_reasoning",
-                matched_skills=[],
+                confidence=0.8,
                 expected_output_schema="react_answer_v1",
-                to_meta=lambda: {
-                    "route": "fallback_react",
-                    "task_type": "open_domain_reasoning",
-                    "matched_skills": [],
-                    "expected_output_schema": "react_answer_v1",
-                },
             )
 
-    class _AgentExecutorStub:
-        async def astream_events(self, agent_input, version="v1"):
+        def route(self, query):
+            raise AssertionError("streaming should not call route()")
+
+    class _ExecutionEngineStub:
+        async def astream_events_context(self, decision, context, version="v1"):
             yield {
                 "event": "on_llm_stream",
                 "data": {"chunk": SimpleNamespace(content="Thought: 我现在知道最终答案了\n")},
@@ -261,12 +260,12 @@ async def test_generate_response_stream_emits_clean_final_answer_for_react():
             }
 
     service = StreamingService(
-        agent_executor=_AgentExecutorStub(),
+        agent_executor=None,
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=_FallbackRouter(),
-        task_orchestrator=SimpleNamespace(),
         execution_policy=AgentExecutionPolicy(mode="hybrid", enable_react_fallback=True),
+        execution_engine=_ExecutionEngineStub(),
     )
 
     chunks = []
@@ -279,22 +278,19 @@ async def test_generate_response_stream_emits_clean_final_answer_for_react():
 @pytest.mark.asyncio
 async def test_generate_response_stream_recovers_unlabeled_final_answer():
     class _FallbackRouter:
-        def route(self, query):
-            return SimpleNamespace(
+        def profile(self, query):
+            return TaskProfile.from_legacy_route(
                 route="fallback_react",
                 task_type="open_domain_reasoning",
-                matched_skills=[],
+                confidence=0.8,
                 expected_output_schema="react_answer_v1",
-                to_meta=lambda: {
-                    "route": "fallback_react",
-                    "task_type": "open_domain_reasoning",
-                    "matched_skills": [],
-                    "expected_output_schema": "react_answer_v1",
-                },
             )
 
-    class _AgentExecutorStub:
-        async def astream_events(self, agent_input, version="v1"):
+        def route(self, query):
+            raise AssertionError("streaming should not call route()")
+
+    class _ExecutionEngineStub:
+        async def astream_events_context(self, decision, context, version="v1"):
             yield {
                 "event": "on_llm_stream",
                 "data": {"chunk": SimpleNamespace(content="Thought: 我现在知道最终答案了\n今晚适合先看木星，再看月球。")},
@@ -302,12 +298,12 @@ async def test_generate_response_stream_recovers_unlabeled_final_answer():
             }
 
     service = StreamingService(
-        agent_executor=_AgentExecutorStub(),
+        agent_executor=None,
         memory=_MemoryStub(),
         user_id="test_user",
         request_router=_FallbackRouter(),
-        task_orchestrator=SimpleNamespace(),
         execution_policy=AgentExecutionPolicy(mode="hybrid", enable_react_fallback=True),
+        execution_engine=_ExecutionEngineStub(),
     )
 
     chunks = []

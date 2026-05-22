@@ -45,6 +45,10 @@ def test_capability_registry_projects_skill_allowed_tools():
     ]
     assert "get_altaz" in position.allowed_tools
     assert "rise_set" in position.operations
+    assert registry.has_skill("web_search") is False
+    assert registry.has_skill("get_nasa_apod") is False
+    assert registry.has_tool("web_search") is True
+    assert registry.has_tool("get_nasa_apod") is True
 
 
 def test_capability_selector_uses_task_profile_hints():
@@ -165,19 +169,7 @@ async def test_direct_executor_prefers_capability_decision_over_matched_skills()
             allowed_tools=["web_search"],
         ),
     )
-    decision = RouteDecision(
-        route="direct_task",
-        task_type="single_tool_lookup",
-        confidence=0.9,
-        reason="legacy",
-        matched_skills=["weather-lookup"],
-    )
-
-    response = await executor.run(
-        decision,
-        "最近 JWST 有什么结果",
-        context=context,
-    )
+    response = await executor.run_context(context)
 
     assert manager.calls[0][0] == "web_search"
     assert response.audit_metadata["capability_name"] == "web_search"

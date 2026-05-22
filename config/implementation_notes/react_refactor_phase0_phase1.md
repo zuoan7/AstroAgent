@@ -1,5 +1,7 @@
 # AstroAgent ReAct Refactor 实现说明（阶段0 + 阶段1）
 
+> 历史记录：本文保留阶段性实现说明原貌。当前工具层兼容状态以 `docs/agent_compatibility_matrix.md` 为准。
+
 本文档记录基于 `docs/AstroAgent_ReAct_Refactor_Plan.md` 已完成的两轮改造实现，重点说明本次代码里实际落下的结构、行为变化、文件位置和当前边界。
 
 ## 1. 改造范围概览

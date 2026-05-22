@@ -11,6 +11,11 @@ from src.skills import registry
 from src.skills.registry import SkillSpec
 from src.agent.param_parser import ParamParser
 from src.agent.models.skill_result import SkillResult
+from src.tools.catalog import AtomicToolSpec, get_default_tool_catalog
+from src.tools.selector import AtomicToolParamAdapter
+
+
+_REACT_ATOMIC_TOOL_NAMES = {"get_nasa_apod", "get_weather", "web_search"}
 
 
 class SkillManager:
@@ -74,7 +79,18 @@ class SkillManager:
                 description=spec.description,
             ))
 
-        logger.info(f"✅ 成功注册 {len(tools)} 个高层技能工具（含RAG）")
+        for spec in get_default_tool_catalog().list_specs():
+            if spec.name not in _REACT_ATOMIC_TOOL_NAMES:
+                continue
+            tools.append(
+                Tool(
+                    name=spec.name,
+                    func=self._create_atomic_tool_func(spec),
+                    description=self._atomic_tool_description(spec),
+                )
+            )
+
+        logger.info(f"✅ 成功注册 {len(tools)} 个技能/原子工具（含RAG）")
         return tools
 
     # ===== 通用工厂方法 =====
@@ -111,11 +127,44 @@ class SkillManager:
             return self._rag.get_relevant_context(query_text)
         return rag_func
 
+    def _create_atomic_tool_func(self, spec: AtomicToolSpec) -> Callable:
+        def atomic_tool_func(tool_input: Any) -> str:
+            params = self._parse_atomic_tool_input(spec, tool_input)
+            result = self._skill_router.call(spec.name, **params)
+            return result.to_legacy_str()
+
+        return atomic_tool_func
+
     # ===== 特殊处理函数 =====
 
     @staticmethod
     def _weather_param_handler(kwargs: Dict[str, Any]) -> Dict[str, Any]:
         return registry.normalize_weather_params(kwargs)
+
+    @staticmethod
+    def _atomic_tool_description(spec: AtomicToolSpec) -> str:
+        params = ", ".join(spec.param_names) if spec.param_names else "无参数"
+        return f"{spec.summary or spec.name}（atomic MCP tool: {spec.name}）。参数：{params}。"
+
+    @staticmethod
+    def _parse_atomic_tool_input(spec: AtomicToolSpec, tool_input: Any) -> Dict[str, Any]:
+        if not isinstance(tool_input, dict):
+            return AtomicToolParamAdapter.build(spec.name, str(tool_input or ""))
+
+        defaults = {
+            "get_nasa_apod": {"date": None, "hd": False},
+            "get_weather": {"city": None, "extensions": "all"},
+            "web_search": {"query": None, "max_results": 5},
+        }.get(spec.name, {name: None for name in spec.param_names})
+        params = ParamParser.parse_tool_input(tool_input, expected_params=defaults)
+        if spec.name == "web_search" and params.get("max_results") is not None:
+            params["max_results"] = SkillManager._safe_convert(
+                params["max_results"],
+                int,
+            )
+        if spec.name == "get_nasa_apod" and params.get("hd") is not None:
+            params["hd"] = SkillManager._safe_convert(params["hd"], bool)
+        return {key: value for key, value in params.items() if value is not None}
 
     @staticmethod
     def _safe_convert(value: Any, convert_func: type) -> Any:

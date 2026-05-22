@@ -151,6 +151,15 @@ class FrontendExecutionEventAdapter:
                                 "expected_mcp_tools", []
                             ),
                             "operation": event.payload.get("operation"),
+                            "capability_kind": event.payload.get(
+                                "capability_kind", ""
+                            ),
+                            "capability_name": event.payload.get(
+                                "capability_name", ""
+                            ),
+                            "capability_reason": event.payload.get(
+                                "capability_reason", ""
+                            ),
                         }
                     )
                 async for processed in self.emit_execution_event(
@@ -177,6 +186,11 @@ class FrontendExecutionEventAdapter:
                             "mcp_tools_used": payload.get("mcp_tools_used", []),
                             "expected_mcp_tools": payload.get("expected_mcp_tools", []),
                             "operation": payload.get("operation"),
+                            "capability_kind": payload.get("capability_kind", ""),
+                            "capability_name": payload.get("capability_name", ""),
+                            "capability_reason": payload.get(
+                                "capability_reason", ""
+                            ),
                         }
                     )
                 else:
@@ -192,6 +206,11 @@ class FrontendExecutionEventAdapter:
                             "mcp_tools_used": payload.get("mcp_tools_used", []),
                             "expected_mcp_tools": payload.get("expected_mcp_tools", []),
                             "operation": payload.get("operation"),
+                            "capability_kind": payload.get("capability_kind", ""),
+                            "capability_name": payload.get("capability_name", ""),
+                            "capability_reason": payload.get(
+                                "capability_reason", ""
+                            ),
                         }
                     )
                 async for processed in self.emit_execution_event(
@@ -261,6 +280,9 @@ class FrontendExecutionEventAdapter:
                 "mcp_tools_used": list(entry.mcp_tools_used),
                 "expected_mcp_tools": list(entry.expected_mcp_tools),
                 "operation": entry.operation,
+                "capability_kind": entry.capability_kind,
+                "capability_name": entry.capability_name,
+                "capability_reason": entry.capability_reason,
             }
         )
 

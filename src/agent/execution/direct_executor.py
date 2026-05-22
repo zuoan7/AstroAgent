@@ -1,8 +1,4 @@
-"""DirectExecutor — 直接任务执行器（Phase 4 引入）。
-
-抽取自 TaskOrchestrator._run_direct_task()，逻辑完全等价。
-Phase 9 起作为主路径，循环依赖已消除（改用 SkillParamBuilder）。
-"""
+"""DirectExecutor — context-first direct task executor."""
 
 from __future__ import annotations
 
@@ -15,8 +11,8 @@ from src.agent.fast_answers import stable_knowledge_answer
 from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.final_response import FinalResponse
 from src.agent.prompts import get_prompt_renderer
-from src.agent.request_router import RouteDecision
 from src.agent.skill_param_builder import SkillParamBuilder
+from src.capabilities.param_builder import CapabilityParamBuilder
 from src.core.config import settings
 from src.core.mcp_protocol import is_tool_error, parse_tool_response
 
@@ -37,61 +33,59 @@ class DirectExecutor:
         self._synthesizer = synthesizer
         self._param_builder = SkillParamBuilder(skill_manager)
 
-    async def run(
+    async def run_context(
         self,
-        decision: RouteDecision,
-        query: str,
-        *,
-        chat_history: str = "",
-        user_profile: str = "",
-        context: Optional[Any] = None,
+        context: Any,
     ) -> FinalResponse:
-        if decision.task_type == "smalltalk":
+        profile = context.profile
+        query = context.query
+        chat_history = context.chat_history
+        user_profile = context.user_profile
+        task_type = getattr(profile, "task_type", "")
+
+        if task_type == "smalltalk":
             response = self._synthesizer.synthesize_smalltalk(
                 self._smalltalk_reply(query)
             )
-            self._attach_response_metadata(response, decision=decision)
+            self._attach_response_metadata(response, profile=profile)
             self._attach_execution_events(response)
             return response
 
-        if decision.task_type == "clarification":
-            response = self._run_clarification(decision, query)
-            self._attach_response_metadata(response, decision=decision)
+        if task_type == "clarification":
+            response = self._run_clarification(profile)
+            self._attach_response_metadata(response, profile=profile)
             self._attach_execution_events(response)
             return response
 
-        if decision.task_type == "direct_answer_no_tool":
-            response = self._run_no_tool_answer(decision, query)
-            self._attach_response_metadata(response, decision=decision)
+        if task_type == "direct_answer_no_tool":
+            response = self._run_no_tool_answer(profile, query)
+            self._attach_response_metadata(response, profile=profile)
             self._attach_execution_events(response)
             return response
 
-        if decision.task_type == "single_tool_lookup":
+        if task_type == "single_tool_lookup":
             return await self._run_tool_task(
-                decision,
-                query,
                 chat_history=chat_history,
                 user_profile=user_profile,
                 context=context,
             )
 
-        if decision.task_type == "simple_qa":
+        if task_type == "simple_qa":
             response = await self._run_simple_qa(
                 query, chat_history=chat_history, user_profile=user_profile
             )
-            self._attach_response_metadata(response, decision=decision)
+            self._attach_response_metadata(response, profile=profile)
             self._attach_execution_events(response)
             return response
 
-        raise ValueError(f"unsupported direct task type: {decision.task_type}")
+        raise ValueError(f"unsupported direct task type: {task_type}")
 
     def _run_clarification(
         self,
-        decision: RouteDecision,
-        query: str,
+        profile: Any,
     ) -> FinalResponse:
         answer = (
-            decision.clarification_prompt
+            getattr(profile, "clarification_prompt", "")
             or "这个请求还缺少关键信息。请补充目标、时间、地点或器材参数后我再继续。"
         )
         return FinalResponse(
@@ -99,9 +93,9 @@ class DirectExecutor:
             summary=answer[:200] if len(answer) > 200 else answer,
             tools_used=[],
             sources=[],
-            confidence=decision.confidence,
-            route=decision.route,
-            task_type=decision.task_type,
+            confidence=getattr(profile, "confidence", 0.0),
+            route=getattr(profile, "legacy_route", ""),
+            task_type=getattr(profile, "task_type", ""),
             versions=(
                 self._synthesizer._default_versions()
                 if hasattr(self._synthesizer, "_default_versions")
@@ -111,11 +105,11 @@ class DirectExecutor:
 
     def _run_no_tool_answer(
         self,
-        decision: RouteDecision,
+        profile: Any,
         query: str,
     ) -> FinalResponse:
         answer = (
-            decision.answer_hint
+            getattr(profile, "answer_hint", "")
             or stable_knowledge_answer(query)
             or self._direct_no_tool_reply(query)
         )
@@ -124,9 +118,9 @@ class DirectExecutor:
             summary=answer[:200] if len(answer) > 200 else answer,
             tools_used=[],
             sources=[],
-            confidence=decision.confidence,
-            route=decision.route,
-            task_type=decision.task_type,
+            confidence=getattr(profile, "confidence", 0.0),
+            route=getattr(profile, "legacy_route", ""),
+            task_type=getattr(profile, "task_type", ""),
             versions=(
                 self._synthesizer._default_versions()
                 if hasattr(self._synthesizer, "_default_versions")
@@ -136,15 +130,15 @@ class DirectExecutor:
 
     async def _run_tool_task(
         self,
-        decision: RouteDecision,
-        query: str,
         *,
         chat_history: str = "",
         user_profile: str = "",
-        context: Optional[Any] = None,
+        context: Any,
     ) -> FinalResponse:
         from src.agent.models.skill_result import SkillResult
 
+        profile = context.profile
+        query = context.query
         capability = getattr(context, "capability_decision", None)
         capability_kind = getattr(capability, "kind", "") if capability else ""
         capability_name = getattr(capability, "name", "") if capability else ""
@@ -159,11 +153,20 @@ class DirectExecutor:
             )
             tool_name = capability_name
         else:
+            fallback_hints = list(getattr(profile, "capability_hints", []) or [])
             skill_name = (
                 capability_name
                 if capability_kind == "skill" and capability_name
-                else decision.matched_skills[0]
+                else (fallback_hints[0] if fallback_hints else "")
             )
+            if not skill_name:
+                raise ValueError("no direct task capability resolved")
+            if not capability_kind:
+                capability_kind = "skill"
+            if not capability_name:
+                capability_name = skill_name
+            if not capability_reason:
+                capability_reason = "route_capability_hint"
             params = self._build_skill_params(
                 skill_name,
                 query,
@@ -180,12 +183,12 @@ class DirectExecutor:
         mcp_tools_used = _extract_mcp_tools_from_sources(result.sources)
         response = self._synthesizer.synthesize_direct(
             query=query,
-            task_type=decision.task_type,
+            task_type=getattr(profile, "task_type", ""),
             skill_results=[result],
         )
         self._attach_response_metadata(
             response,
-            decision=decision,
+            profile=profile,
             param_builder_source="fallback_builder",
             handler_mcp_tools_used=mcp_tools_used,
             logical_skill=getattr(result, "logical_skill", None) or tool_name,
@@ -215,7 +218,7 @@ class DirectExecutor:
         self,
         response: FinalResponse,
         *,
-        decision: RouteDecision,
+        profile: Any,
         param_builder_source: str = "",
         handler_mcp_tools_used: Optional[list[str]] = None,
         logical_skill: Optional[str] = None,
@@ -225,9 +228,9 @@ class DirectExecutor:
         capability_name: str = "",
         capability_reason: str = "",
     ) -> None:
-        route_meta = decision.to_meta()
-        response.route = decision.route
-        response.task_type = decision.task_type
+        route_meta = profile.to_legacy_route_meta()
+        response.route = str(getattr(profile, "legacy_route", ""))
+        response.task_type = str(getattr(profile, "task_type", ""))
         response.route_decision = route_meta
         response.audit_metadata = {
             "router_source": route_meta.get("router_source"),
@@ -367,6 +370,7 @@ class DirectExecutor:
         )
         response.execution_events = events
 
+
     def _invoke_llm(self, prompt: str) -> str:
         result = self._llm.invoke(prompt)
         return getattr(result, "content", None) or str(result)
@@ -394,26 +398,28 @@ class DirectExecutor:
         chat_history: str = "",
         user_profile: str = "",
     ) -> Dict[str, Any]:
-        return self._param_builder.build(
-            skill_name,
-            query,
-            chat_history=chat_history,
-            user_profile=user_profile,
-        )
+        try:
+            return self._param_builder.build(
+                skill_name,
+                query,
+                chat_history=chat_history,
+                user_profile=user_profile,
+            )
+        except KeyError:
+            return CapabilityParamBuilder.build_atomic_tool_params(skill_name, query)
 
     @staticmethod
     def _build_atomic_tool_params(capability: Any, query: str) -> Dict[str, Any]:
         metadata = getattr(capability, "metadata", {}) or {}
         explicit_params = metadata.get("params")
-        if isinstance(explicit_params, dict):
-            return dict(explicit_params)
-
         tool_name = getattr(capability, "name", "")
-        if tool_name == "web_search":
-            return {"query": query, "max_results": 5}
-        if tool_name == "get_weather":
-            return {"city": query, "extensions": "all"}
-        return {"query": query}
+        return CapabilityParamBuilder.build_atomic_tool_params(
+            tool_name,
+            query,
+            explicit_params=(
+                explicit_params if isinstance(explicit_params, dict) else None
+            ),
+        )
 
     def _call_atomic_tool_as_skill_result(
         self,

@@ -4,8 +4,6 @@ from src.capabilities.registry import (
     get_default_capability_registry,
 )
 from src.capabilities.param_builder import CapabilityParamBuilder
-from src.capabilities.plan_adapter import CapabilityPlanAdapter
-from src.capabilities.selector import CapabilitySelector
 
 __all__ = [
     "CapabilityRegistry",
@@ -15,3 +13,15 @@ __all__ = [
     "CapabilitySpec",
     "get_default_capability_registry",
 ]
+
+
+def __getattr__(name: str):
+    if name == "CapabilityPlanAdapter":
+        from src.capabilities.plan_adapter import CapabilityPlanAdapter
+
+        return CapabilityPlanAdapter
+    if name == "CapabilitySelector":
+        from src.capabilities.selector import CapabilitySelector
+
+        return CapabilitySelector
+    raise AttributeError(f"module 'src.capabilities' has no attribute {name!r}")

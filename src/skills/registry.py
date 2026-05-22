@@ -62,33 +62,6 @@ _ASTRONOMY_SKILL_SPECS: tuple[SkillSpec, ...] = (
         special_handling=normalize_weather_params,
     ),
     SkillSpec(
-        skill_name="get_nasa_apod",
-        langchain_tool_name="get_nasa_apod",
-        summary="查询 NASA 每日天文图 APOD",
-        description=(
-            "查询 NASA 每日天文图 APOD（atomic MCP tool: get_nasa_apod）。\n"
-            "参数：date（YYYY-MM-DD，可选，默认今天），hd（是否返回高清图，可选）。"
-        ),
-        route_type="simple",
-        mcp_tool_name="get_nasa_apod",
-        param_names=["date", "hd"],
-        defaults={"hd": False},
-    ),
-    SkillSpec(
-        skill_name="web_search",
-        langchain_tool_name="web_search",
-        summary="联网搜索最新天文新闻或外部资料",
-        description=(
-            "联网搜索最新天文新闻或外部资料（atomic MCP tool: web_search）。\n"
-            "参数：query（搜索关键词，必填），max_results（结果数量，可选，默认 5）。"
-        ),
-        route_type="simple",
-        mcp_tool_name="web_search",
-        param_names=["query", "max_results"],
-        defaults={"max_results": 5},
-        type_conversions={"max_results": int},
-    ),
-    SkillSpec(
         skill_name="observation-planner",
         langchain_tool_name="ObservationPlanner",
         summary="生成指定日期和地点的天文观测计划",

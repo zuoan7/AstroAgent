@@ -1,4 +1,4 @@
-# AstroAgent 架构说明（Phase 9 现状）
+# AstroAgent 架构说明（当前执行主路径）
 
 ## 概览
 
@@ -6,7 +6,7 @@ AstroAgent 是基于 DAG 执行图的天文领域多工具 Agent，支持三种�
 
 ---
 
-## 主路径（Phase 9 默认）
+## 主路径
 
 ```
 用户请求
@@ -19,21 +19,18 @@ _generate_internal_events()
   ├─ AgentExecutionPolicy.decide() → ExecutionDecision
   ↓
 _run_orchestrated_path()
-  ├─ [ENABLE_UNIFIED_EXECUTION_ENGINE=True（默认）]
-  │     ExecutionDecision(mode=direct|planned|react) → ExecutionEngine.run()
-  │       ├─ direct → DirectExecutor.run()
-  │       ├─ planned → Planner.plan_graph() / PlannedExecutor.run()
-  │       │             WorkflowGraph → WorkflowExecutor.execute()
-  │       └─ react → ReactExecutor.run() / astream_events()
-  └─ [ENABLE_UNIFIED_EXECUTION_ENGINE=False（兼容层）]
-        TaskOrchestrator.run()
+  └─ ExecutionDecision(mode=direct|planned|react) → ExecutionEngine.run_context()
+        ├─ direct → DirectExecutor.run_context()
+        ├─ planned → Planner.plan_graph_for_profile()
+        │             WorkflowGraph → WorkflowExecutor.execute()
+        └─ react → ReactExecutor.run_context() / astream_events_context()
   ↓
 FinalResponse.execution_events / execution_trace
   ↓
 FrontendExecutionEventAdapter → 旧前端事件序列
 ```
 
-## 执行引擎（Phase 4 引入，Phase 8/9 为主路径）
+## 执行引擎
 
 | 组件 | 职责 | 文件 |
 |------|------|------|
@@ -45,7 +42,7 @@ FrontendExecutionEventAdapter → 旧前端事件序列
 
 ---
 
-## 工作流图（Phase 5 引入，Phase 9 为 planned 唯一执行引擎）
+## 工作流图
 
 `WorkflowGraph` 是执行计划的 DAG 表示：
 
@@ -54,7 +51,6 @@ FrontendExecutionEventAdapter → 旧前端事件序列
 - `from_execution_plan()` 将兼容 `ExecutionPlan` 转换为 DAG，支持 `depends_on` 和 `parallel_group`
 - `topological_order()` / `topological_generations()` 使用 Kahn 算法，支持循环检测和并发分层
 - 当前 `WorkflowExecutor` 为 `PlannedExecutor` 的唯一执行引擎
-- `ENABLE_WORKFLOW_GRAPH` 仅作为 deprecated config 保留，不再切换 planned 主路径
 
 ---
 
@@ -92,29 +88,24 @@ FrontendExecutionEventAdapter → 旧前端事件序列
 | `RouteDecision` | 长期兼容输出 | 继续保留给外部 API / 测试 / 旧执行入口 |
 | `RequestRouter.route()` | **deprecated** 兼容入口 | 内部已改走 `profile()`，外部暂不删除 |
 | `AgentExecutionPolicy.choose_path()` | **deprecated** 兼容入口 | 内部已改走 `decide()`，外部暂不删除 |
-| `TaskOrchestrator` | **deprecated**（保留，flag=False 或 engine 缺失时回退） | 暂不删除 `run()`；后续仅保留兼容门面 |
 | `ExecutionPlan` | 兼容计划表示 | planned 主路径已 graph-first，暂不删除 |
-| `StepExecutor` | **deprecated** 线性执行器 | 仅供 `TaskOrchestrator`/历史测试使用 |
 | `FinalResponse.execution_trace: list[dict]` | 兼容层（未升级为 List[ExecutionTraceEntry]） | 后续可再收口到结构化 trace |
 | `ExecutionEvent.to_frontend_type()` 内联 MAP | 兼容层 | Phase 10 迁入 FrontendJsonEventAdapter |
 | 旧前端事件名（`route_decision`/`plan_update`/`step_start`/`step_end`/`final_answer`） | 长期兼容输出 | 继续由 StreamingService adapter 输出 |
-| `SkillParamBuilder` | Phase 9 新增独立工具类，替代原 `TaskOrchestrator._build_skill_params` 循环依赖 | 已稳定，无收敛需求 |
+| `SkillParamBuilder` | direct/planned 共享技能参数构造器 | 已稳定，无收敛需求 |
 
 ---
 
-## Feature Flags（Phase 9 现状）
+## Feature Flags
 
 flags 的权威状态以 [Agent Compatibility Matrix](agent_compatibility_matrix.md) 为准。
 
 | Flag | 默认值 | 说明 |
 |------|--------|------|
-| `ENABLE_UNIFIED_EXECUTION_ENGINE` | **True** | Phase 8 起开启，旧路径 flag=False 兼容 |
-| `ENABLE_WORKFLOW_GRAPH` | **True** | 已不再切换主路径；仅保留历史兼容语义 |
-| `ENABLE_UNIFIED_EXECUTION_TRACE` | **True** | Phase 8 起开启 |
-| `ENABLE_UNIFIED_EXECUTION_EVENTS` | **True** | Phase 8 起开启 |
-| `ENABLE_TASK_PROFILE` | False | 已不再切换主路径；仅保留历史兼容语义 |
-| `ENABLE_EXECUTION_CONTEXT` | False | 已不再切换主路径；仅保留历史兼容语义 |
-| `ENABLE_EXECUTION_DECISION` | False（兼容位） | `ExecutionDecision` 已是主决策输出；配置位仅保留历史兼容语义 |
+| `ENABLE_LLM_INTENT_FALLBACK` | False | 低置信路由/天文边界场景启用 LLM 意图分类兜底 |
+| `ENABLE_LLM_PLANNER_FALLBACK` | False | 模板/规则无法生成计划时启用 LLM 计划兜底 |
+| `ENABLE_REACT_FALLBACK` | True | planned 失败时允许进入 ReAct 兜底 |
+| `ENABLE_PLANNER` | False | legacy governance 策略仍读取的旧开关，不控制 planned DAG 主路径 |
 
 ---
 
@@ -122,11 +113,10 @@ flags 的权威状态以 [Agent Compatibility Matrix](agent_compatibility_matrix
 
 | 测试文件 | 覆盖内容 |
 |---------|---------|
-| `test_dag_agent_phase8.py` | flags 默认值、ExecutionEngine 新路径、分支切换、TaskOrchestrator 兼容 |
+| `test_dag_agent_phase8.py` | removed flags、ExecutionEngine 新路径、engine 缺失失败、legacy 边界 |
 | `test_execution_trace_phase7.py` | ExecutionTraceEntry、ExecutionEvent、FrontendExecutionEventAdapter |
 | `test_workflow_executor_dag.py` | WorkflowExecutor DAG 依赖、并发、retry、失败策略、证据聚合 |
 | `test_workflow_graph_phase5.py` | WorkflowGraph DAG 构建、拓扑排序 |
-| `test_execution_engine_phase4.py` | ExecutionEngine 分发、三种模式 |
 | `test_execution_decision_phase3.py` | ExecutionDecision 模型 |
 | `test_execution_context_phase2.py` | ExecutionContext 统一上下文 |
 | `test_task_profile_phase1.py` | TaskProfile 任务画像 |

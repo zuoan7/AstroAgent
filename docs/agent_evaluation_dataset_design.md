@@ -138,7 +138,8 @@ AstroAgent 同时存在两层工具抽象：
 | `first_event_latency_ms` | number | `first_event_time - start_time`。 |
 | `e2e_latency_ms` | number | `end_time - start_time`。 |
 | `route` | string | 实际路由。 |
-| `matched_skills` | array | 实际选择的高层 skill。 |
+| `capability_hints` | array | 实际选择的能力提示，可包含 high-level skill 或 atomic MCP tool。 |
+| `matched_skills` | array | 兼容序列化字段；评测语义以 `capability_hints` 为准。 |
 | `tool_calls` | array | 实际工具调用列表。 |
 | `final_answer` | string | 最终回答。 |
 | `tool_selection_correct` | boolean | 工具选择是否正确。 |

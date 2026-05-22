@@ -2,14 +2,22 @@ from src.tools.catalog import AtomicToolSpec, ToolCatalog, get_default_tool_cata
 from src.tools.guard import ToolGuard, ToolGuardContext, ToolGuardViolation
 from src.tools.operation_policy import OperationPolicyResolver, OperationToolPolicy
 from src.tools.runtime import ToolRuntime
+from src.tools.selector import (
+    AtomicToolParamAdapter,
+    ToolSelectionDecision,
+    ToolSelector,
+)
 
 __all__ = [
+    "AtomicToolParamAdapter",
     "AtomicToolSpec",
     "ToolCatalog",
     "ToolGuard",
     "ToolGuardContext",
     "ToolGuardViolation",
     "ToolRuntime",
+    "ToolSelectionDecision",
+    "ToolSelector",
     "OperationPolicyResolver",
     "OperationToolPolicy",
     "get_default_tool_catalog",

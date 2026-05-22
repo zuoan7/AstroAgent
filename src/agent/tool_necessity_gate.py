@@ -38,6 +38,14 @@ class ToolNecessityDecision:
     missing_params: list[str] = field(default_factory=list)
     source: str = "rule"
 
+    @property
+    def allowed_capability_hints(self) -> list[str]:
+        return list(self.allowed_skill_hints)
+
+    @property
+    def forbidden_capability_hints(self) -> list[str]:
+        return list(self.forbidden_skill_hints)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "action": self.action,
@@ -45,6 +53,8 @@ class ToolNecessityDecision:
             "reason": self.reason,
             "answer_hint": self.answer_hint,
             "clarification_prompt": self.clarification_prompt,
+            "allowed_capability_hints": list(self.allowed_capability_hints),
+            "forbidden_capability_hints": list(self.forbidden_capability_hints),
             "allowed_skill_hints": list(self.allowed_skill_hints),
             "forbidden_skill_hints": list(self.forbidden_skill_hints),
             "missing_params": list(self.missing_params),
@@ -94,9 +104,9 @@ class ToolNecessityGate:
     def validate_tool_route(
         self,
         query: str,
-        matched_skills: list[str],
+        capability_hints: list[str],
     ) -> ToolNecessityDecision:
-        """Return a route-level veto or hint decision after skill matching."""
+        """Return a route-level veto or hint decision after capability matching."""
         text = (query or "").strip()
 
         if (
@@ -104,7 +114,7 @@ class ToolNecessityGate:
             or "计划" in text
             or "备选" in text
             or "观测顺序" in text
-        ) and "weather-lookup" in matched_skills:
+        ) and "weather-lookup" in capability_hints:
             return ToolNecessityDecision(
                 action="use_tool",
                 confidence=0.88,
@@ -113,7 +123,7 @@ class ToolNecessityGate:
                 forbidden_skill_hints=["weather-lookup"],
             )
 
-        if "observation-planner" in matched_skills and self._is_observation_plan_request(text):
+        if "observation-planner" in capability_hints and self._is_observation_plan_request(text):
             return ToolNecessityDecision(
                 action="use_tool",
                 confidence=0.84,

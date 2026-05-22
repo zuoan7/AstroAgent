@@ -79,18 +79,20 @@ DAG 支持：
 
 本轮清理了低风险兼容分支：
 
-- `ENABLE_WORKFLOW_GRAPH` 不再切换 planned 主路径，只保留为历史配置兼容字段
-- `PlannedExecutor` 固定优先使用 `Planner.plan_graph()`
+- `ENABLE_WORKFLOW_GRAPH` 已移除，planned 主路径固定为 `WorkflowGraph`
+- `PlannedExecutor` 固定使用 `Planner.plan_graph_for_profile()`
 - `WorkflowExecutor` 取代 planned 主路径中的线性执行
 
 仍保留的兼容层：
 
 - `RequestRouter.route()` / `RouteDecision`
 - `AgentExecutionPolicy.choose_path()`
-- `TaskOrchestrator`
 - `ExecutionPlan`
-- `StepExecutor`
 - 旧前端事件名：`route_decision`、`plan_update`、`step_start`、`step_end`、`final_answer`
+
+已删除的内部 legacy 层：
+
+- task orchestrator 文件和线性 step executor
 
 ## 规则整理
 
