@@ -5,10 +5,12 @@ from types import SimpleNamespace
 import pytest
 
 from src.agent.execution.direct_executor import DirectExecutor
+from src.agent.execution.planned_executor import PlannedExecutor
 from src.agent.governance import AgentExecutionPolicy
 from src.agent.models.capability_decision import CapabilityDecision
 from src.agent.models.execution_decision import ExecutionDecision
 from src.agent.models.execution_context import ExecutionContext
+from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.final_response import FinalResponse
 from src.agent.models.request_context import RequestContext
 from src.agent.models.skill_result import SkillResult
@@ -180,3 +182,53 @@ async def test_direct_executor_prefers_capability_decision_over_matched_skills()
     assert manager.calls[0][0] == "web_search"
     assert response.audit_metadata["capability_name"] == "web_search"
     assert response.execution_events[0]["payload"]["capability_name"] == "web_search"
+
+
+def test_planned_observability_metadata_contains_capability_fields():
+    executor = PlannedExecutor(
+        skill_manager=SimpleNamespace(),
+        llm=SimpleNamespace(),
+        synthesizer=SimpleNamespace(),
+    )
+    plan = ExecutionPlan(
+        task_type="observation_recommendation",
+        output_schema="observation_answer_v1",
+        steps=[
+            PlanStep(
+                id="observation_plan",
+                kind="tool",
+                skill="observation-planner",
+                capability_kind="skill",
+                capability_name="observation-planner",
+                params={"location": "北京"},
+            )
+        ],
+    )
+    decision = RouteDecision(
+        route="planned_task",
+        task_type="observation_recommendation",
+        confidence=0.8,
+        reason="test",
+    )
+
+    metadata = executor._build_observability_metadata(
+        decision=decision,
+        plan=plan,
+        execution_trace=[
+            {
+                "step_id": "observation_plan",
+                "skill": "observation-planner",
+                "capability_kind": "skill",
+                "capability_name": "observation-planner",
+                "status": "success",
+            }
+        ],
+        evidence_by_key={},
+        skipped_step_ids=[],
+    )
+
+    assert metadata["plan_steps_with_params"][0]["capability_kind"] == "skill"
+    assert (
+        metadata["plan_steps_with_params"][0]["capability_name"]
+        == "observation-planner"
+    )

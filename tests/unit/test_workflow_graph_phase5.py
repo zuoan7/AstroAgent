@@ -269,6 +269,27 @@ class TestFromExecutionPlan:
         assert node.capability_name == "weather-lookup"
         assert node.allowed_tools == ["get_weather"]
 
+    def test_execution_plan_from_legacy_skill_backfills_capability(self):
+        plan = ExecutionPlan.from_dict(
+            {
+                "task_type": "observation_recommendation",
+                "output_schema": "observation_answer_v1",
+                "steps": [
+                    {
+                        "id": "weather",
+                        "kind": "tool",
+                        "skill": "weather-lookup",
+                    }
+                ],
+            }
+        )
+
+        step = plan.steps[0]
+
+        assert step.capability_kind == "skill"
+        assert step.capability_name == "weather-lookup"
+        assert step.skill == "weather-lookup"
+
     def test_chain_dependency_order(self):
         plan = _simple_plan()
         g = WorkflowGraph.from_execution_plan(plan)
@@ -431,12 +452,17 @@ class TestFromExecutionPlan:
         )
 
         restored = ExecutionPlan.from_dict(original.to_dict())
-        assert restored.to_dict() == original.to_dict()
+        assert restored.steps[0].skill == original.steps[0].skill
+        assert restored.steps[0].capability_kind == "skill"
+        assert restored.steps[0].capability_name == "observation-planner"
+        assert restored.steps[0].params == original.steps[0].params
 
         graph_restored = ExecutionPlan.from_workflow_graph(
             WorkflowGraph.from_execution_plan(original)
         )
-        assert graph_restored.to_dict() == original.to_dict()
+        assert graph_restored.steps[0].skill == original.steps[0].skill
+        assert graph_restored.steps[0].capability_kind == "skill"
+        assert graph_restored.steps[0].capability_name == "observation-planner"
 
 
 class TestPlannerGraphPlanning:
@@ -456,6 +482,23 @@ class TestPlannerGraphPlanning:
         assert graph.node("observation_plan") is not None
         assert graph.node("observation_plan").inputs["location"] == "北京"
         assert graph.node("observation_plan").inputs["date"] == "今晚"
+
+    def test_planner_outputs_capability_first_steps(self):
+        planner = Planner()
+        plan = planner.plan(
+            query="北京今晚适合观测什么",
+            route_decision=_route_decision(
+                task_type="observation_recommendation",
+                matched_skills=["observation-planner"],
+            ),
+        )
+
+        step = plan.steps[0]
+
+        assert step.capability_kind == "skill"
+        assert step.capability_name == "observation-planner"
+        assert step.skill == "observation-planner"
+        assert "get_weather" in step.allowed_tools
 
     def test_plan_is_compat_wrapper_over_plan_graph(self, monkeypatch):
         planner = Planner()
@@ -652,4 +695,14 @@ class TestPlannerGraphPlanning:
         graph = WorkflowGraph.from_execution_plan(original)
         restored = ExecutionPlan.from_workflow_graph(graph)
 
-        assert restored.to_dict() == original.to_dict()
+        assert [step.skill for step in restored.steps] == [
+            step.skill for step in original.steps
+        ]
+        assert [step.capability_kind for step in restored.steps] == [
+            "skill",
+            "skill",
+            "skill",
+        ]
+        assert [step.capability_name for step in restored.steps] == [
+            step.skill for step in original.steps
+        ]

@@ -29,14 +29,24 @@ class PlanStep:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PlanStep":
+        skill = data.get("skill")
+        capability_kind = str(data.get("capability_kind", "") or "")
+        capability_name = str(data.get("capability_name", "") or "")
+
+        if skill and not capability_name:
+            capability_kind = capability_kind or "skill"
+            capability_name = str(skill)
+        if capability_kind == "skill" and capability_name and skill is None:
+            skill = capability_name
+
         return cls(
             id=str(data.get("id", "")),
             kind=str(data.get("kind", "tool")),
             title=str(data.get("title", "")),
             description=str(data.get("description", "")),
-            skill=data.get("skill"),
-            capability_kind=str(data.get("capability_kind", "") or ""),
-            capability_name=str(data.get("capability_name", "") or ""),
+            skill=skill,
+            capability_kind=capability_kind,
+            capability_name=capability_name,
             operation=data.get("operation"),
             allowed_tools=list(data.get("allowed_tools", []) or []),
             params=dict(data.get("params", {}) or {}),

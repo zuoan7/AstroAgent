@@ -351,26 +351,17 @@ class WorkflowExecutor:
         dependencies: List[str],
         step_by_id: Dict[str, Any],
     ) -> tuple[StepExecutionResult, Optional[SkillResult]]:
-        params: Dict[str, Any] = {}
-        param_builder_source = ""
-        capability_kind = getattr(node, "capability_kind", "") or (
-            "skill" if node.skill else ""
+        executable = self._resolve_executable(node)
+        capability_kind = executable["capability_kind"]
+        capability_name = executable["capability_name"]
+        executable_skill = executable["skill"]
+        executable_tool = executable["tool"]
+        params, param_builder_source = self._build_node_params(
+            node,
+            executable=executable,
+            query=query,
+            param_builder=param_builder,
         )
-        capability_name = getattr(node, "capability_name", "") or node.skill or ""
-        executable_skill = node.skill or (
-            capability_name if capability_kind == "skill" else None
-        )
-        executable_tool = capability_name if capability_kind == "tool" else None
-
-        if executable_skill:
-            if node.inputs:
-                params = dict(param_builder(executable_skill, query))
-                param_builder_source = "plan"
-            else:
-                params = dict(param_builder(executable_skill, query))
-                param_builder_source = "fallback_builder"
-        if node.inputs:
-            params.update(node.inputs)
 
         await self._emit(
             event_callback,
@@ -401,18 +392,11 @@ class WorkflowExecutor:
                 if budget_tracker:
                     budget_tracker.register_tool_call()
 
-                if executable_tool:
-                    coro = asyncio.to_thread(
-                        self._call_atomic_tool_as_skill_result,
-                        executable_tool,
-                        params,
-                    )
-                else:
-                    coro = asyncio.to_thread(
-                        self._skill_manager.call_skill,
-                        executable_skill,
-                        **params,
-                    )
+                coro = asyncio.to_thread(
+                    self._execute_capability,
+                    executable=executable,
+                    params=params,
+                )
                 if node.timeout_ms:
                     skill_result = await asyncio.wait_for(
                         coro, timeout=node.timeout_ms / 1000.0
@@ -578,6 +562,88 @@ class WorkflowExecutor:
         maybe_result = event_callback(event_type, payload)
         if asyncio.iscoroutine(maybe_result):
             await maybe_result
+
+    @staticmethod
+    def _resolve_executable(node: WorkflowNode) -> Dict[str, Optional[str]]:
+        capability_kind = getattr(node, "capability_kind", "") or (
+            "skill" if node.skill else ""
+        )
+        capability_name = getattr(node, "capability_name", "") or node.skill or ""
+        return {
+            "capability_kind": capability_kind,
+            "capability_name": capability_name,
+            "skill": node.skill
+            or (capability_name if capability_kind == "skill" else None),
+            "tool": capability_name if capability_kind == "tool" else None,
+        }
+
+    def _build_node_params(
+        self,
+        node: WorkflowNode,
+        *,
+        executable: Dict[str, Optional[str]],
+        query: str,
+        param_builder: ParamBuilder,
+    ) -> tuple[Dict[str, Any], str]:
+        capability_kind = executable["capability_kind"] or ""
+        capability_name = executable["capability_name"] or ""
+        executable_skill = executable["skill"]
+        params: Dict[str, Any] = {}
+
+        if executable_skill:
+            params = self._build_capability_params(
+                param_builder,
+                "skill",
+                executable_skill,
+                query,
+            )
+        elif executable["tool"] and not node.inputs:
+            params = self._build_capability_params(
+                param_builder,
+                capability_kind,
+                capability_name,
+                query,
+            )
+
+        if node.inputs:
+            params.update(node.inputs)
+            return params, "plan"
+        return params, "fallback_builder" if params else ""
+
+    @staticmethod
+    def _build_capability_params(
+        param_builder: ParamBuilder,
+        capability_kind: str,
+        capability_name: str,
+        query: str,
+    ) -> Dict[str, Any]:
+        if hasattr(param_builder, "build_for_capability"):
+            return dict(
+                param_builder.build_for_capability(  # type: ignore[attr-defined]
+                    capability_kind,
+                    capability_name,
+                    query,
+                )
+            )
+        return dict(param_builder(capability_name, query))
+
+    def _execute_capability(
+        self,
+        *,
+        executable: Dict[str, Optional[str]],
+        params: Dict[str, Any],
+    ) -> SkillResult:
+        if executable.get("tool"):
+            return self._call_atomic_tool_as_skill_result(
+                str(executable["tool"]),
+                params,
+            )
+        if executable.get("skill"):
+            return self._skill_manager.call_skill(
+                str(executable["skill"]),
+                **params,
+            )
+        raise ValueError("workflow node has no executable capability")
 
     def _call_atomic_tool_as_skill_result(
         self,

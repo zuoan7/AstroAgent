@@ -15,6 +15,7 @@ from src.agent.policies.budget_policy import RequestBudgetTracker
 from src.agent.policies.fallback_policy import FallbackPolicy
 from src.agent.request_router import RouteDecision
 from src.agent.skill_param_builder import SkillParamBuilder
+from src.capabilities.param_builder import CapabilityParamBuilder
 from src.core.config import settings
 
 
@@ -66,9 +67,8 @@ class PlannedExecutor:
             graph,
             plan,
             query=query,
-            param_builder=lambda skill_name, prompt: self._param_builder.build(
-                skill_name,
-                prompt,
+            param_builder=CapabilityParamBuilder(
+                self._param_builder,
                 chat_history=chat_history,
                 user_profile=user_profile,
             ),
