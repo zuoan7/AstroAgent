@@ -87,7 +87,11 @@ class PlannedExecutor:
             "planner_version": str(getattr(settings, "PLANNER_VERSION", "planner_v2")),
             "schema_version": str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
             "synth_prompt_version": str(
-                getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v2")
+                getattr(
+                    self._synthesizer,
+                    "prompt_version",
+                    getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v3"),
+                )
             ),
             "fallback_policy_version": self._fallback_policy.version,
             "budget_policy_version": (

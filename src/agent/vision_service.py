@@ -2,6 +2,7 @@ import dashscope
 from dashscope import MultiModalConversation
 from pathlib import Path
 from typing import Optional
+from src.agent.prompts import get_prompt_renderer
 from src.core.config import settings
 from src.core.logger import logger
 from src.core.errors import AgentError, ErrorCode, ErrorHandler
@@ -80,15 +81,7 @@ class VisionService:
             )
 
     def build_vision_query(self, original_query: str, image_path: str, custom_prompt: Optional[str] = None) -> str:
-        prompt = custom_prompt or (
-            "请详细描述这张图片的天文相关内容。若图片包含星空/天体/天文设备，请按以下结构分析：\n"
-            "1) 天体识别：指出可能的天体名称、星座、天文现象（如流星、极光、日/月食等），"
-            "尽量给出中文名和编号（如猎户座大星云 M42）\n"
-            "2) 天空质量评估：根据可见星点数量和暗弱程度，判断光害等级（Bortle暗空等级）和天空透明度\n"
-            "3) 设备与拍摄参数推断：若可见望远镜/赤道仪/相机，描述设备类型；"
-            "若为天文照片，尝试推断曝光时间、ISO、焦距等参数\n"
-            "4) 观测与拍摄建议：基于上述分析，给出适合的后续观测目标、拍摄参数或设备升级建议"
-        )
+        prompt = custom_prompt or get_prompt_renderer().render("vision.query_analysis")
         try:
             vision_desc = self.describe_image(image_path=image_path, prompt=prompt)
         except AgentError as e:

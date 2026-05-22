@@ -1,0 +1,114 @@
+prompts:
+  react.main:
+    version: react_prompt_v2
+    template: react/main.zh.md
+    output_contract: langchain_react_text
+
+  direct.simple_qa:
+    version: direct_simple_qa_v2
+    required_vars: [query, user_profile, chat_history, rag_context]
+    output_contract: answer_text
+    budget:
+      max_chars: 6000
+    sections:
+      - name: instruction
+        template: direct/simple_qa_instruction.zh.md
+        priority: 100
+        required: true
+      - name: user_profile
+        variable: user_profile
+        priority: 70
+        max_chars: 800
+      - name: chat_history
+        variable: chat_history
+        priority: 60
+        max_chars: 1200
+      - name: rag_context
+        variable: rag_context
+        priority: 50
+        max_chars: 3000
+      - name: query
+        template: direct/simple_qa_query.zh.md
+        priority: 100
+        required: true
+
+  direct.no_tool_answer:
+    version: direct_no_tool_answer_v1
+    template: direct/no_tool_answer.zh.md
+    required_vars: [query]
+    output_contract: answer_text
+
+  planned.response_synthesizer:
+    version: synth_prompt_v3
+    required_vars: [query, task_type, output_schema, user_profile, chat_history, tool_outputs]
+    output_contract: final_answer_text
+    budget:
+      max_chars: 6000
+    sections:
+      - name: instruction
+        template: planned/response_synthesizer_instruction.zh.md
+        priority: 100
+        required: true
+      - name: task_type
+        template: planned/response_synthesizer_task_type.zh.md
+        priority: 90
+        required: true
+      - name: user_profile
+        variable: user_profile
+        priority: 70
+        max_chars: 800
+      - name: chat_history
+        variable: chat_history
+        priority: 60
+        max_chars: 1000
+      - name: query
+        template: planned/response_synthesizer_query.zh.md
+        priority: 100
+        required: true
+      - name: tool_outputs
+        template: planned/response_synthesizer_tool_outputs.zh.md
+        priority: 80
+        max_chars: 4000
+      - name: closing
+        content: "请给出整合后的中文回答："
+        priority: 100
+        required: true
+
+  planned.workflow_planner:
+    version: workflow_planner_prompt_v1
+    template: planned/workflow_planner.zh.md
+    required_vars: [task_type, skills_text, user_profile_available, chat_history_available, query]
+    output_contract: workflow_plan_json
+
+  router.intent_classifier:
+    version: intent_classifier_prompt_v1
+    template: router/intent_classifier.zh.md
+    required_vars: [valid_routes, valid_task_types, skills_text, rule_summary, query]
+    output_contract: intent_json
+
+  memory.long_term_extractor.system:
+    version: ltm_extractor_system_v1
+    template: memory/long_term_extractor_system.zh.md
+    output_contract: memory_extractions_json
+
+  memory.long_term_extractor.user:
+    version: ltm_extractor_user_v1
+    template: memory/long_term_extractor_user.zh.md
+    required_vars: [user_message, assistant_message]
+    output_contract: memory_extractions_json
+
+  memory.task_state_enrichment:
+    version: task_state_enrichment_prompt_v1
+    template: memory/task_state_enrichment.zh.md
+    required_vars: [current_state_json, user_message, assistant_message]
+    output_contract: task_state_patch_json
+
+  vision.query_analysis:
+    version: vision_query_analysis_prompt_v1
+    template: vision/query_analysis.zh.md
+    output_contract: image_description_text
+
+  vision.astronomy_image_description:
+    version: astronomy_image_description_prompt_v1
+    template: vision/astronomy_image_description.zh.md
+    output_contract: image_description_text

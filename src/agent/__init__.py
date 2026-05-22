@@ -18,6 +18,7 @@ from src.agent.audit import RequestAuditLogger
 from src.agent.output_parser import LenientReActSingleInputOutputParser
 from src.agent.planner import Planner
 from src.agent.policies import FallbackPolicy, ModelPolicy
+from src.agent.prompts import PromptRenderError, get_prompt_renderer
 from src.agent.request_router import RequestRouter
 from src.agent.response_synthesizer import ResponseSynthesizer
 from src.agent.skill_manager import SkillManager
@@ -107,66 +108,7 @@ class AstroAgent:
             template = self._load_prompt_template()
         except Exception as e:
             logger.error(f"❌ 读取prompt模板文件失败：{str(e)}")
-            template = """
-                    你是一个专业又亲切的天文助手，帮助用户解答天文问题。
-
-                    **用户画像与偏好**：
-                    {user_profile}
-
-                    **对话历史**：
-                    {chat_history}
-
-                    **系统默认值**：
-                    - 默认观测位置：北京（纬度 39.9°N，经度 116.4°E）
-                    - 默认日期：当前日期
-                    - 天象数据支持年份范围：2026–2030
-
-                    **可用工具列表**：
-                    {tools}
-
-                    **问题类型与技能路由**：
-                    - 科普知识类 → RAGRetrieve
-                    - 实时数据类 → CelestialPositionCalculator / ObservationPlanner
-                    - 观测条件/天气类 → ObservationPlanner
-                    - 特殊天象类 → CelestialEventsForecast
-                    - 深空观测类 → DeepSkyObservingGuide
-                    - 近地天体类 → NEOTracker
-                    - 天文摄影类 → AstrophotographyCalculator
-                    - 闲聊类 → 直接礼貌回应，不调用工具
-
-                    **回答风格**：
-                    - 观测推荐：热情推荐，先说最佳目标，再给建议
-                    - 科普知识：从简单概念讲起，用比喻帮助理解
-                    - 实时数据：直接给出数据，简洁明了
-                    - 专业术语附注英文原文（如"视星等 apparent magnitude"）
-
-                    使用以下格式。每次回复只能是以下两种之一：
-
-                    1. 需要调用工具时：
-
-                    Question: {input}
-                    Thought: 先判断问题类型，再选择合适的技能/工具
-                    Action: 选择一个工具，应该是[{tool_names}]之一
-                    Action Input: 工具参数，必须是有效的JSON格式（例如：{{"target": "mars"}}）
-                    Observation: 工具返回结果
-                    ... (Thought/Action/Action Input/Observation最多重复5次)
-
-                    2. 已经拿到足够信息、可以回答用户时：
-
-                    Thought: 我现在知道最终答案了
-                    Final Answer: 最终答案
-
-                    关键规则：
-                    - Thought 后面必须紧跟 Action 或 Final Answer
-                    - 如果不再调用工具，必须写 Final Answer:，不要直接写答案正文
-                    - Observation 已包含足够信息时，直接输出 Final Answer
-
-                    开始！
-
-                    Question: {input}
-                    Thought: {agent_scratchpad}
-                    """
-            logger.info("⚠️  使用默认prompt模板")
+            raise
 
         prompt = PromptTemplate.from_template(template)
 
@@ -200,6 +142,11 @@ class AstroAgent:
 
     def _load_prompt_template(self) -> str:
         from src.core.config import resolve_path
+
+        try:
+            return get_prompt_renderer().render("react.main")
+        except PromptRenderError as exc:
+            logger.warning(f"⚠️  Prompt registry 读取失败，回退到 legacy 模板: {exc}")
 
         template_path = resolve_path(settings.PROMPT_TEMPLATE_PATH)
         with open(template_path, "r", encoding="utf-8") as f:

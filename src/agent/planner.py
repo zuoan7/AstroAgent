@@ -6,6 +6,7 @@ from typing import Any, List, Optional
 
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.workflow_graph import WorkflowGraph
+from src.agent.prompts import get_prompt_renderer
 from src.agent.skill_param_builder import SkillParamBuilder
 from src.core.config import settings
 from src.skills import registry
@@ -420,22 +421,15 @@ class Planner:
         skills_text = "\n".join(
             f"- {spec.skill_name}: {spec.summary}" for spec in skill_specs
         )
-        prompt = (
-            "你是 AstroAgent 的结构化计划生成器。只输出 JSON 对象，不要输出解释文字。\n"
-            "仅当用户问题确实需要工具时选择步骤；只能使用给定 skills，禁止发明工具。\n"
-            "输出最多 4 个步骤，按执行顺序排列。\n\n"
-            f"task_type: {task_type}\n"
-            f"可用 skills:\n{skills_text}\n\n"
-            "输出 JSON schema:\n"
-            "{\n"
-            '  "steps": [\n'
-            '    {"skill": "weather-lookup", "required": true, "reason": "查询云量", "params": {"city": "北京"}}\n'
-            "  ],\n"
-            '  "rationale": "简短计划理由"\n'
-            "}\n\n"
-            f"用户画像可用性: {bool(user_profile)}\n"
-            f"历史对话可用性: {bool(chat_history)}\n"
-            f"用户问题: {query}\n"
+        prompt = get_prompt_renderer().render(
+            "planned.workflow_planner",
+            {
+                "task_type": task_type,
+                "skills_text": skills_text,
+                "user_profile_available": bool(user_profile),
+                "chat_history_available": bool(chat_history),
+                "query": query,
+            },
         )
 
         try:

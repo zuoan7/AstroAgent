@@ -3,6 +3,7 @@
 抽取自 TaskOrchestrator._run_direct_task()，逻辑完全等价。
 Phase 9 起作为主路径，循环依赖已消除（改用 SkillParamBuilder）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +13,7 @@ from src.agent.executor import _extract_mcp_tools_from_sources
 from src.agent.fast_answers import stable_knowledge_answer
 from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.final_response import FinalResponse
-from src.agent.policies.prompt_budget import PromptBudgetManager, PromptSection
+from src.agent.prompts import get_prompt_renderer
 from src.agent.request_router import RouteDecision
 from src.agent.skill_param_builder import SkillParamBuilder
 from src.core.config import settings
@@ -97,9 +98,11 @@ class DirectExecutor:
             confidence=decision.confidence,
             route=decision.route,
             task_type=decision.task_type,
-            versions=self._synthesizer._default_versions()
-            if hasattr(self._synthesizer, "_default_versions")
-            else None,
+            versions=(
+                self._synthesizer._default_versions()
+                if hasattr(self._synthesizer, "_default_versions")
+                else None
+            ),
         )
 
     def _run_no_tool_answer(
@@ -120,9 +123,11 @@ class DirectExecutor:
             confidence=decision.confidence,
             route=decision.route,
             task_type=decision.task_type,
-            versions=self._synthesizer._default_versions()
-            if hasattr(self._synthesizer, "_default_versions")
-            else None,
+            versions=(
+                self._synthesizer._default_versions()
+                if hasattr(self._synthesizer, "_default_versions")
+                else None
+            ),
         )
 
     async def _run_tool_task(
@@ -198,9 +203,7 @@ class DirectExecutor:
             "llm_confidence": route_meta.get("llm_confidence"),
             "tool_necessity_action": route_meta.get("tool_necessity_action"),
             "tool_necessity_reason": route_meta.get("tool_necessity_reason"),
-            "tool_necessity_confidence": route_meta.get(
-                "tool_necessity_confidence"
-            ),
+            "tool_necessity_confidence": route_meta.get("tool_necessity_confidence"),
             "tool_necessity_missing_params": route_meta.get(
                 "tool_necessity_missing_params", []
             ),
@@ -213,7 +216,9 @@ class DirectExecutor:
             "planner_source": "",
             "plan_steps_with_params": [],
             "param_builder_source": param_builder_source,
-            "param_builder_sources": [param_builder_source] if param_builder_source else [],
+            "param_builder_sources": (
+                [param_builder_source] if param_builder_source else []
+            ),
             "handler_mcp_tools_used": list(handler_mcp_tools_used or []),
             "logical_skill": logical_skill,
             "operation": operation,
@@ -239,52 +244,15 @@ class DirectExecutor:
         retrieval = self._rag.retrieve(query, fast_mode=True)
         context = retrieval.get("context", "")
 
-        if settings.PROMPT_BUDGET_ENABLED:
-            mgr = PromptBudgetManager()
-            sections = [
-                PromptSection(
-                    "instruction",
-                    "你是天文助手。请基于给定知识，用简洁直接的中文回答。\n"
-                    "如果知识不足，要明确说明不确定，不要编造。",
-                    priority=100,
-                    required=True,
-                ),
-                PromptSection(
-                    "user_profile",
-                    user_profile,
-                    priority=70,
-                    max_chars=800,
-                ),
-                PromptSection(
-                    "chat_history",
-                    chat_history,
-                    priority=60,
-                    max_chars=1200,
-                ),
-                PromptSection(
-                    "rag_context",
-                    context,
-                    priority=50,
-                    max_chars=3000,
-                ),
-                PromptSection(
-                    "query",
-                    f"问题：{query}\n\n回答：",
-                    priority=100,
-                    required=True,
-                ),
-            ]
-            result = mgr.fit_sections(sections)
-            prompt = result.text
-        else:
-            prompt = (
-                "你是天文助手。请基于给定知识，用简洁直接的中文回答。\n"
-                "如果知识不足，要明确说明不确定，不要编造。\n\n"
-                f"用户画像：\n{user_profile[:400]}\n\n"
-                f"最近对话：\n{chat_history[:800]}\n\n"
-                f"知识：\n{context[:2400]}\n\n"
-                f"问题：{query}\n\n回答："
-            )
+        prompt = get_prompt_renderer().render_sections(
+            "direct.simple_qa",
+            {
+                "query": query,
+                "user_profile": user_profile,
+                "chat_history": chat_history,
+                "rag_context": context,
+            },
+        )
 
         answer = await asyncio.to_thread(self._invoke_llm, prompt)
         return self._synthesizer.synthesize_qa(
@@ -368,10 +336,9 @@ class DirectExecutor:
         return "你好，我可以帮你查询天象、观测条件、天体位置和天文知识。"
 
     def _direct_no_tool_reply(self, query: str) -> str:
-        prompt = (
-            "你是天文助手。请不用任何外部工具，直接回答这个稳定知识或经验判断问题。"
-            "如果问题缺少实时数据，要明确说明只能给一般性判断。\n\n"
-            f"问题：{query}\n\n回答："
+        prompt = get_prompt_renderer().render(
+            "direct.no_tool_answer",
+            {"query": query},
         )
         return self._invoke_llm(prompt)
 

@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Any, Dict, Iterable, Optional
 
+from src.agent.prompts import get_prompt_renderer
 from src.core.config import settings
 from src.core.logger import logger
 from src.memory.domain.events import MemoryEventType
@@ -324,18 +325,17 @@ class TaskStateRuntimeService:
         assistant_message: str,
         current_state: Dict[str, Any],
     ) -> str:
-        return (
-            "你是 AstroAgent 的短期 task_state 补充抽取器。只输出 JSON 对象。\n"
-            "只能补充或细化这些字段：current_goal, active_constraints, open_questions, "
-            "assumptions, next_action, confidence。\n"
-            "禁止输出 status、completed_steps、pending_steps、blockers。\n"
-            "不要编造用户没有表达的长期偏好。\n\n"
-            f"当前 state: {json.dumps(current_state, ensure_ascii=False, sort_keys=True)}\n"
-            f"用户消息: {user_message}\n"
-            f"助手回答: {assistant_message[:1200]}\n\n"
-            "输出示例："
-            '{"current_goal":"...","active_constraints":["..."],'
-            '"open_questions":[],"assumptions":[],"next_action":"...","confidence":0.7}'
+        return get_prompt_renderer().render(
+            "memory.task_state_enrichment",
+            {
+                "current_state_json": json.dumps(
+                    current_state,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "user_message": user_message,
+                "assistant_message": assistant_message[:1200],
+            },
         )
 
     def _sanitize_enrichment_patch(self, patch: Dict[str, Any]) -> Dict[str, Any]:

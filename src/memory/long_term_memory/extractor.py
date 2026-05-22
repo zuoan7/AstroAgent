@@ -2,6 +2,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from src.agent.prompts import get_prompt_renderer
 from src.core.config import settings
 from src.core.logger import logger
 from src.core.llm_factory import build_chat_model
@@ -11,46 +12,6 @@ from src.memory.long_term_memory.models import (
     SourceType,
 )
 
-
-EXTRACTION_SYSTEM_PROMPT = """你是一个天文领域用户画像信息提取专家。你的任务是从用户与天文助手的对话中，提取结构化的用户记忆信息。
-
-请严格按照以下JSON格式输出，不要输出任何其他内容：
-{
-    "extractions": [
-        {
-            "memory_type": "preference/habit/constraint/background/fact",
-            "category": "具体分类",
-            "key": "字段键名",
-            "value": "字段值",
-            "confidence": 0.0-1.0,
-            "is_explicit": true/false,
-            "is_temporary": true/false
-        }
-    ]
-}
-
-记忆类型与分类说明：
-- preference（偏好）: response_style(回答风格), explanation_depth(讲解深度), output_format(输出形式), knowledge_level(知识水平), observation_experience(观测经验)
-- habit（习惯）: frequent_topics(常问主题), preferred_time(活跃时间), observation_type(观测类型), usage_scenario(使用场景)
-- constraint（约束）: content_taboo(内容禁忌), output_length_limit(长度限制), no_jargon(避免术语), custom(自定义约束)
-- background（背景）: skill_level(能力水平), device_info(设备信息), domain_experience(领域经验), education(教育背景), location(观测位置)
-- fact（事实）: basic_info(基本信息), fixed_preference(固定偏好), equipment(观测设备), location_info(位置信息)
-
-判断规则：
-1. is_explicit: 用户明确声明的偏好/约束为true，推断的为false
-2. is_temporary: 仅针对本轮对话的要求（如"这次简短回答"）为true，长期偏好为false
-3. confidence: 显式表达>=0.8，强推断0.5-0.7，弱推断0.3-0.4
-4. 仅提取有明确依据的信息，不要过度推断
-5. 同一段对话可能包含多条可提取信息
-6. 特别注意区分"本轮要求"和"长期偏好"
-7. 如果没有可提取的信息，返回空数组"""
-
-EXTRACTION_USER_TEMPLATE = """请从以下对话中提取用户记忆信息：
-
-用户消息：{user_message}
-助手回复：{assistant_message}
-
-请输出JSON格式的提取结果："""
 
 EXPLICIT_PATTERNS = [
     r"我(喜欢|偏好|希望|要求|习惯)(.{1,30})",
@@ -213,11 +174,18 @@ class MemoryExtractor:
             )
             response = llm.invoke(
                 [
-                    SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
+                    SystemMessage(
+                        content=get_prompt_renderer().render(
+                            "memory.long_term_extractor.system"
+                        )
+                    ),
                     HumanMessage(
-                        content=EXTRACTION_USER_TEMPLATE.format(
-                            user_message=user_message,
-                            assistant_message=assistant_message[:500],
+                        content=get_prompt_renderer().render(
+                            "memory.long_term_extractor.user",
+                            {
+                                "user_message": user_message,
+                                "assistant_message": assistant_message[:500],
+                            },
                         )
                     ),
                 ]

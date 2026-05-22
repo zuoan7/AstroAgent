@@ -123,4 +123,5 @@ docs/*
 !docs/agent_evaluation_dataset_design.md
 !docs/astro_agent_evaluation_runner.md
 !docs/agent_mode_dag_refactor.md
+!docs/prompt_management.md
 CLAUDE.md

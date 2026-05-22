@@ -12,6 +12,7 @@ from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.param_parser import ParamParser
 from src.agent.policies.budget_policy import RequestBudgetTracker
 from src.agent.policies.fallback_policy import FallbackPolicy
+from src.agent.prompts import get_prompt_renderer
 from src.agent.request_router import RouteDecision
 from src.agent.models.skill_result import SkillResult
 from src.agent.models.final_response import FinalResponse
@@ -209,7 +210,11 @@ class TaskOrchestrator:
                 "planner_version": str(getattr(settings, "PLANNER_VERSION", "planner_v2")),
                 "schema_version": str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
                 "synth_prompt_version": str(
-                    getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v2")
+                    getattr(
+                        self._synthesizer,
+                        "prompt_version",
+                        getattr(settings, "SYNTH_PROMPT_VERSION", "synth_prompt_v3"),
+                    )
                 ),
                 "fallback_policy_version": self._fallback_policy.version,
                 "budget_policy_version": (
@@ -260,13 +265,14 @@ class TaskOrchestrator:
 
         retrieval = self._rag.retrieve(query, fast_mode=True)
         context = retrieval.get("context", "")
-        prompt = (
-            "你是天文助手。请基于给定知识，用简洁直接的中文回答。\n"
-            "如果知识不足，要明确说明不确定，不要编造。\n\n"
-            f"用户画像：\n{user_profile[:400]}\n\n"
-            f"最近对话：\n{chat_history[:800]}\n\n"
-            f"知识：\n{context[:2400]}\n\n"
-            f"问题：{query}\n\n回答："
+        prompt = get_prompt_renderer().render_sections(
+            "direct.simple_qa",
+            {
+                "query": query,
+                "user_profile": user_profile,
+                "chat_history": chat_history,
+                "rag_context": context,
+            },
         )
         answer = await asyncio.to_thread(self._invoke_llm, prompt)
 
@@ -322,10 +328,9 @@ class TaskOrchestrator:
         return "你好，我可以帮你查询天象、观测条件、天体位置和天文知识。"
 
     def _direct_no_tool_reply(self, query: str) -> str:
-        prompt = (
-            "你是天文助手。请不用任何外部工具，直接回答这个稳定知识或经验判断问题。"
-            "如果问题缺少实时数据，要明确说明只能给一般性判断。\n\n"
-            f"问题：{query}\n\n回答："
+        prompt = get_prompt_renderer().render(
+            "direct.no_tool_answer",
+            {"query": query},
         )
         return self._invoke_llm(prompt)
 

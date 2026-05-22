@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
+from src.agent.prompts import get_prompt_renderer
 from src.skills import registry
 
 
@@ -82,29 +83,15 @@ class LLMIntentClassifier:
             except Exception:
                 rule_summary = ""
 
-        return (
-            "你是 AstroAgent 的意图分类器。只输出一个 JSON 对象，不要输出解释文字。\n"
-            "你只能从给定枚举中选择 route、task_type 和 skills，禁止发明 skill。\n"
-            "如果问题是稳定天文知识、闲聊或非天文问题，通常 requires_tool=false。\n"
-            "如果问题涉及实时天气、今晚/明晚可见性、方位、高度角、观测推荐、"
-            "指定深空目标指导、近地天体或摄影参数，通常 requires_tool=true。\n\n"
-            f"允许 route: {sorted(VALID_ROUTES)}\n"
-            f"允许 task_type: {sorted(VALID_TASK_TYPES)}\n"
-            "可用 skills:\n"
-            f"{skills_text}\n\n"
-            "输出 JSON schema:\n"
-            "{\n"
-            '  "requires_tool": true,\n'
-            '  "route": "direct_task",\n'
-            '  "task_type": "single_tool_lookup",\n'
-            '  "skills": ["weather-lookup"],\n'
-            '  "confidence": 0.0,\n'
-            '  "reason": "简短原因",\n'
-            '  "should_clarify": false,\n'
-            '  "param_hints": {"location": "北京", "date": "今晚"}\n'
-            "}\n\n"
-            f"规则路由初判: {rule_summary or '无'}\n"
-            f"用户问题: {query}\n"
+        return get_prompt_renderer().render(
+            "router.intent_classifier",
+            {
+                "valid_routes": sorted(VALID_ROUTES),
+                "valid_task_types": sorted(VALID_TASK_TYPES),
+                "skills_text": skills_text,
+                "rule_summary": rule_summary or "无",
+                "query": query,
+            },
         )
 
     def _extract_json(self, raw: str) -> Any:

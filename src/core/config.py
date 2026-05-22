@@ -35,6 +35,10 @@ class APIConfig(BaseSettings):
     PROMPT_TEMPLATE_PATH: str = Field(
         "config/prompts/main.txt", description="Prompt模板文件路径（相对于项目根目录）"
     )
+    PROMPT_MANIFEST_PATH: str = Field(
+        "config/prompts/manifest.yaml",
+        description="Prompt 注册清单路径（相对于项目根目录）",
+    )
     PROJECT_ROOT: str = Field("", description="项目根目录绝对路径（留空则自动检测）")
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
@@ -463,7 +467,7 @@ class AgentGovernanceConfig(BaseSettings):
     PLANNER_VERSION: str = Field("planner_v2", description="Planner 版本")
     SCHEMA_VERSION: str = Field("schema_v2", description="输出契约版本")
     SYNTH_PROMPT_VERSION: str = Field(
-        "synth_prompt_v2", description="答案合成 Prompt 版本"
+        "synth_prompt_v3", description="答案合成 Prompt 版本"
     )
     FALLBACK_POLICY_VERSION: str = Field(
         "fallback_v2", description="Fallback 策略版本"
