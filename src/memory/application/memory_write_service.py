@@ -4,6 +4,8 @@
 投影更新仍交给专门的 manager，保持写入路径职责单一。
 """
 
+import hashlib
+import json
 import time
 from typing import Any, Dict, Optional
 
@@ -28,6 +30,8 @@ class MemoryWriteService:
         task_state_manager: TaskStateManager,
         compression_service: CompressionService,
     ):
+        """保存写路径依赖，负责事件、artifact 和任务状态投影写入。"""
+
         self.tenant_id = tenant_id
         self.event_store = event_store
         self.artifact_store = artifact_store
@@ -77,6 +81,12 @@ class MemoryWriteService:
             content_type=request.content_type,
         )
         output_digest = self.compression_service.digest_tool_output(request.raw_output)
+        metadata = self._build_tool_metadata(
+            tool_name=request.tool_name,
+            tool_input=request.tool_input,
+            timestamp=timestamp,
+            metadata=request.metadata or {},
+        )
         record = ToolCallRecord(
             tool_call_id=tool_call_id,
             tool_name=request.tool_name,
@@ -90,6 +100,7 @@ class MemoryWriteService:
             raw_size_bytes=artifact.size_bytes,
             content_type=artifact.content_type,
             status="success" if request.success else "error",
+            metadata=metadata,
         )
         event = MemoryEvent(
             event_id=request.event_id
@@ -110,6 +121,56 @@ class MemoryWriteService:
         )
         self.event_store.append(event)
         return record
+
+    def _build_tool_metadata(
+        self,
+        tool_name: str,
+        tool_input: str,
+        timestamp: float,
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Attach deterministic evidence metadata without changing storage schema."""
+
+        enriched = dict(metadata or {})
+        enriched.setdefault("params_hash", self._params_hash(tool_input))
+        enriched.setdefault("produced_at", timestamp)
+        enriched.setdefault(
+            "effective_until",
+            self._infer_effective_until(tool_name=tool_name, produced_at=timestamp),
+        )
+        return enriched
+
+    def _params_hash(self, tool_input: str) -> str:
+        """为工具输入生成稳定短哈希，作为 evidence 参数链标识。"""
+
+        normalized = self._normalize_tool_input(tool_input)
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+    def _normalize_tool_input(self, tool_input: str) -> str:
+        """规范化工具输入，JSON 输入按键排序保证哈希稳定。"""
+
+        raw = (tool_input or "").strip()
+        if not raw:
+            return ""
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return raw
+        return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    def _infer_effective_until(self, tool_name: str, produced_at: float) -> float:
+        """按工具类型推断证据默认有效期截止时间。"""
+
+        name = (tool_name or "").lower()
+        if any(token in name for token in ["weather", "天气"]):
+            return produced_at + 6 * 60 * 60
+        if any(token in name for token in ["neo", "asteroid", "小行星", "近地"]):
+            return produced_at + 12 * 60 * 60
+        if any(token in name for token in ["event", "forecast", "calendar", "meteor"]):
+            return produced_at + 24 * 60 * 60
+        if any(token in name for token in ["position", "位置", "ephemeris"]):
+            return produced_at + 2 * 60 * 60
+        return produced_at + 24 * 60 * 60
 
     def update_task_state(
         self,

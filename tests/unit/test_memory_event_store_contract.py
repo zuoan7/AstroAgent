@@ -207,6 +207,34 @@ def test_memory_service_append_tool_call_exposes_raw_artifact(memory_db):
     assert tool_calls[0]["raw_artifact_id"] == record.raw_artifact_id
 
 
+def test_memory_service_adds_tool_evidence_metadata(memory_db):
+    service = MemoryService(
+        db_path=memory_db, tenant_id="tenant", session_id="session", user_id="user"
+    )
+
+    record = service.append_tool_call(
+        AppendToolCallRequest(
+            tenant_id="tenant",
+            session_id="session",
+            user_id="user",
+            tool_name="weather-lookup",
+            tool_input='{"time":"22:00","city":"北京"}',
+            raw_output="北京 22:00 天气晴朗",
+            timestamp=1000.0,
+            metadata={"source": "test"},
+        )
+    )
+
+    assert record.metadata["source"] == "test"
+    assert record.metadata["params_hash"]
+    assert record.metadata["produced_at"] == 1000.0
+    assert record.metadata["effective_until"] > record.metadata["produced_at"]
+
+    stored = service.get_tool_calls("session")[0]
+    assert stored["metadata"]["params_hash"] == record.metadata["params_hash"]
+    assert stored["metadata"]["produced_at"] == 1000.0
+
+
 def test_compression_creates_summary_snapshot_from_events(memory_db):
     service = MemoryService(db_path=memory_db, tenant_id="tenant")
     service.append_message(

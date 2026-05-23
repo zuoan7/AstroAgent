@@ -12,6 +12,7 @@ import pytest
 
 from src.memory.api.dto import AppendMessageRequest, BuildContextRequest
 from src.memory.api.memory_service import MemoryService
+from src.memory.domain.events import MemoryEvent, MemoryEventType
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,24 @@ def _append_pair(svc: MemoryService, user_msg: str, assistant_msg: str):
     svc.append_message(AppendMessageRequest(
         session_id=svc.session_id, role="assistant", content=assistant_msg,
     ))
+
+
+def _append_memory_event(
+    svc: MemoryService,
+    event_type: str,
+    payload: dict,
+    *,
+    tenant_id: str = "t1",
+    session_id: str = "s1",
+):
+    return svc.event_store.append(
+        MemoryEvent(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            event_type=event_type,
+            payload=payload,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +387,169 @@ def test_no_events_does_not_trigger(memory_db, monkeypatch):
     # But creating a snapshot with 0 events is wasteful.
     # The trigger should not fire if uncovered_count is 0.
     # (This is a design consideration; the test verifies current behavior)
-    assert True  # just verify no crash
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+    assert summary == ""
+    assert decision.should_create is False
+    assert decision.reason == "no_uncovered_events"
+
+
+def test_fixed_uncovered_event_trigger_creates_snapshot_decision(memory_db, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_MESSAGES",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    for index in range(30):
+        _append_memory_event(
+            svc,
+            MemoryEventType.MESSAGE_CREATED.value,
+            {"role": "user", "content": f"事件 {index}"},
+        )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "create"
+    assert "uncovered_events(30)" in decision.reason
+
+
+def test_fixed_uncovered_event_trigger_rebases_existing_snapshot(memory_db, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_MIN_NEW_EVENTS",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "北京 M42 初始上下文"},
+    )
+    svc.create_summary_snapshot(svc.session_id)
+    for index in range(30):
+        _append_memory_event(
+            svc,
+            MemoryEventType.MESSAGE_CREATED.value,
+            {"role": "user", "content": f"北京 M42 新事件 {index}"},
+        )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "rebase"
+    assert "uncovered_events(30)" in decision.reason
+
+
+def test_fixed_token_trigger_creates_snapshot_decision(memory_db, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_MESSAGES",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "北京 M42 " + ("长内容" * 5000)},
+    )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "create"
+    assert decision.estimated_tokens >= 6000
+    assert "estimated_tokens" in decision.reason
+
+
+def test_topic_drift_triggers_rebase_decision(memory_db, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_MIN_NEW_EVENTS",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "北京 M42 观测上下文"},
+    )
+    svc.create_summary_snapshot(svc.session_id)
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "上海 M31 摄影计划"},
+    )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "rebase"
+    assert decision.reason == "topic_drift(distance>0.6)"
+
+
+def test_tool_chain_completion_triggers_snapshot_decision(memory_db, monkeypatch):
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_MESSAGES",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.TOOL_CALL_FINISHED.value,
+        {
+            "tool_name": "weather-lookup",
+            "tool_input": '{"city":"北京"}',
+            "output_summary": "北京晴",
+        },
+    )
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "assistant", "content": "最终结论：可以观测。"},
+    )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "create"
+    assert decision.reason == "tool_chain_completed"
 
 
 def test_rebase_with_zero_min_new_events(memory_db, monkeypatch):

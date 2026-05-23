@@ -79,6 +79,7 @@ class ToolCallRecord:
     content_type: str = "text/plain"
     status: str = "success"
     importance: int = 1
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """归一化兼容字段，保证旧数据也有可用 id 和 content_type。"""
@@ -90,14 +91,20 @@ class ToolCallRecord:
 
     @property
     def tool_input(self) -> str:
+        """兼容旧接口字段名，返回 input_summary。"""
+
         return self.input_summary
 
     @property
     def result_summary(self) -> str:
+        """兼容旧接口字段名，返回 output_summary。"""
+
         return self.output_summary
 
     @property
     def success(self) -> bool:
+        """根据 status 判断工具调用是否成功。"""
+
         return self.status == "success"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -117,6 +124,7 @@ class ToolCallRecord:
             "content_type": self.content_type,
             "status": self.status,
             "importance": self.importance,
+            "metadata": self.metadata,
             "tool_input": self.input_summary,
             "result_summary": self.output_summary,
             "success": self.success,
@@ -143,6 +151,7 @@ class ToolCallRecord:
             content_type=data.get("content_type", "text/plain") or "text/plain",
             status=status,
             importance=data.get("importance", 1),
+            metadata=data.get("metadata", {}) or {},
         )
 
 
