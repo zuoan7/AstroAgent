@@ -13,6 +13,8 @@ class EventProjectionReader:
     """Reads prompt-facing projections from the append-only event store."""
 
     def __init__(self, event_store: EventStore):
+        """保存事件仓储引用，后续读取只做投影恢复。"""
+
         self.event_store = event_store
 
     def list_messages(self, session_id: str, limit: int = 200) -> list[Message]:
@@ -95,6 +97,7 @@ class EventProjectionReader:
                 ),
             ),
             "importance": payload.get("importance", 1),
+            "metadata": payload.get("metadata", {}) or {},
         }
         return ToolCallRecord.from_dict(data)
 

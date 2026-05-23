@@ -1,7 +1,7 @@
-"""Phase 3 unit tests for summary snapshot auto-trigger.
+"""summary snapshot 自动压缩触发测试。
 
-Covers: threshold gating, assistant-only trigger, rebase after existing snapshot,
-disable switch, token threshold, failure isolation, build_context integration.
+覆盖事件数/字符预算/话题漂移/工具链完成等多触发器、已有快照 rebase、
+失败隔离和 build_context 注入摘要的短期记忆压缩行为。
 """
 
 import os
@@ -12,6 +12,7 @@ import pytest
 
 from src.memory.api.dto import AppendMessageRequest, BuildContextRequest
 from src.memory.api.memory_service import MemoryService
+from src.memory.domain.events import MemoryEvent, MemoryEventType
 
 
 # ---------------------------------------------------------------------------
@@ -19,6 +20,8 @@ from src.memory.api.memory_service import MemoryService
 # ---------------------------------------------------------------------------
 
 def _settings(db_path: str, **overrides) -> SimpleNamespace:
+    """构造测试用 settings 对象。"""
+
     defaults = {
         "DEFAULT_USER_ID": "test_user",
         "MEMORY_SIZE": 15,
@@ -48,6 +51,8 @@ def _settings(db_path: str, **overrides) -> SimpleNamespace:
 
 @pytest.fixture
 def memory_db(tmp_path, monkeypatch):
+    """创建临时 SQLite 记忆数据库 fixture。"""
+
     db_path = os.path.join(tmp_path, "memory.sqlite")
     from src.memory import config as memory_module
 
@@ -61,12 +66,16 @@ def memory_db(tmp_path, monkeypatch):
 
 
 def _make_memory_service(db_path: str, **overrides) -> MemoryService:
+    """构造启用测试配置的 MemoryService。"""
+
     from src.memory import config as memory_module
     # Apply overrides by re-patching
     return MemoryService(db_path=db_path, tenant_id="t1", session_id="s1")
 
 
 def _append_pair(svc: MemoryService, user_msg: str, assistant_msg: str):
+    """追加一组用户和助手消息事件。"""
+
     svc.append_message(AppendMessageRequest(
         session_id=svc.session_id, role="user", content=user_msg,
     ))
@@ -75,11 +84,33 @@ def _append_pair(svc: MemoryService, user_msg: str, assistant_msg: str):
     ))
 
 
+def _append_memory_event(
+    svc: MemoryService,
+    event_type: str,
+    payload: dict,
+    *,
+    tenant_id: str = "t1",
+    session_id: str = "s1",
+):
+    """直接追加一条底层记忆事件。"""
+
+    return svc.event_store.append(
+        MemoryEvent(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            event_type=event_type,
+            payload=payload,
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. Below threshold — no snapshot created
 # ---------------------------------------------------------------------------
 
 def test_no_snapshot_below_threshold(memory_db, monkeypatch):
+    """测试 no snapshot below threshold 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -101,6 +132,8 @@ def test_no_snapshot_below_threshold(memory_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_snapshot_created_on_threshold(memory_db, monkeypatch):
+    """测试 snapshot created on threshold 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -123,6 +156,8 @@ def test_snapshot_created_on_threshold(memory_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_assistant_only_trigger(memory_db, monkeypatch):
+    """测试 assistant only trigger 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -161,6 +196,8 @@ def test_assistant_only_trigger(memory_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_rebase_only_with_enough_new_events(memory_db, monkeypatch):
+    """测试 rebase only with enough new events 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -202,6 +239,8 @@ def test_rebase_only_with_enough_new_events(memory_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_disable_switch_prevents_trigger(memory_db, monkeypatch):
+    """测试 disable switch prevents trigger 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         False,
@@ -224,6 +263,8 @@ def test_disable_switch_prevents_trigger(memory_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_token_threshold_trigger(memory_db, monkeypatch):
+    """测试 token threshold trigger 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -260,6 +301,8 @@ def test_token_threshold_trigger(memory_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_auto_summary_failure_does_not_block_append(memory_db, monkeypatch):
+    """测试 auto summary failure does not block append 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -319,6 +362,8 @@ def test_auto_summary_failure_does_not_block_user_append(memory_db, monkeypatch)
 # ---------------------------------------------------------------------------
 
 def test_build_context_reads_auto_snapshot(memory_db, monkeypatch):
+    """测试 build context reads auto snapshot 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -351,6 +396,8 @@ def test_build_context_reads_auto_snapshot(memory_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_no_events_does_not_trigger(memory_db, monkeypatch):
+    """测试 no events does not trigger 场景。"""
+
     monkeypatch.setattr(
         "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
         True,
@@ -368,7 +415,212 @@ def test_no_events_does_not_trigger(memory_db, monkeypatch):
     # But creating a snapshot with 0 events is wasteful.
     # The trigger should not fire if uncovered_count is 0.
     # (This is a design consideration; the test verifies current behavior)
-    assert True  # just verify no crash
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+    assert summary == ""
+    assert decision.should_create is False
+    assert decision.reason == "no_uncovered_events"
+
+
+def test_fixed_uncovered_event_trigger_creates_snapshot_decision(memory_db, monkeypatch):
+    """测试 fixed uncovered event trigger creates snapshot decision 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_MESSAGES",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    for index in range(30):
+        _append_memory_event(
+            svc,
+            MemoryEventType.MESSAGE_CREATED.value,
+            {"role": "user", "content": f"事件 {index}"},
+        )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "create"
+    assert "uncovered_events(30)" in decision.reason
+
+
+def test_fixed_uncovered_event_trigger_rebases_existing_snapshot(memory_db, monkeypatch):
+    """测试 fixed uncovered event trigger rebases existing snapshot 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_MIN_NEW_EVENTS",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "北京 M42 初始上下文"},
+    )
+    svc.create_summary_snapshot(svc.session_id)
+    for index in range(30):
+        _append_memory_event(
+            svc,
+            MemoryEventType.MESSAGE_CREATED.value,
+            {"role": "user", "content": f"北京 M42 新事件 {index}"},
+        )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "rebase"
+    assert "uncovered_events(30)" in decision.reason
+
+
+def test_fixed_token_trigger_creates_snapshot_decision(memory_db, monkeypatch):
+    """测试 fixed token trigger creates snapshot decision 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_MESSAGES",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "北京 M42 " + ("长内容" * 5000)},
+    )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "create"
+    assert decision.estimated_tokens >= 6000
+    assert "estimated_tokens" in decision.reason
+
+
+def test_topic_drift_triggers_rebase_decision(memory_db, monkeypatch):
+    """测试 topic drift triggers rebase decision 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_MIN_NEW_EVENTS",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "北京 M42 观测上下文"},
+    )
+    svc.create_summary_snapshot(svc.session_id)
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "上海 M31 摄影计划"},
+    )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "rebase"
+    assert decision.reason == "topic_drift(distance>0.6)"
+
+
+def test_tool_chain_completion_triggers_snapshot_decision(memory_db, monkeypatch):
+    """测试 tool chain completion triggers snapshot decision 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_MESSAGES",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.TOOL_CALL_FINISHED.value,
+        {
+            "tool_name": "weather-lookup",
+            "tool_input": '{"city":"北京"}',
+            "output_summary": "北京晴",
+        },
+    )
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "assistant", "content": "最终结论：可以观测。"},
+    )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(svc.session_id)
+
+    assert decision.should_create is True
+    assert decision.mode == "create"
+    assert decision.reason == "tool_chain_completed"
+
+
+def test_context_budget_pressure_triggers_snapshot_decision(memory_db, monkeypatch):
+    """测试 context budget pressure triggers snapshot decision 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_AUTO_SUMMARY_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_MESSAGES",
+        1000,
+    )
+    monkeypatch.setattr(
+        "src.memory.application.memory_maintenance_service.settings.MEMORY_SUMMARY_TRIGGER_TOKENS",
+        100000,
+    )
+    svc = MemoryService(db_path=memory_db, tenant_id="t1", session_id="s1")
+    _append_memory_event(
+        svc,
+        MemoryEventType.MESSAGE_CREATED.value,
+        {"role": "user", "content": "北京 M42 观测上下文"},
+    )
+
+    decision = svc.maintenance_service.should_create_summary_snapshot(
+        svc.session_id,
+        context_pressure=1.3,
+        omitted_counts={"messages": 0},
+    )
+
+    assert decision.should_create is True
+    assert decision.mode == "create"
+    assert decision.reason == "context_budget_pressure"
 
 
 def test_rebase_with_zero_min_new_events(memory_db, monkeypatch):

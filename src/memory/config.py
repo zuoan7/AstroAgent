@@ -41,6 +41,11 @@ class LongTermMemoryConfig:
     max_memories_in_prompt: int
     auto_backup_interval_hours: int
     async_extract_workers: int
+    semantic_retrieval_enabled: bool
+    injection_rerank_enabled: bool
+    embed_timeout_seconds: float
+    rerank_timeout_seconds: float
+    embed_backfill_limit: int
 
 
 def get_short_term_memory_config() -> ShortTermMemoryConfig:
@@ -81,6 +86,11 @@ def get_long_term_memory_config(
         max_memories_in_prompt=settings.LTM_MAX_MEMORIES_IN_PROMPT,
         auto_backup_interval_hours=settings.LTM_AUTO_BACKUP_INTERVAL_HOURS,
         async_extract_workers=1,
+        semantic_retrieval_enabled=settings.LTM_SEMANTIC_RETRIEVAL_ENABLED,
+        injection_rerank_enabled=settings.LTM_INJECTION_RERANK_ENABLED,
+        embed_timeout_seconds=settings.LTM_EMBED_TIMEOUT_SECONDS,
+        rerank_timeout_seconds=settings.LTM_RERANK_TIMEOUT_SECONDS,
+        embed_backfill_limit=settings.LTM_EMBED_BACKFILL_LIMIT,
     )
     if not overrides:
         return config

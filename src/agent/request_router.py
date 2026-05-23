@@ -382,7 +382,7 @@ class RequestRouter:
             self._llm_confidence_threshold = float(confidence_threshold)
 
     def route(self, query: str) -> RouteDecision:
-        """旧版兼容入口。
+        """旧版 compatibility 兼容入口。
 
         新代码应优先调用 profile() 获取 TaskProfile；route() 仅保留给：
         1. 外部兼容 API

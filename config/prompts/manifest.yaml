@@ -94,7 +94,7 @@ prompts:
   memory.long_term_extractor.user:
     version: ltm_extractor_user_v1
     template: memory/long_term_extractor_user.zh.md
-    required_vars: [user_message, assistant_message]
+    required_vars: [user_message, assistant_message, conversation_window_json, gating_signals_json]
     output_contract: memory_extractions_json
 
   memory.task_state_enrichment:

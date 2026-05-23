@@ -25,6 +25,8 @@ class MemoryReadService:
         summary_snapshot_manager: SummarySnapshotManager,
         retrieval_planner: RetrievalPlanner,
     ):
+        """保存读路径依赖，负责从事件投影构建 prompt 上下文。"""
+
         self.event_store = event_store
         self.task_state_manager = task_state_manager
         self.summary_snapshot_manager = summary_snapshot_manager
@@ -53,6 +55,8 @@ class MemoryReadService:
             messages=messages,
             facts=facts,
             tool_calls=tool_calls,
+            task_type=request.task_type,
+            capability_hints=request.capability_hints or {},
         )
 
     def get_debug_info(self, session_id: str) -> Dict[str, Any]:
@@ -72,24 +76,32 @@ class MemoryReadService:
         }
 
     def get_all_messages(self, session_id: str) -> list[Dict[str, Any]]:
+        """返回指定会话的全部消息投影字典。"""
+
         return [
             item.to_dict()
             for item in self.projection_reader.list_messages(session_id, limit=1000)
         ]
 
     def get_tool_calls(self, session_id: str) -> list[Dict[str, Any]]:
+        """返回指定会话的全部工具调用投影字典。"""
+
         return [
             item.to_dict()
             for item in self.projection_reader.list_tool_calls(session_id, limit=1000)
         ]
 
     def get_salient_facts(self, session_id: str) -> list[Dict[str, Any]]:
+        """返回指定会话的全部显著事实投影字典。"""
+
         return [
             item.to_dict()
             for item in self.projection_reader.list_salient_facts(session_id, limit=1000)
         ]
 
     def get_summary(self, session_id: str) -> str:
+        """返回指定会话最新 summary snapshot 的摘要文本。"""
+
         latest = self.summary_snapshot_manager.get_latest(session_id)
         return latest.summary_text if latest else ""
 

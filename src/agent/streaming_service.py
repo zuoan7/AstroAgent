@@ -33,6 +33,7 @@ from src.agent.streaming_events import (
 )
 from src.capabilities.selector import CapabilitySelector
 from src.core.errors import ErrorHandler
+from src.core.config import settings
 from src.core.logger import logger
 from src.core.mcp_protocol import extract_tool_data, is_tool_error
 from src.memory.api.dto import (
@@ -82,6 +83,7 @@ class BaseStreamingGenerator:
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
         self._current_query: str = ""
+        self._last_long_term_memory_ids: List[str] = []
         self._action_history: OrderedDict[str, list] = OrderedDict()
         self._max_same_action_count = 2
         self._event_processors = list(event_processors or [])
@@ -347,15 +349,62 @@ class BaseStreamingGenerator:
         if not self._long_term_memory:
             return "暂无用户偏好信息"
         if hasattr(self._long_term_memory, "build_prompt_context"):
-            return self._long_term_memory.build_prompt_context(
-                self._user_id, self._current_query or ""
-            )
+            try:
+                rendered = self._long_term_memory.build_prompt_context(
+                    self._user_id,
+                    self._current_query or "",
+                    total_context_budget=settings.MEMORY_CONTEXT_MAX_TOKENS,
+                )
+            except TypeError:
+                rendered = self._long_term_memory.build_prompt_context(
+                    self._user_id, self._current_query or ""
+                )
+            self._capture_last_long_term_memory_ids()
+            return rendered
         if hasattr(self._long_term_memory, "render_profile_prompt"):
             return self._long_term_memory.render_profile_prompt(self._user_id)
         return "暂无用户偏好信息"
 
+    def _capture_last_long_term_memory_ids(self) -> None:
+        """从长期记忆服务 trace 中记录本轮已注入的记忆 id。"""
+
+        self._last_long_term_memory_ids = []
+        if not hasattr(self._long_term_memory, "get_last_injection_trace"):
+            return
+        try:
+            trace = self._long_term_memory.get_last_injection_trace()
+        except Exception as e:
+            logger.debug("读取长期记忆注入 trace 失败: %s", e)
+            return
+        if not isinstance(trace, dict):
+            return
+        selected_ids = trace.get("selected_memory_ids") or []
+        self._last_long_term_memory_ids = [
+            memory_id for memory_id in selected_ids if isinstance(memory_id, str)
+        ]
+
+    def _record_long_term_injection_feedback(self, query: str, response: str) -> None:
+        """把本轮注入记忆是否被回复引用回流到长期记忆 metadata。"""
+
+        if not self._last_long_term_memory_ids:
+            return
+        if not hasattr(self._long_term_memory, "record_injection_feedback"):
+            return
+        try:
+            self._long_term_memory.record_injection_feedback(
+                user_id=self._user_id,
+                query=query,
+                assistant_message=response,
+                selected_memory_ids=list(self._last_long_term_memory_ids),
+            )
+        except Exception as e:
+            logger.debug("长期记忆注入反馈记录失败: %s", e)
+
     def _extract_and_update_long_term_memory(
-        self, user_message: str, assistant_message: str
+        self,
+        user_message: str,
+        assistant_message: str,
+        conversation_window: Optional[List[Dict[str, Any]]] = None,
     ):
         """从本轮对话中抽取长期记忆并写入服务。"""
         if not self._long_term_memory:
@@ -363,18 +412,36 @@ class BaseStreamingGenerator:
 
         try:
             if hasattr(self._long_term_memory, "extract_and_store_async"):
-                self._long_term_memory.extract_and_store_async(
-                    user_message=user_message,
-                    assistant_message=assistant_message,
-                    user_id=self._user_id,
-                )
+                try:
+                    self._long_term_memory.extract_and_store_async(
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                        user_id=self._user_id,
+                        conversation_id=self._current_request_id,
+                        conversation_window=conversation_window,
+                    )
+                except TypeError:
+                    self._long_term_memory.extract_and_store_async(
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                        user_id=self._user_id,
+                    )
                 return
             if hasattr(self._long_term_memory, "extract_and_store"):
-                results = self._long_term_memory.extract_and_store(
-                    user_message=user_message,
-                    assistant_message=assistant_message,
-                    user_id=self._user_id,
-                )
+                try:
+                    results = self._long_term_memory.extract_and_store(
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                        user_id=self._user_id,
+                        conversation_id=self._current_request_id,
+                        conversation_window=conversation_window,
+                    )
+                except TypeError:
+                    results = self._long_term_memory.extract_and_store(
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                        user_id=self._user_id,
+                    )
                 if results:
                     logger.info(
                         f"✅ 已提取并更新长期记忆 (user_id: {self._user_id}, count: {len(results)})"
@@ -383,20 +450,27 @@ class BaseStreamingGenerator:
             logger.error(f"❌ 更新长期记忆失败: {e}")
 
     def _schedule_long_term_memory_update(
-        self, user_message: str, assistant_message: str
+        self,
+        user_message: str,
+        assistant_message: str,
+        conversation_window: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """后台调度长期记忆抽取和更新。"""
         if not self._long_term_memory:
             return
 
         if hasattr(self._long_term_memory, "extract_and_store_async"):
-            self._extract_and_update_long_term_memory(user_message, assistant_message)
+            self._extract_and_update_long_term_memory(
+                user_message, assistant_message, conversation_window
+            )
             return
 
         def _runner() -> None:
             """在线程中执行同步长期记忆更新并记录耗时。"""
             started = time.perf_counter()
-            self._extract_and_update_long_term_memory(user_message, assistant_message)
+            self._extract_and_update_long_term_memory(
+                user_message, assistant_message, conversation_window
+            )
             logger.info(
                 "长期记忆后台更新完成: user_id=%s, ltm_extract_ms=%.2f",
                 self._user_id,
@@ -765,6 +839,133 @@ class BaseStreamingGenerator:
             "extracted_url": extracted_url,
         }
 
+    def _build_ltm_conversation_window(
+        self,
+        current_user_message: str,
+        current_assistant_message: str,
+    ) -> List[Dict[str, Any]]:
+        """组装最近 4 轮完成对话，供长期记忆窗口 gating 使用。"""
+
+        turns = self._ltm_window_from_event_store()
+        if not turns:
+            turns = self._ltm_window_from_messages()
+
+        current_turn_id = self._current_request_id
+        has_current = any(
+            turn.get("conversation_id") == current_turn_id
+            or (
+                turn.get("user_message") == current_user_message
+                and turn.get("assistant_message") == current_assistant_message
+            )
+            for turn in turns
+        )
+        if not has_current:
+            turns.append(
+                {
+                    "user_message": current_user_message,
+                    "assistant_message": current_assistant_message,
+                    "conversation_id": current_turn_id,
+                }
+            )
+        completed = [
+            turn
+            for turn in turns
+            if turn.get("user_message") or turn.get("assistant_message")
+        ]
+        return completed[-4:]
+
+    def _ltm_window_from_event_store(self) -> List[Dict[str, Any]]:
+        """从事件存储中恢复最近多轮 user/assistant 对话窗口供长期记忆抽取。"""
+
+        event_store = getattr(self._memory, "event_store", None)
+        if not event_store or not hasattr(event_store, "list_by_session"):
+            return []
+        try:
+            events = event_store.list_by_session(
+                self._memory_session_id(),
+                event_type="message_created",
+                limit=16,
+                descending=True,
+            )
+        except Exception:
+            return []
+
+        grouped: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        loose_index = 0
+        for event in events:
+            payload = getattr(event, "payload", None) or {}
+            role = payload.get("role")
+            content = payload.get("content", "")
+            if role not in ("user", "assistant"):
+                continue
+            turn_id = getattr(event, "turn_id", None)
+            if not turn_id:
+                if role == "user":
+                    loose_index += 1
+                turn_id = f"loose_{loose_index}"
+            turn = grouped.setdefault(
+                turn_id,
+                {
+                    "user_message": "",
+                    "assistant_message": "",
+                    "conversation_id": None if str(turn_id).startswith("loose_") else turn_id,
+                },
+            )
+            if role == "user":
+                turn["user_message"] = content
+            elif role == "assistant":
+                turn["assistant_message"] = content
+        return list(grouped.values())[-4:]
+
+    def _ltm_window_from_messages(self) -> List[Dict[str, Any]]:
+        """从兼容的内存消息列表恢复最近多轮对话窗口。"""
+
+        raw_messages: List[Dict[str, Any]] = []
+        try:
+            if hasattr(self._memory, "get_all_messages"):
+                raw_messages = list(self._memory.get_all_messages(self._memory_session_id()))
+            elif isinstance(getattr(self._memory, "messages", None), list):
+                raw_messages = list(getattr(self._memory, "messages"))
+        except Exception:
+            raw_messages = []
+
+        messages = [
+            msg for msg in raw_messages
+            if isinstance(msg, dict) and msg.get("role") in ("user", "assistant")
+        ]
+        messages.sort(key=lambda msg: float(msg.get("timestamp") or 0.0))
+
+        turns: List[Dict[str, Any]] = []
+        pending: Optional[Dict[str, Any]] = None
+        for message in messages:
+            role = message.get("role")
+            content = message.get("content", "")
+            if role == "user":
+                if pending:
+                    turns.append(pending)
+                pending = {
+                    "user_message": content,
+                    "assistant_message": "",
+                    "conversation_id": message.get("turn_id"),
+                }
+            elif role == "assistant":
+                if pending is None:
+                    pending = {
+                        "user_message": "",
+                        "assistant_message": content,
+                        "conversation_id": message.get("turn_id"),
+                    }
+                else:
+                    pending["assistant_message"] = content
+                    pending["conversation_id"] = (
+                        pending.get("conversation_id") or message.get("turn_id")
+                    )
+                    turns.append(pending)
+                    pending = None
+        if pending:
+            turns.append(pending)
+        return turns[-4:]
+
     def _save_to_memory(
         self,
         query: str,
@@ -800,13 +1001,23 @@ class BaseStreamingGenerator:
             logger.error(f"❌ memory message append failed: {type(e).__name__}: {e}")
 
         if use_long_term_memory:
-            self._schedule_long_term_memory_update(query, response)
+            self._record_long_term_injection_feedback(query, response)
+            conversation_window = self._build_ltm_conversation_window(query, response)
+            try:
+                self._schedule_long_term_memory_update(
+                    query,
+                    response,
+                    conversation_window=conversation_window,
+                )
+            except TypeError:
+                self._schedule_long_term_memory_update(query, response)
             if latency:
                 latency.set_meta("ltm_async", True)
 
     def _finalize_request(self, request_id: Optional[str]):
         """清理当前请求的运行状态和动作历史。"""
         self._current_request_id = None
+        self._last_long_term_memory_ids = []
         self._cleanup_action_history(request_id)
         self._log_memory_usage()
 

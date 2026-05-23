@@ -38,6 +38,7 @@ class AppendToolCallRequest:
     timestamp: Optional[float] = None
     success: bool = True
     content_type: str = "text/plain"
+    metadata: Dict[str, Any] = field(default_factory=dict)
     event_id: Optional[str] = None
 
 
@@ -49,6 +50,8 @@ class BuildContextRequest:
     query: str = ""
     tenant_id: str = "default"
     max_tokens: Optional[int] = None
+    task_type: Optional[str] = None
+    capability_hints: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

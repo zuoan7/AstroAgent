@@ -660,14 +660,20 @@ class LongTermMemoryDeletionResult:
     created_at: str = ""
 
     def __post_init__(self):
+        """补齐删除结果创建时间。"""
+
         if not self.created_at:
             self.created_at = _utcnow_iso()
 
     @property
     def deleted_count(self) -> int:
+        """返回本次删除影响的正式记忆、候选和画像总数。"""
+
         return self.deleted_memories + self.deleted_candidates + self.deleted_profiles
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化删除结果，供 API 和测试断言使用。"""
+
         return {
             "user_id": self.request.user_id,
             "scope": self.request.scope,
@@ -799,6 +805,10 @@ class ExtractionResult:
     is_explicit: bool = False
     is_temporary: bool = False
     raw_content: str = ""
+    extraction_grade: str = "solid"
+    gate_reason: str = ""
+    action: str = "upsert"
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """序列化抽取结果。"""
@@ -814,6 +824,10 @@ class ExtractionResult:
             "is_explicit": self.is_explicit,
             "is_temporary": self.is_temporary,
             "raw_content": self.raw_content,
+            "extraction_grade": self.extraction_grade,
+            "gate_reason": self.gate_reason,
+            "action": self.action,
+            "metadata": self.metadata,
         }
 
 

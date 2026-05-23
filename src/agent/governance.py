@@ -83,7 +83,7 @@ class AgentExecutionPolicy:
         return "open_domain_reasoning"
 
     def choose_path(self, route: Optional[str]) -> str:
-        """旧版 route 字符串兼容包装。
+        """deprecated 旧版 route 字符串兼容包装。
 
         旧接口仍返回 direct/planned/react 字符串，但主调用方应迁移到
         decide(profile, context) -> ExecutionDecision。

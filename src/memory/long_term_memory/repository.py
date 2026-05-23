@@ -1,7 +1,7 @@
 """长期记忆 SQLite 仓储。
 
-该仓储封装正式记忆、候选记忆、版本、事件日志、确认、画像投影、删除审计
-和兼容 memory_events 表的所有持久化操作。
+该仓储封装正式记忆、候选记忆、版本、事件日志、确认、画像投影、删除审计、
+兼容 memory_events 表以及 memory_embeddings 语义索引缓存的所有持久化操作。
 """
 
 import json
@@ -34,9 +34,11 @@ def _ensure_parent_dir(path: str):
 class LongTermMemoryRepository:
     """长期记忆数据库访问层。"""
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, db_path: str):
+        """保存数据库路径并确保父目录存在。"""
+
         self.db_path = db_path
         _ensure_parent_dir(db_path)
 
@@ -205,6 +207,21 @@ class LongTermMemoryRepository:
                 CREATE INDEX IF NOT EXISTS idx_memory_events_user_key
                     ON memory_events(user_id, key, created_at DESC);
 
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    memory_id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    model_name TEXT NOT NULL,
+                    embedding TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_embeddings_user_model
+                    ON memory_embeddings(user_id, model_name);
+                CREATE INDEX IF NOT EXISTS idx_memory_embeddings_hash
+                    ON memory_embeddings(content_hash);
+
                 CREATE TABLE IF NOT EXISTS schema_version (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
@@ -216,6 +233,10 @@ class LongTermMemoryRepository:
                 ("version", str(self.SCHEMA_VERSION)),
             )
             self._ensure_legacy_migration(conn)
+            conn.execute(
+                "UPDATE schema_version SET value=? WHERE key='version'",
+                (str(self.SCHEMA_VERSION),),
+            )
 
     def _ensure_legacy_migration(self, conn: sqlite3.Connection):
         """为旧数据库补齐新增列，保持运行时初始化幂等。"""
@@ -256,6 +277,24 @@ class LongTermMemoryRepository:
             conn.execute(
                 "UPDATE memory_candidates SET updated_at=last_seen_at WHERE updated_at=''"
             )
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS memory_embeddings (
+                memory_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                dimensions INTEGER NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_embeddings_user_model
+                ON memory_embeddings(user_id, model_name);
+            CREATE INDEX IF NOT EXISTS idx_memory_embeddings_hash
+                ON memory_embeddings(content_hash);
+            """
+        )
 
     def _ensure_columns(self, conn: sqlite3.Connection, table_name: str, columns: Dict[str, str]):
         """为指定表补齐缺失列。"""
@@ -512,7 +551,9 @@ class LongTermMemoryRepository:
                 """
                 UPDATE memory_candidates SET
                     value=?, confidence=?, occurrence_count=?,
-                    last_seen_at=?, metadata=?, status=?,
+                    source_type=?, source_conversation_id=?,
+                    source_content_snippet=?, last_seen_at=?,
+                    metadata=?, status=?,
                     promoted_memory_id=?, updated_at=?
                 WHERE id=?
                 """,
@@ -520,6 +561,9 @@ class LongTermMemoryRepository:
                     candidate.to_db_row()["value"],
                     candidate.confidence,
                     candidate.occurrence_count,
+                    candidate.source_type,
+                    candidate.source_conversation_id,
+                    candidate.source_content_snippet,
                     candidate.last_seen_at,
                     candidate.to_db_row()["metadata"],
                     candidate.status,
@@ -1064,6 +1108,138 @@ class LongTermMemoryRepository:
                 (_utcnow_iso(), user_id, max_access_count, cutoff),
             )
             return cursor.rowcount
+
+    def upsert_memory_embedding(
+        self,
+        memory_id: str,
+        user_id: str,
+        content_hash: str,
+        model_name: str,
+        embedding: List[float],
+        updated_at: Optional[str] = None,
+    ) -> bool:
+        """写入或更新正式记忆的 embedding 缓存。"""
+
+        now = updated_at or _utcnow_iso()
+        serialized = json.dumps([float(value) for value in embedding])
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO memory_embeddings (
+                    memory_id, user_id, content_hash, model_name,
+                    embedding, dimensions, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(memory_id) DO UPDATE SET
+                    user_id=excluded.user_id,
+                    content_hash=excluded.content_hash,
+                    model_name=excluded.model_name,
+                    embedding=excluded.embedding,
+                    dimensions=excluded.dimensions,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    memory_id,
+                    user_id,
+                    content_hash,
+                    model_name,
+                    serialized,
+                    len(embedding),
+                    now,
+                ),
+            )
+            return cursor.rowcount > 0
+
+    def get_memory_embedding(
+        self, memory_id: str, model_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """读取单条记忆的 embedding 缓存。"""
+
+        sql = "SELECT * FROM memory_embeddings WHERE memory_id=?"
+        params: List[Any] = [memory_id]
+        if model_name:
+            sql += " AND model_name=?"
+            params.append(model_name)
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        if not row:
+            return None
+        return self._embedding_row_to_dict(row)
+
+    def get_memory_embeddings(
+        self,
+        user_id: str,
+        memory_ids: Optional[List[str]] = None,
+        model_name: Optional[str] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """批量读取用户记忆 embedding 缓存，按 memory_id 返回。"""
+
+        conditions = ["user_id=?"]
+        params: List[Any] = [user_id]
+        if model_name:
+            conditions.append("model_name=?")
+            params.append(model_name)
+        if memory_ids is not None:
+            if not memory_ids:
+                return {}
+            placeholders = ", ".join("?" for _ in memory_ids)
+            conditions.append(f"memory_id IN ({placeholders})")
+            params.extend(memory_ids)
+        sql = (
+            "SELECT * FROM memory_embeddings WHERE "
+            + " AND ".join(conditions)
+            + " ORDER BY updated_at DESC"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return {row["memory_id"]: self._embedding_row_to_dict(row) for row in rows}
+
+    def delete_memory_embedding(self, memory_id: str) -> bool:
+        """删除单条记忆 embedding 缓存。"""
+
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM memory_embeddings WHERE memory_id=?", (memory_id,)
+            )
+            return cursor.rowcount > 0
+
+    def list_active_memories(
+        self,
+        user_id: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> List[MemoryItem]:
+        """列出 active 正式记忆，可跨用户用于索引维护。"""
+
+        if user_id:
+            sql = """
+                SELECT * FROM memories
+                WHERE user_id=? AND status='active'
+                ORDER BY updated_at DESC LIMIT ? OFFSET ?
+            """
+            params: tuple = (user_id, limit, offset)
+        else:
+            sql = """
+                SELECT * FROM memories
+                WHERE status='active'
+                ORDER BY updated_at DESC LIMIT ? OFFSET ?
+            """
+            params = (limit, offset)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [MemoryItem.from_db_row(row) for row in rows]
+
+    def _embedding_row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+        """把 memory_embeddings 的 SQLite 行恢复为业务字典。"""
+
+        return {
+            "memory_id": row["memory_id"],
+            "user_id": row["user_id"],
+            "content_hash": row["content_hash"],
+            "model_name": row["model_name"],
+            "embedding": _json_loads(row["embedding"], []),
+            "dimensions": row["dimensions"],
+            "updated_at": row["updated_at"],
+        }
 
     def get_memory_stats(self, user_id: str) -> Dict[str, Any]:
         """统计用户记忆类型、候选数、待确认数和平均置信度。"""

@@ -52,9 +52,14 @@ class SummarySnapshotRepository(SQLiteRepository):
                     created_by_model, created_at, superseded_by, is_deleted
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(snapshot_id) DO UPDATE SET
+                    snapshot_type=excluded.snapshot_type,
+                    covered_from_event_id=excluded.covered_from_event_id,
+                    covered_to_event_id=excluded.covered_to_event_id,
                     summary_text=excluded.summary_text,
+                    summary_level=excluded.summary_level,
                     quality_score=excluded.quality_score,
                     source_count=excluded.source_count,
+                    created_by_model=excluded.created_by_model,
                     superseded_by=excluded.superseded_by,
                     is_deleted=excluded.is_deleted
                 """
@@ -82,12 +87,18 @@ class SummarySnapshotRepository(SQLiteRepository):
         self,
         session_id: str,
         snapshot_type: str = "working",
+        summary_level: Optional[str] = None,
         include_deleted: bool = False,
     ) -> Optional[SummarySnapshot]:
         """读取指定会话和快照类型下最新的未删除快照。"""
 
         self.initialize()
         condition = "" if include_deleted else " AND is_deleted = 0"
+        level_condition = ""
+        params: list[object] = [session_id, snapshot_type]
+        if summary_level is not None:
+            level_condition = " AND summary_level = ?"
+            params.append(summary_level)
         with self._connect() as conn:
             row = conn.execute(
                 f"""
@@ -95,11 +106,11 @@ class SummarySnapshotRepository(SQLiteRepository):
                        covered_to_event_id, summary_text, summary_level, quality_score, source_count,
                        created_by_model, created_at, superseded_by, is_deleted
                 FROM summary_snapshot
-                WHERE session_id = ? AND snapshot_type = ?{condition}
+                WHERE session_id = ? AND snapshot_type = ?{level_condition}{condition}
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (session_id, snapshot_type),
+                tuple(params),
             ).fetchone()
         return self._from_row(row) if row else None
 
