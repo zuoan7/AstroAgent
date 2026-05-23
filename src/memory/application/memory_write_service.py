@@ -132,11 +132,16 @@ class MemoryWriteService:
         """Attach deterministic evidence metadata without changing storage schema."""
 
         enriched = dict(metadata or {})
+        tool_type = str(enriched.get("tool_type") or self._infer_tool_type(tool_name))
+        enriched.setdefault("tool_type", tool_type)
         enriched.setdefault("params_hash", self._params_hash(tool_input))
         enriched.setdefault("produced_at", timestamp)
         enriched.setdefault(
             "effective_until",
-            self._infer_effective_until(tool_name=tool_name, produced_at=timestamp),
+            self._infer_effective_until(
+                tool_type=tool_type,
+                produced_at=timestamp,
+            ),
         )
         return enriched
 
@@ -158,19 +163,40 @@ class MemoryWriteService:
             return raw
         return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
-    def _infer_effective_until(self, tool_name: str, produced_at: float) -> float:
-        """按工具类型推断证据默认有效期截止时间。"""
+    def _infer_tool_type(self, tool_name: str) -> str:
+        """按工具名推断写入 metadata 使用的工具类型。"""
 
         name = (tool_name or "").lower()
+        if any(token in name for token in ["visibility", "seeing", "透明度", "能见度"]):
+            return "visibility"
         if any(token in name for token in ["weather", "天气"]):
-            return produced_at + 6 * 60 * 60
+            return "weather"
+        if any(token in name for token in ["position", "位置"]):
+            return "position"
+        if any(token in name for token in ["ephemeris", "星历"]):
+            return "ephemeris"
         if any(token in name for token in ["neo", "asteroid", "小行星", "近地"]):
-            return produced_at + 12 * 60 * 60
+            return "neo"
         if any(token in name for token in ["event", "forecast", "calendar", "meteor"]):
-            return produced_at + 24 * 60 * 60
-        if any(token in name for token in ["position", "位置", "ephemeris"]):
-            return produced_at + 2 * 60 * 60
-        return produced_at + 24 * 60 * 60
+            return "event"
+        if any(token in name for token in ["catalog", "simbad", "messier", "ngc", "gaia"]):
+            return "catalog"
+        return "generic"
+
+    def _infer_effective_until(self, tool_type: str, produced_at: float) -> float:
+        """按工具类型推断证据默认有效期截止时间。"""
+
+        ttl_seconds = {
+            "visibility": 1 * 60 * 60,
+            "weather": 6 * 60 * 60,
+            "position": 24 * 60 * 60,
+            "ephemeris": 24 * 60 * 60,
+            "neo": 12 * 60 * 60,
+            "event": 24 * 60 * 60,
+            "catalog": 0,
+            "generic": 24 * 60 * 60,
+        }.get(tool_type, 24 * 60 * 60)
+        return 0 if ttl_seconds <= 0 else produced_at + ttl_seconds
 
     def update_task_state(
         self,

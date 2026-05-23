@@ -165,7 +165,15 @@ class MemoryService:
         """按 query 和 token 预算构建 prompt 侧短期记忆上下文。"""
 
         self._remember_session(request.session_id)
-        return self.read_service.build_context(request)
+        context = self.read_service.build_context(request)
+        if context.get("summary_needed"):
+            self._maybe_auto_summary_snapshot(
+                request.session_id,
+                role="context",
+                context_pressure=context.get("context_pressure"),
+                omitted_counts=context.get("omitted_counts"),
+            )
+        return context
 
     def create_summary_snapshot(
         self,
@@ -249,17 +257,25 @@ class MemoryService:
     def get_all_messages(
         self, session_id: Optional[str] = None
     ) -> list[Dict[str, Any]]:
+        """返回指定会话的全部消息投影，兼容旧调试入口。"""
+
         return self.read_service.get_all_messages(session_id or self._require_session_id())
 
     def get_tool_calls(self, session_id: Optional[str] = None) -> list[Dict[str, Any]]:
+        """返回指定会话的工具调用投影。"""
+
         return self.read_service.get_tool_calls(session_id or self._require_session_id())
 
     def get_salient_facts(
         self, session_id: Optional[str] = None
     ) -> list[Dict[str, Any]]:
+        """返回指定会话的显著事实投影。"""
+
         return self.read_service.get_salient_facts(session_id or self._require_session_id())
 
     def get_summary(self, session_id: Optional[str] = None) -> str:
+        """返回指定会话的最新摘要文本。"""
+
         return self.read_service.get_summary(session_id or self._require_session_id())
 
     def export_memory(self, session_id: str) -> Dict[str, Any]:
@@ -281,12 +297,20 @@ class MemoryService:
             return self.session_id
         raise ValueError("MemoryService requires a session_id for this operation")
 
-    def _maybe_auto_summary_snapshot(self, session_id: str, role: str = "assistant") -> None:
+    def _maybe_auto_summary_snapshot(
+        self,
+        session_id: str,
+        role: str = "assistant",
+        context_pressure: Optional[float] = None,
+        omitted_counts: Optional[dict[str, int]] = None,
+    ) -> None:
         """根据维护服务的阈值判断自动创建或 rebase summary snapshot。"""
 
         try:
             decision = self.maintenance_service.should_create_summary_snapshot(
                 session_id=session_id,
+                context_pressure=context_pressure,
+                omitted_counts=omitted_counts,
             )
             if not decision.should_create:
                 return

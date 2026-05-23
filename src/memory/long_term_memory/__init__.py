@@ -1,6 +1,7 @@
 """长期记忆模块导出。
 
-包含正式记忆、候选、确认、删除、事件日志和 LongTermMemoryService facade。
+包含正式记忆、候选、确认、删除、事件日志、语义索引缓存和
+LongTermMemoryService facade。
 """
 
 from src.memory.long_term_memory.models import (
@@ -24,6 +25,7 @@ from src.memory.long_term_memory.models import (
     SourceType,
     UserProfile,
 )
+from src.memory.long_term_memory.embedding import MemoryEmbeddingService
 from src.memory.long_term_memory.service import LongTermMemoryService
 
 __all__ = [
@@ -35,6 +37,7 @@ __all__ = [
     "EventType",
     "ExtractionResult",
     "LongTermMemoryService",
+    "MemoryEmbeddingService",
     "LongTermMemoryDeletionRequest",
     "LongTermMemoryDeletionResult",
     "MemoryEvent",

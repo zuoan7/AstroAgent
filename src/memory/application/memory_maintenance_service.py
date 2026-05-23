@@ -155,6 +155,8 @@ class MemoryMaintenanceService:
         self,
         session_id: str,
         tenant_id: Optional[str] = None,
+        context_pressure: Optional[float] = None,
+        omitted_counts: Optional[dict[str, int]] = None,
     ) -> SummaryTriggerDecision:
         """根据未覆盖事件、token 压力、话题漂移和工具链结束决定是否摘要。"""
 
@@ -230,6 +232,16 @@ class MemoryMaintenanceService:
                     f"estimated_tokens({estimated_tokens}) >= "
                     f"trigger({token_threshold})"
                 ),
+                uncovered_event_count=uncovered_count,
+                estimated_tokens=estimated_tokens,
+            )
+
+        omitted_total = sum((omitted_counts or {}).values())
+        if (context_pressure is not None and context_pressure >= 1.2) or omitted_total >= 8:
+            return SummaryTriggerDecision(
+                should_create=True,
+                mode=mode,
+                reason="context_budget_pressure",
                 uncovered_event_count=uncovered_count,
                 estimated_tokens=estimated_tokens,
             )

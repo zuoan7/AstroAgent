@@ -1,6 +1,7 @@
-"""Phase 1 unit tests for long-term memory extraction stability.
+"""长期记忆抽取器稳定性测试。
 
-Covers: trigger narrowing, LLM disable switch, LLM config, fallback conformance.
+覆盖抽取触发收敛、对话窗口聚合、LLM 开关/配置、结构化抽取结果和规则
+fallback，保证普通天文问题不会被误写入用户画像。
 """
 
 from unittest import mock
@@ -9,10 +10,13 @@ import pytest
 
 from src.memory.long_term_memory.extractor import MemoryExtractor
 from src.memory.long_term_memory.models import ExtractionResult, MemoryType, SourceType
+from src.agent.prompts import get_prompt_renderer
 
 
 @pytest.fixture
 def extractor():
+    """创建测试用 extractor fixture。"""
+
     return MemoryExtractor()
 
 
@@ -41,6 +45,8 @@ GENERAL_ASTRONOMY_QUESTIONS = [
 
 @pytest.mark.parametrize("question", GENERAL_ASTRONOMY_QUESTIONS)
 def test_general_astronomy_does_not_trigger(extractor, question):
+    """测试 general astronomy does not trigger 场景。"""
+
     assert extractor.should_attempt_extraction(question) is False, (
         f"普通天文问题不应触发抽取: {question}"
     )
@@ -59,6 +65,8 @@ ONE_OFF_STYLE_REQUESTS = [
 
 @pytest.mark.parametrize("question", ONE_OFF_STYLE_REQUESTS)
 def test_one_off_style_request_does_not_trigger(extractor, question):
+    """测试 one off style request does not trigger 场景。"""
+
     assert extractor.should_attempt_extraction(question) is False, (
         f"无长期信号的本轮风格请求不应触发抽取: {question}"
     )
@@ -78,6 +86,8 @@ LONG_TERM_STYLE_REQUESTS = [
 
 @pytest.mark.parametrize("question", LONG_TERM_STYLE_REQUESTS)
 def test_long_term_style_request_does_trigger(extractor, question):
+    """测试 long term style request does trigger 场景。"""
+
     assert extractor.should_attempt_extraction(question) is True, (
         f"长期风格偏好应触发抽取: {question}"
     )
@@ -85,6 +95,8 @@ def test_long_term_style_request_does_trigger(extractor, question):
 
 @pytest.mark.parametrize("question", GENERAL_ASTRONOMY_QUESTIONS)
 def test_general_astronomy_returns_empty_list(extractor, monkeypatch, question):
+    """测试 general astronomy returns empty list 场景。"""
+
     monkeypatch.setattr(
         "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
     )
@@ -124,6 +136,8 @@ EXPLICIT_PREFERENCE_MESSAGES = [
 
 @pytest.mark.parametrize("question", EXPLICIT_PREFERENCE_MESSAGES)
 def test_explicit_preference_triggers_extraction(extractor, question):
+    """测试 explicit preference triggers extraction 场景。"""
+
     assert extractor.should_attempt_extraction(question) is True, (
         f"明确偏好表达应触发抽取: {question}"
     )
@@ -154,6 +168,8 @@ EXPLICIT_EQUIPMENT_LOCATION_MESSAGES = [
 
 @pytest.mark.parametrize("question", EXPLICIT_EQUIPMENT_LOCATION_MESSAGES)
 def test_explicit_equipment_location_triggers(extractor, question):
+    """测试 explicit equipment location triggers 场景。"""
+
     assert extractor.should_attempt_extraction(question) is True, (
         f"明确设备/地点/技能表达应触发抽取: {question}"
     )
@@ -174,6 +190,8 @@ def test_explicit_equipment_location_triggers(extractor, question):
 def test_ltm_extract_disabled_returns_empty(
     extractor, monkeypatch, user_msg, assistant_msg
 ):
+    """测试 ltm extract disabled returns empty 场景。"""
+
     monkeypatch.setattr(
         "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", False
     )
@@ -188,6 +206,8 @@ def test_ltm_extract_disabled_returns_empty(
 # ---------------------------------------------------------------------------
 
 def test_llm_extract_disabled_does_not_call_llm(extractor, monkeypatch):
+    """测试 llm extract disabled does not call llm 场景。"""
+
     monkeypatch.setattr(
         "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
     )
@@ -213,6 +233,8 @@ def test_llm_extract_disabled_does_not_call_llm(extractor, monkeypatch):
 
 
 def test_llm_disabled_general_astronomy_returns_empty(extractor, monkeypatch):
+    """测试 llm disabled general astronomy returns empty 场景。"""
+
     monkeypatch.setattr(
         "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
     )
@@ -228,6 +250,8 @@ def test_llm_disabled_general_astronomy_returns_empty(extractor, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_extract_with_llm_uses_ltm_config(extractor, monkeypatch):
+    """测试 extract with llm uses ltm config 场景。"""
+
     monkeypatch.setattr(
         "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_MODEL_NAME",
         "qwen-plus",
@@ -267,6 +291,8 @@ def test_extract_with_llm_uses_ltm_config(extractor, monkeypatch):
 
 
 def test_extract_with_llm_falls_back_to_small_model(extractor, monkeypatch):
+    """测试 extract with llm falls back to small model 场景。"""
+
     monkeypatch.setattr(
         "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_MODEL_NAME", ""
     )
@@ -365,6 +391,8 @@ def test_fallback_extracts_location_with_context(extractor):
 # ---------------------------------------------------------------------------
 
 def test_empty_message_does_not_trigger(extractor):
+    """测试 empty message does not trigger 场景。"""
+
     assert extractor.should_attempt_extraction("") is False
     assert extractor.should_attempt_extraction("  ") is False
     assert extractor.should_attempt_extraction("a") is False
@@ -391,3 +419,87 @@ def test_short_message_with_keyword_triggers(extractor):
     """短消息但包含明确偏好的应触发."""
     assert extractor.should_attempt_extraction("记住，我喜欢简短") is True
     assert extractor.should_attempt_extraction("以后都要详细") is True
+
+
+def test_window_aggregation_triggers_repeated_equipment(extractor, monkeypatch):
+    """测试 window aggregation triggers repeated equipment 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_LLM_EXTRACT_ENABLED", False
+    )
+    window = [
+        {
+            "user_message": "我用星特朗8SE看木星",
+            "assistant_message": "可以",
+            "conversation_id": "t1",
+        },
+        {
+            "user_message": "星特朗8SE接目镜怎么配？",
+            "assistant_message": "建议先确认焦距",
+            "conversation_id": "t2",
+        },
+        {
+            "user_message": "接着说调焦方案",
+            "assistant_message": "继续说明",
+            "conversation_id": "t3",
+        },
+    ]
+
+    assert extractor.should_attempt_extraction(
+        "接着说调焦方案", conversation_window=window
+    )
+    results = extractor.extract_from_conversation(
+        "接着说调焦方案",
+        "继续说明",
+        conversation_window=window,
+    )
+
+    assert any(
+        r.key == "device_info" and r.extraction_grade == "tentative"
+        for r in results
+    )
+    assert any("window_repeated_signal" in r.gate_reason for r in results)
+
+
+def test_llm_should_extract_false_writes_no_results(extractor, monkeypatch):
+    """测试 llm should extract false writes no results 场景。"""
+
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.LTM_LLM_EXTRACT_ENABLED", True
+    )
+    monkeypatch.setattr(
+        "src.memory.long_term_memory.extractor.settings.DASHSCOPE_API_KEY", "test-key"
+    )
+
+    with mock.patch(
+        "src.memory.long_term_memory.extractor.build_chat_model"
+    ) as mock_build:
+        mock_llm = mock.MagicMock()
+        mock_response = mock.MagicMock()
+        mock_response.content = (
+            '{"should_extract": false, "reason": "one-off", "extractions": []}'
+        )
+        mock_llm.invoke.return_value = mock_response
+        mock_build.return_value = mock_llm
+
+        result = extractor.extract_from_conversation("我喜欢简短回答", "好的")
+
+    assert result == []
+    rendered_prompt = get_prompt_renderer().render(
+        "memory.long_term_extractor.user",
+        {
+            "user_message": "我喜欢简短回答",
+            "assistant_message": "好的",
+            "conversation_window_json": "[]",
+            "gating_signals_json": "{}",
+        },
+    )
+    assert "conversation_window_json" not in rendered_prompt
+    assert "最近 4 轮窗口 JSON" in rendered_prompt
+    assert "Gating 信号 JSON" in rendered_prompt

@@ -16,6 +16,8 @@ class SummarySnapshotManager:
     """Creates and stores summary snapshots as rebuildable projections."""
 
     def __init__(self, repository: SummarySnapshotRepository, event_store: EventStore):
+        """绑定 summary snapshot 仓储和事件流，用于写投影及审计事件。"""
+
         self.repository = repository
         self.event_store = event_store
 
@@ -26,6 +28,7 @@ class SummarySnapshotManager:
         summary_text: str,
         covered_events: Sequence[MemoryEvent],
         snapshot_type: str = "working",
+        summary_level: str = "working",
         quality_score: Optional[float] = None,
         created_by_model: Optional[str] = None,
         supersede_latest: bool = True,
@@ -41,6 +44,7 @@ class SummarySnapshotManager:
             covered_from_event_id=covered_from,
             covered_to_event_id=covered_to,
             summary_text=summary_text,
+            summary_level=summary_level,
             quality_score=quality_score,
             source_count=len(covered_events),
             created_by_model=created_by_model,
@@ -61,7 +65,16 @@ class SummarySnapshotManager:
         )
         return snapshot
 
-    def get_latest(self, session_id: str, snapshot_type: str = "working") -> Optional[SummarySnapshot]:
+    def get_latest(
+        self,
+        session_id: str,
+        snapshot_type: str = "working",
+        summary_level: str | None = None,
+    ) -> Optional[SummarySnapshot]:
         """Return the newest active snapshot."""
 
-        return self.repository.get_latest(session_id, snapshot_type=snapshot_type)
+        return self.repository.get_latest(
+            session_id,
+            snapshot_type=snapshot_type,
+            summary_level=summary_level,
+        )

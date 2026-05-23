@@ -1,7 +1,9 @@
 """短期记忆上下文检索规划器。
 
-该模块根据 query、任务状态、摘要快照、最近消息、事实和工具证据，
-在 token 预算内生成可追踪的 prompt 上下文和 retrieval_plan。
+该模块实现 select_strategy 中短期上下文和工具证据选择策略：根据 query、
+任务状态、摘要快照、最近消息、事实和工具证据做多信号召回、场景自适应
+打分、多样性去冗和预算装配，最终生成可追踪的 prompt 上下文与
+retrieval_plan。
 """
 
 import hashlib
@@ -9,7 +11,7 @@ import json
 import math
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Dict, Sequence
 
@@ -18,6 +20,70 @@ from src.memory.domain.summary_snapshot import SummarySnapshot
 from src.memory.domain.task_state import TaskState
 
 ROLE_LABELS = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
+
+TOOL_TTL_SECONDS = {
+    "visibility": 1 * 60 * 60,
+    "weather": 6 * 60 * 60,
+    "position": 24 * 60 * 60,
+    "ephemeris": 24 * 60 * 60,
+    "neo": 12 * 60 * 60,
+    "event": 24 * 60 * 60,
+    "catalog": 0,
+    "generic": 24 * 60 * 60,
+}
+
+TOOL_SCENE_WEIGHTS = {
+    "observation": {
+        "loc": 0.18,
+        "tgt": 0.10,
+        "tool": 0.10,
+        "fresh": 0.32,
+        "query": 0.12,
+        "success": 0.08,
+        "error": 0.10,
+        "superseded": 0.50,
+    },
+    "computation": {
+        "loc": 0.08,
+        "tgt": 0.36,
+        "tool": 0.14,
+        "fresh": 0.14,
+        "query": 0.10,
+        "success": 0.08,
+        "error": 0.10,
+        "superseded": 0.45,
+    },
+    "learning_qa": {
+        "loc": 0.08,
+        "tgt": 0.12,
+        "tool": 0.08,
+        "fresh": 0.08,
+        "query": 0.46,
+        "success": 0.08,
+        "error": 0.10,
+        "superseded": 0.35,
+    },
+    "debugging": {
+        "loc": 0.12,
+        "tgt": 0.12,
+        "tool": 0.14,
+        "fresh": 0.14,
+        "query": 0.12,
+        "success": 0.08,
+        "error": 0.28,
+        "superseded": 0.30,
+    },
+    "general": {
+        "loc": 0.15,
+        "tgt": 0.15,
+        "tool": 0.12,
+        "fresh": 0.15,
+        "query": 0.25,
+        "success": 0.08,
+        "error": 0.10,
+        "superseded": 0.40,
+    },
+}
 
 
 class ContextScene(str, Enum):
@@ -53,7 +119,7 @@ class RetrievalPlan:
 
 @dataclass
 class ToolEvidenceMeta:
-    """工具证据的轻量元信息，用于新旧证据去重和焦点匹配。"""
+    """工具证据的轻量元信息，用于 freshness、事件链和焦点匹配。"""
 
     tool_call_id: str
     tool_name: str
@@ -66,6 +132,12 @@ class ToolEvidenceMeta:
     params_hash: str = ""
     produced_at: float = 0.0
     effective_until: float = 0.0
+    superseded_by: str = ""
+    supersedes_tool_call_ids: list[str] = field(default_factory=list)
+    fresh_score: float = 0.0
+    expired: bool = False
+    query_relevance: float = 0.0
+    error_signal: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -186,7 +258,12 @@ class RetrievalPlanner:
         plan.section_budgets = {"task_state": task_tokens, **section_budgets}
 
         candidates_by_section = {
-            "summary": self._summary_candidates(summary_snapshot, section_budgets),
+            "summary": self._summary_candidates(
+                summary_snapshot,
+                section_budgets,
+                query,
+                focus,
+            ),
             "facts": self._fact_candidates(query, facts, focus),
             "tools": self._tool_candidates(query, task_state, tool_calls, focus, policy),
             "messages": self._message_candidates(query, task_state, messages, focus),
@@ -399,13 +476,20 @@ class RetrievalPlanner:
         self,
         summary_snapshot: SummarySnapshot | None,
         section_budgets: Dict[str, int],
+        query: str = "",
+        focus: RetrievalFocus | None = None,
     ) -> list[ContextCandidate]:
         """把 summary snapshot 转换为可参与预算装配的候选。"""
 
         if not summary_snapshot or not summary_snapshot.summary_text:
             return []
         budget = max(64, section_budgets.get("summary", 0))
-        text = self._truncate_to_budget(summary_snapshot.summary_text, budget)
+        text, metadata = self._render_summary_snapshot(
+            summary_snapshot.summary_text,
+            budget=budget,
+            query=query,
+            focus=focus,
+        )
         return [
             ContextCandidate(
                 candidate_id=summary_snapshot.snapshot_id,
@@ -415,9 +499,175 @@ class RetrievalPlanner:
                 tokens=self._estimate_tokens(text),
                 score=1.0,
                 timestamp=summary_snapshot.created_at,
+                metadata={
+                    "summary_level": summary_snapshot.summary_level,
+                    **metadata,
+                },
                 payload=summary_snapshot,
             )
         ]
+
+    def _render_summary_snapshot(
+        self,
+        summary_text: str,
+        budget: int,
+        query: str,
+        focus: RetrievalFocus | None,
+    ) -> tuple[str, Dict[str, Any]]:
+        """把结构化摘要按 query/focus 渲染为可读字段文本；旧文本走截断。"""
+
+        try:
+            payload = json.loads(summary_text or "")
+        except (TypeError, json.JSONDecodeError):
+            return self._truncate_to_budget(summary_text, budget), {
+                "structured": False,
+                "selected_fields": [],
+            }
+        if not isinstance(payload, dict) or not any(
+            field in payload
+            for field in [
+                "topics",
+                "decisions",
+                "open_questions",
+                "established_facts",
+                "tool_results_index",
+            ]
+        ):
+            return self._truncate_to_budget(summary_text, budget), {
+                "structured": False,
+                "selected_fields": [],
+            }
+
+        selected_fields: list[str] = []
+        lines: list[str] = []
+        focus_terms = self._summary_focus_terms(query, focus)
+
+        topics = self._summary_string_items(payload.get("topics", []))
+        chosen_topics = self._select_summary_items(topics, focus_terms, limit=4)
+        if chosen_topics:
+            selected_fields.append("topics")
+            lines.append("topics: " + "; ".join(chosen_topics))
+
+        open_questions = self._summary_string_items(payload.get("open_questions", []))
+        chosen_questions = self._select_summary_items(open_questions, focus_terms, limit=5)
+        if chosen_questions:
+            selected_fields.append("open_questions")
+            lines.append("open_questions:")
+            lines.extend(f"- {item}" for item in chosen_questions)
+
+        decisions = self._summary_string_items(payload.get("decisions", []))
+        chosen_decisions = self._select_summary_items(decisions, focus_terms, limit=6)
+        if chosen_decisions:
+            selected_fields.append("decisions")
+            lines.append("decisions:")
+            lines.extend(f"- {item}" for item in chosen_decisions)
+
+        facts = self._summary_string_items(payload.get("established_facts", []))
+        chosen_facts = self._select_summary_items(facts, focus_terms, limit=6)
+        if chosen_facts:
+            selected_fields.append("established_facts")
+            lines.append("established_facts:")
+            lines.extend(f"- {item}" for item in chosen_facts)
+
+        tools = self._summary_tool_items(payload.get("tool_results_index", []))
+        chosen_tools = self._select_summary_items(tools, focus_terms, limit=5)
+        if chosen_tools:
+            selected_fields.append("tool_results_index")
+            lines.append("tool_results_index:")
+            lines.extend(f"- {item}" for item in chosen_tools)
+
+        rendered = "\n".join(lines).strip()
+        if not rendered:
+            rendered = self._truncate_to_budget(summary_text, budget)
+        else:
+            rendered = self._truncate_to_budget(rendered, budget)
+        return rendered, {
+            "structured": True,
+            "selected_fields": selected_fields,
+        }
+
+    def _summary_focus_terms(
+        self,
+        query: str,
+        focus: RetrievalFocus | None,
+    ) -> set[str]:
+        """生成结构化摘要字段选择用的 query/focus 词项。"""
+
+        terms = set(self._terms(query))
+        if focus is not None:
+            terms |= {item.lower() for item in focus.locations | focus.targets}
+            terms |= {item.lower() for item in focus.preferred_tool_types}
+        return {term for term in terms if term}
+
+    def _summary_string_items(self, value: Any) -> list[str]:
+        """把结构化摘要字段归一为字符串列表。"""
+
+        if isinstance(value, str):
+            return [value] if value else []
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    def _summary_tool_items(self, value: Any) -> list[str]:
+        """把 tool_results_index 渲染为紧凑可读文本。"""
+
+        if not isinstance(value, list):
+            return []
+        items: list[str] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            tool = str(item.get("tool") or "tool")
+            status = str(item.get("status") or "")
+            params_hash = str(item.get("params_hash") or "")
+            key_finding = str(item.get("key_finding") or "")
+            tag_parts = [
+                part
+                for part in [
+                    status,
+                    f"params={params_hash}" if params_hash else "",
+                ]
+                if part
+            ]
+            tag = f" [{'|'.join(tag_parts)}]" if tag_parts else ""
+            items.append(f"{tool}{tag}: {key_finding}".strip())
+        return items
+
+    def _select_summary_items(
+        self,
+        items: Sequence[str],
+        focus_terms: set[str],
+        limit: int,
+    ) -> list[str]:
+        """优先保留与 query/focus 匹配的摘要项，不足时按原顺序补齐。"""
+
+        if limit <= 0:
+            return []
+        if not items:
+            return []
+        scored: list[tuple[int, int, str]] = []
+        for index, item in enumerate(items):
+            item_terms = set(self._terms(item)) | {
+                term.lower() for term in focus_terms if term in item.lower()
+            }
+            overlap = len(item_terms & focus_terms)
+            scored.append((overlap, -index, item))
+        matched = [
+            item
+            for overlap, _, item in sorted(scored, reverse=True)
+            if overlap > 0
+        ]
+        if len(matched) >= limit:
+            return matched[:limit]
+        seen = set(matched)
+        for item in items:
+            if item in seen:
+                continue
+            matched.append(item)
+            seen.add(item)
+            if len(matched) >= limit:
+                break
+        return matched[:limit]
 
     def _fact_candidates(
         self,
@@ -519,11 +769,9 @@ class RetrievalPlanner:
             text = self._format_tool_call(call)
             focus_score = self._tool_focus_recall_score(meta, focus)
             recall_sources = recall_sources_by_id.get(call.tool_call_id, [])
-            score = (
-                self._score_tool_with_focus(query, focus, call, meta)
-                + lexical_scores.get(call.tool_call_id, 0.0) * 0.25
-                + focus_score * 0.2
-                + (0.15 if "recent" in recall_sources else 0.0)
+            score = self._float_metadata(
+                call.metadata.get("tool_score"),
+                self._score_tool_with_focus(query, focus, call, meta, policy.scene),
             )
             candidates.append(
                 ContextCandidate(
@@ -541,7 +789,15 @@ class RetrievalPlanner:
                         "params_hash": meta.params_hash,
                         "produced_at": meta.produced_at,
                         "effective_until": meta.effective_until,
-                        "expired": self._tool_is_expired(meta),
+                        "fresh_score": round(meta.fresh_score, 6),
+                        "expired": bool(meta.expired or self._tool_is_expired(meta)),
+                        "superseded_by": meta.superseded_by,
+                        "query_relevance": round(meta.query_relevance, 6),
+                        "error_signal": round(meta.error_signal, 6),
+                        "tool_score": round(score, 6),
+                        "selection_reason": call.metadata.get(
+                            "selection_reason", "ranked"
+                        ),
                         "recall_sources": recall_sources,
                         "lexical_score": round(
                             lexical_scores.get(call.tool_call_id, 0.0), 4
@@ -726,11 +982,14 @@ class RetrievalPlanner:
         """返回工具类型对应的中文/英文关键词，用于 focus 召回。"""
 
         return {
+            "visibility": ["透明度", "能见度", "视宁度", "seeing"],
             "weather": ["天气", "云量", "湿度", "透明度"],
             "position": ["高度", "升起", "落下", "位置"],
+            "ephemeris": ["星历", "高度", "赤经", "赤纬"],
             "photo": ["曝光", "ISO", "拍摄", "摄影", "参数"],
             "event": ["流星雨", "天象", "观测窗口", "峰值"],
             "neo": ["小行星", "NEO", "近地"],
+            "catalog": ["星表", "目录", "catalog", "simbad"],
         }.get(tool_type, [])
 
     def _normalize_candidate_scores(
@@ -1082,11 +1341,14 @@ class RetrievalPlanner:
             score += 1
 
         type_keywords = {
+            "visibility": ["透明度", "能见度", "视宁度", "seeing"],
             "weather": ["天气", "云量", "湿度", "透明度"],
             "position": ["高度", "升起", "落下", "位置"],
+            "ephemeris": ["星历", "赤经", "赤纬"],
             "photo": ["曝光", "ISO", "拍摄", "摄影", "参数"],
             "event": ["流星雨", "天象", "观测窗口", "峰值"],
             "neo": ["小行星", "NEO", "近地"],
+            "catalog": ["星表", "目录", "catalog", "simbad"],
         }
         for tool_type in focus.preferred_tool_types:
             if any(keyword in text for keyword in type_keywords.get(tool_type, [])):
@@ -1198,16 +1460,37 @@ class RetrievalPlanner:
         focus: RetrievalFocus | None = None,
         policy: ContextPolicy | None = None,
     ) -> list[ToolCallRecord]:
-        """优先选择与地点/目标/工具类型匹配且未被标记为旧结果的工具证据。"""
+        """按结构化信号、事件链和多样性约束选择工具证据。"""
 
         focus = focus or self._extract_focus(query, task_state)
         policy = policy or self._policy_for_scene(ContextScene.GENERAL.value)
+        metas_by_id = self._derive_tool_evidence_metas(
+            tool_calls,
+            query=query,
+            focus=focus,
+        )
         scored = []
         for call in tool_calls:
-            meta = self._extract_tool_meta(call)
-            score = self._score_tool_with_focus(query, focus, call, meta)
-            if score > 0:
-                scored.append((score, call.importance, meta.timestamp, call))
+            meta = metas_by_id.get(call.tool_call_id) or self._extract_tool_meta(call)
+            if not self._tool_is_focus_eligible(meta, focus):
+                continue
+            details = self._tool_score_details(
+                query=query,
+                focus=focus,
+                call=call,
+                meta=meta,
+                scene=policy.scene,
+            )
+            score = details["score"]
+            if score > 0 and self._tool_has_selection_signal(details, focus, meta):
+                scored.append(
+                    (
+                        score,
+                        call.importance,
+                        meta.produced_at or meta.timestamp,
+                        self._with_tool_selection_metadata(call, meta, details),
+                    )
+                )
 
         if not scored:
             return self._rank_tools(query, tool_calls)[:1]
@@ -1228,12 +1511,78 @@ class RetrievalPlanner:
                 if not self._extract_tool_meta(call).is_stale_marked
             ]
             return fallback[:1]
-        return self._limit_tool_evidence(
+        return self._select_diverse_tool_evidence(
             deduped,
             max_tools=policy.max_tools,
             max_per_tool_type=policy.max_per_tool_type,
             max_per_target=policy.max_per_target,
+            focus=focus,
         )
+
+    def _derive_tool_evidence_metas(
+        self,
+        tool_calls: Sequence[ToolCallRecord],
+        query: str = "",
+        focus: RetrievalFocus | None = None,
+    ) -> dict[str, ToolEvidenceMeta]:
+        """派生 retrieval 内部 metadata，包括 freshness、显式/隐式 supersession。"""
+
+        metas_by_id = {
+            call.tool_call_id: self._extract_tool_meta(call) for call in tool_calls
+        }
+        calls_by_id = {call.tool_call_id: call for call in tool_calls}
+        explicit_superseded: set[str] = set()
+        for call in tool_calls:
+            meta = metas_by_id[call.tool_call_id]
+            text = " ".join([call.tool_name, call.input_summary, call.output_summary])
+            meta.query_relevance = self._query_relevance(query, text)
+            meta.expired = self._tool_is_expired(meta)
+            meta.fresh_score = self._tool_fresh_score(meta)
+            for old_id in meta.supersedes_tool_call_ids:
+                old_meta = metas_by_id.get(old_id)
+                if old_meta is None:
+                    continue
+                old_meta.superseded_by = call.tool_call_id
+                explicit_superseded.add(old_id)
+
+        groups: dict[str, list[ToolEvidenceMeta]] = {}
+        for meta in metas_by_id.values():
+            group_key = self._tool_evidence_group_key(meta)
+            if group_key:
+                groups.setdefault(group_key, []).append(meta)
+
+        for group in groups.values():
+            ordered = sorted(
+                group,
+                key=lambda meta: (meta.produced_at or meta.timestamp, meta.timestamp),
+            )
+            previous_successes: list[ToolEvidenceMeta] = []
+            latest_error: ToolEvidenceMeta | None = None
+            for meta in ordered:
+                call = calls_by_id.get(meta.tool_call_id)
+                if call is None:
+                    continue
+                if call.success:
+                    for old_meta in previous_successes:
+                        if old_meta.tool_call_id not in explicit_superseded:
+                            old_meta.superseded_by = meta.tool_call_id
+                    previous_successes.append(meta)
+                elif latest_error is None or (
+                    meta.produced_at or meta.timestamp,
+                    meta.timestamp,
+                ) > (
+                    latest_error.produced_at or latest_error.timestamp,
+                    latest_error.timestamp,
+                ):
+                    latest_error = meta
+            if latest_error and self._error_evidence_is_relevant(
+                latest_error,
+                focus,
+                chain_size=len(group),
+            ):
+                latest_error.error_signal = 1.0
+
+        return metas_by_id
 
     def _dedupe_superseded_tools(
         self,
@@ -1256,6 +1605,8 @@ class RetrievalPlanner:
 
             group_key = self._tool_evidence_group_key(meta)
             if not group_key:
+                if not call.success and meta.error_signal <= 0:
+                    continue
                 passthrough.append((index, call))
                 continue
 
@@ -1293,6 +1644,48 @@ class RetrievalPlanner:
             return f"{meta.tool_type}:loc={locations}:target={targets}"
         return ""
 
+    def _select_diverse_tool_evidence(
+        self,
+        ranked_tools: Sequence[ToolCallRecord],
+        max_tools: int,
+        max_per_tool_type: int,
+        max_per_target: int,
+        focus: RetrievalFocus | None = None,
+    ) -> list[ToolCallRecord]:
+        """限制总量、同类工具和同目标数量，并为非 latest 意图保留对照证据。"""
+
+        selected: list[ToolCallRecord] = []
+        per_type: dict[str, int] = {}
+        per_target: dict[str, int] = {}
+        focus = focus or RetrievalFocus(set(), set(), set(), "neutral")
+        contrast = self._find_contrast_tool_evidence(ranked_tools, focus)
+        for call in ranked_tools:
+            if not self._tool_diversity_allows(
+                call,
+                per_type=per_type,
+                per_target=per_target,
+                max_per_tool_type=max_per_tool_type,
+                max_per_target=max_per_target,
+            ):
+                continue
+            selected.append(call)
+            self._record_tool_diversity(call, per_type, per_target)
+            if len(selected) >= max_tools:
+                break
+
+        if (
+            contrast is not None
+            and all(call.tool_call_id != contrast.tool_call_id for call in selected)
+        ):
+            self._inject_contrast_tool_evidence(
+                selected=selected,
+                contrast=contrast,
+                max_tools=max_tools,
+                max_per_tool_type=max_per_tool_type,
+                max_per_target=max_per_target,
+            )
+        return selected
+
     def _limit_tool_evidence(
         self,
         ranked_tools: Sequence[ToolCallRecord],
@@ -1300,27 +1693,134 @@ class RetrievalPlanner:
         max_per_tool_type: int,
         max_per_target: int,
     ) -> list[ToolCallRecord]:
-        """限制工具证据总量、每类工具数量和每个目标数量。"""
+        """兼容旧调用方的工具证据数量限制入口。"""
 
-        selected: list[ToolCallRecord] = []
-        per_type: dict[str, int] = {}
-        per_target: dict[str, int] = {}
+        return self._select_diverse_tool_evidence(
+            ranked_tools,
+            max_tools=max_tools,
+            max_per_tool_type=max_per_tool_type,
+            max_per_target=max_per_target,
+            focus=RetrievalFocus(set(), set(), set(), "neutral"),
+        )
+
+    def _tool_diversity_allows(
+        self,
+        call: ToolCallRecord,
+        per_type: dict[str, int],
+        per_target: dict[str, int],
+        max_per_tool_type: int,
+        max_per_target: int,
+    ) -> bool:
+        """判断候选是否满足工具类型和目标实体多样性约束。"""
+
+        meta = self._extract_tool_meta(call)
+        if per_type.get(meta.tool_type, 0) >= max_per_tool_type:
+            return False
+        if meta.targets and any(
+            per_target.get(target, 0) >= max_per_target for target in meta.targets
+        ):
+            return False
+        return True
+
+    def _record_tool_diversity(
+        self,
+        call: ToolCallRecord,
+        per_type: dict[str, int],
+        per_target: dict[str, int],
+    ) -> None:
+        """记录已选工具证据占用的类型和目标配额。"""
+
+        meta = self._extract_tool_meta(call)
+        per_type[meta.tool_type] = per_type.get(meta.tool_type, 0) + 1
+        for target in meta.targets:
+            per_target[target] = per_target.get(target, 0) + 1
+
+    def _find_contrast_tool_evidence(
+        self,
+        ranked_tools: Sequence[ToolCallRecord],
+        focus: RetrievalFocus,
+    ) -> ToolCallRecord | None:
+        """为 compare/historical/neutral 意图寻找一条合格旧证据作对照。"""
+
+        if focus.freshness_intent == "latest":
+            return None
         for call in ranked_tools:
             meta = self._extract_tool_meta(call)
-            if per_type.get(meta.tool_type, 0) >= max_per_tool_type:
+            tool_score = self._float_metadata(call.metadata.get("tool_score"), 0.0)
+            if tool_score < 0.25:
                 continue
-            if meta.targets and any(
-                per_target.get(target, 0) >= max_per_target
-                for target in meta.targets
+            if meta.expired or meta.superseded_by or meta.is_stale_marked:
+                return call
+        return None
+
+    def _inject_contrast_tool_evidence(
+        self,
+        selected: list[ToolCallRecord],
+        contrast: ToolCallRecord,
+        max_tools: int,
+        max_per_tool_type: int,
+        max_per_target: int,
+    ) -> None:
+        """在不破坏硬上限的前提下，把合格对照证据放入选择结果。"""
+
+        per_type: dict[str, int] = {}
+        per_target: dict[str, int] = {}
+        for call in selected:
+            self._record_tool_diversity(call, per_type, per_target)
+        if self._tool_diversity_allows(
+            contrast,
+            per_type=per_type,
+            per_target=per_target,
+            max_per_tool_type=max_per_tool_type,
+            max_per_target=max_per_target,
+        ):
+            if len(selected) < max_tools:
+                selected.append(contrast)
+                return
+            replacement_index = self._contrast_replacement_index(
+                selected,
+                contrast,
+                max_per_tool_type=max_per_tool_type,
+                max_per_target=max_per_target,
+            )
+            if replacement_index is not None:
+                selected[replacement_index] = contrast
+            return
+
+        replacement_index = self._contrast_replacement_index(
+            selected,
+            contrast,
+            max_per_tool_type=max_per_tool_type,
+            max_per_target=max_per_target,
+        )
+        if replacement_index is not None:
+            selected[replacement_index] = contrast
+
+    def _contrast_replacement_index(
+        self,
+        selected: Sequence[ToolCallRecord],
+        contrast: ToolCallRecord,
+        max_per_tool_type: int,
+        max_per_target: int,
+    ) -> int | None:
+        """寻找替换一个已选证据后仍满足多样性约束的位置。"""
+
+        for index in range(len(selected) - 1, -1, -1):
+            per_type: dict[str, int] = {}
+            per_target: dict[str, int] = {}
+            for selected_index, call in enumerate(selected):
+                if selected_index == index:
+                    continue
+                self._record_tool_diversity(call, per_type, per_target)
+            if self._tool_diversity_allows(
+                contrast,
+                per_type=per_type,
+                per_target=per_target,
+                max_per_tool_type=max_per_tool_type,
+                max_per_target=max_per_target,
             ):
-                continue
-            selected.append(call)
-            per_type[meta.tool_type] = per_type.get(meta.tool_type, 0) + 1
-            for target in meta.targets:
-                per_target[target] = per_target.get(target, 0) + 1
-            if len(selected) >= max_tools:
-                break
-        return selected
+                return index
+        return None
 
     def _score_tool_with_focus(
         self,
@@ -1328,61 +1828,228 @@ class RetrievalPlanner:
         focus: RetrievalFocus,
         call: ToolCallRecord,
         meta: ToolEvidenceMeta,
+        scene: str = ContextScene.GENERAL.value,
     ) -> float:
-        """给工具证据打分，地点、目标、工具类型、freshness 和状态都会影响排序。"""
+        """按场景化权重对已归一化信号求和，返回工具证据分。"""
+
+        return self._tool_score_details(query, focus, call, meta, scene)["score"]
+
+    def _tool_score_details(
+        self,
+        query: str,
+        focus: RetrievalFocus,
+        call: ToolCallRecord,
+        meta: ToolEvidenceMeta,
+        scene: str,
+    ) -> dict[str, float]:
+        """返回工具证据打分细节，供排序和调试 metadata 复用。"""
+
+        signals = self._tool_score_signals(query, focus, call, meta)
+        weights = self._tool_scene_weights(scene)
+        score = (
+            weights["loc"] * signals["match_loc"]
+            + weights["tgt"] * signals["match_tgt"]
+            + weights["tool"] * signals["match_tool"]
+            + weights["fresh"] * signals["fresh_score"]
+            + weights["query"] * signals["query_relevance"]
+            + weights["success"] * signals["success_signal"]
+            + weights["error"] * signals["error_signal"]
+            - weights["superseded"] * signals["superseded_penalty"]
+        )
+        return {**signals, "score": round(max(score, 0.0), 6)}
+
+    def _tool_score_signals(
+        self,
+        query: str,
+        focus: RetrievalFocus,
+        call: ToolCallRecord,
+        meta: ToolEvidenceMeta,
+    ) -> dict[str, float]:
+        """把地点、目标、工具类型、freshness、query 和状态信号归一到 [0, 1]。"""
 
         text = " ".join([call.tool_name, call.input_summary, call.output_summary])
+        query_relevance = meta.query_relevance
+        if query_relevance <= 0:
+            query_relevance = self._query_relevance(query, text)
+        fresh_score = meta.fresh_score or self._tool_fresh_score(meta)
+        expired = meta.expired or self._tool_is_expired(meta)
+        if expired:
+            cap = 0.4 if focus.freshness_intent in {"compare", "historical"} else 0.15
+            fresh_score = min(fresh_score, cap)
+
+        superseded_penalty = 1.0 if meta.superseded_by else 0.0
+        if focus.freshness_intent in {"compare", "historical"}:
+            superseded_penalty = 0.0
+
+        return {
+            "match_loc": self._entity_match_signal(
+                focus.locations | focus.boosted_locations,
+                meta.locations,
+            ),
+            "match_tgt": self._entity_match_signal(
+                focus.targets | focus.boosted_targets,
+                meta.targets,
+            ),
+            "match_tool": 1.0
+            if focus.preferred_tool_types
+            and meta.tool_type in focus.preferred_tool_types
+            else 0.0,
+            "fresh_score": self._clamp01(fresh_score),
+            "query_relevance": self._clamp01(query_relevance),
+            "success_signal": 1.0 if call.success else 0.0,
+            "error_signal": self._clamp01(meta.error_signal if not call.success else 0.0),
+            "superseded_penalty": superseded_penalty,
+        }
+
+    def _tool_scene_weights(self, scene: str) -> dict[str, float]:
+        """返回工具证据场景化权重表，未知场景回退 general。"""
+
+        return TOOL_SCENE_WEIGHTS.get(scene, TOOL_SCENE_WEIGHTS[ContextScene.GENERAL.value])
+
+    def _entity_match_signal(self, focus_entities: set[str], meta_entities: set[str]) -> float:
+        """计算焦点实体与证据实体的二值匹配信号。"""
+
+        if not focus_entities:
+            return 0.0
+        return 1.0 if meta_entities & focus_entities else 0.0
+
+    def _query_relevance(self, query: str, text: str) -> float:
+        """用确定性词项重叠近似 semantic_sim，结果归一到 [0, 1]。"""
+
         query_terms = set(self._terms(query))
-        relevance = (
-            len(query_terms & set(self._terms(text))) / len(query_terms)
-            if query_terms
-            else 0.0
+        if not query_terms:
+            return 0.0
+        text_terms = set(self._terms(text))
+        if not text_terms:
+            return 0.0
+        return min(1.0, len(query_terms & text_terms) / len(query_terms))
+
+    def _clamp01(self, value: float) -> float:
+        """把浮点信号限制到 [0, 1]。"""
+
+        return max(0.0, min(1.0, float(value or 0.0)))
+
+    def _tool_has_selection_signal(
+        self,
+        details: dict[str, float],
+        focus: RetrievalFocus,
+        meta: ToolEvidenceMeta,
+    ) -> bool:
+        """避免仅因 success 常量分选入完全无关的工具证据。"""
+
+        if any(
+            details.get(key, 0.0) > 0
+            for key in [
+                "match_loc",
+                "match_tgt",
+                "match_tool",
+                "query_relevance",
+                "error_signal",
+            ]
+        ):
+            return True
+        return focus.freshness_intent in {"latest", "compare", "historical"} and (
+            meta.is_fresh_marked
+            or meta.is_stale_marked
+            or bool(meta.superseded_by)
+            or meta.expired
         )
-        score = relevance
 
-        if focus.locations:
-            if meta.locations & focus.locations:
-                score += 0.35
-            elif meta.locations:
-                score -= 0.45
+    def _tool_is_focus_eligible(
+        self,
+        meta: ToolEvidenceMeta,
+        focus: RetrievalFocus,
+    ) -> bool:
+        """用硬约束排除明确属于其他地点、目标或工具类型的证据。"""
 
-        if focus.targets:
-            if meta.targets & focus.targets:
-                score += 0.35
-            elif meta.targets:
-                score -= 0.45
+        if focus.locations and meta.locations and not (meta.locations & focus.locations):
+            return False
+        if focus.targets and meta.targets and not (meta.targets & focus.targets):
+            return False
+        if (
+            focus.preferred_tool_types
+            and meta.tool_type not in focus.preferred_tool_types
+            and meta.tool_type != "generic"
+        ):
+            return False
+        return True
 
-        if focus.preferred_tool_types:
-            if meta.tool_type in focus.preferred_tool_types:
-                score += 0.25
-            elif meta.tool_type != "generic":
-                score -= 0.30
+    def _with_tool_selection_metadata(
+        self,
+        call: ToolCallRecord,
+        meta: ToolEvidenceMeta,
+        details: dict[str, float],
+    ) -> ToolCallRecord:
+        """返回带 retrieval 调试 metadata 的工具调用副本，不回写历史事件。"""
 
-        if focus.boosted_locations and meta.locations & focus.boosted_locations:
-            score *= 1.3
-        if focus.boosted_targets and meta.targets & focus.boosted_targets:
-            score *= 1.3
+        metadata = dict(call.metadata or {})
+        metadata.update(
+            {
+                "tool_type": meta.tool_type,
+                "params_hash": meta.params_hash,
+                "produced_at": meta.produced_at,
+                "effective_until": meta.effective_until,
+                "fresh_score": round(details["fresh_score"], 6),
+                "expired": bool(meta.expired or self._tool_is_expired(meta)),
+                "superseded_by": meta.superseded_by,
+                "query_relevance": round(details["query_relevance"], 6),
+                "error_signal": round(details["error_signal"], 6),
+                "tool_score": round(details["score"], 6),
+                "selection_reason": self._tool_selection_reason(meta, details),
+            }
+        )
+        if meta.supersedes_tool_call_ids:
+            metadata["supersedes_tool_call_ids"] = list(meta.supersedes_tool_call_ids)
+        return replace(call, metadata=metadata)
 
-        is_expired = self._tool_is_expired(meta)
-        if focus.freshness_intent == "latest":
-            if meta.is_stale_marked:
-                score -= 0.50
-            if meta.is_fresh_marked:
-                score += 0.25
-            if is_expired:
-                score -= 1.00
-            elif meta.effective_until:
-                score += 0.20
-        elif focus.freshness_intent == "compare":
-            if meta.is_stale_marked or meta.is_fresh_marked:
-                score += 0.20
-        elif focus.freshness_intent == "historical":
-            if is_expired or meta.is_stale_marked:
-                score += 0.10
+    def _tool_selection_reason(
+        self,
+        meta: ToolEvidenceMeta,
+        details: dict[str, float],
+    ) -> str:
+        """生成短调试说明，解释工具证据为何被选入候选。"""
 
-        if score != 0:
-            score += 0.05 if call.success else -0.05
-        return score
+        reasons = []
+        if details.get("match_loc", 0.0) > 0:
+            reasons.append("location_match")
+        if details.get("match_tgt", 0.0) > 0:
+            reasons.append("target_match")
+        if details.get("match_tool", 0.0) > 0:
+            reasons.append("tool_type_match")
+        if details.get("query_relevance", 0.0) > 0:
+            reasons.append("query_relevance")
+        if details.get("error_signal", 0.0) > 0:
+            reasons.append("representative_error")
+        if meta.expired:
+            reasons.append("expired")
+        if meta.superseded_by:
+            reasons.append("superseded")
+        if details.get("fresh_score", 0.0) >= 0.75:
+            reasons.append("fresh")
+        return ",".join(reasons) or "ranked"
+
+    def _error_evidence_is_relevant(
+        self,
+        meta: ToolEvidenceMeta,
+        focus: RetrievalFocus | None,
+        chain_size: int,
+    ) -> bool:
+        """只让同焦点或同参数链的最新失败证据携带 error signal。"""
+
+        if chain_size > 1:
+            return True
+        if meta.query_relevance > 0:
+            return True
+        if focus is None:
+            return False
+        return (
+            bool(focus.locations and meta.locations & focus.locations)
+            or bool(focus.targets and meta.targets & focus.targets)
+            or bool(
+                focus.preferred_tool_types
+                and meta.tool_type in focus.preferred_tool_types
+            )
+        )
 
     def _extract_tool_meta(self, call: ToolCallRecord) -> ToolEvidenceMeta:
         """从工具名称、输入摘要、输出摘要和 metadata 中抽取证据元信息。"""
@@ -1391,10 +2058,16 @@ class RetrievalPlanner:
         text = " ".join([call.tool_name, call.input_summary, call.output_summary])
         tool_type = str(metadata.get("tool_type") or self._infer_tool_type(call.tool_name))
         produced_at = self._float_metadata(metadata.get("produced_at"), call.timestamp)
-        effective_until = self._float_metadata(metadata.get("effective_until"), 0.0)
-        if effective_until <= 0 and produced_at > 0:
-            effective_until = produced_at + self._tool_ttl_seconds(tool_type)
+        effective_raw = metadata.get("effective_until")
+        effective_until = self._float_metadata(effective_raw, 0.0)
+        if effective_raw is None and produced_at > 0:
+            ttl_seconds = self._tool_ttl_seconds(tool_type)
+            effective_until = 0.0 if ttl_seconds <= 0 else produced_at + ttl_seconds
         params_hash = str(metadata.get("params_hash") or self._params_hash(call.input_summary))
+        supersedes_tool_call_ids = self._string_list_metadata(
+            metadata.get("supersedes_tool_call_ids")
+        )
+        superseded_by = str(metadata.get("superseded_by") or "")
         return ToolEvidenceMeta(
             tool_call_id=call.tool_call_id,
             tool_name=call.tool_name,
@@ -1409,8 +2082,6 @@ class RetrievalPlanner:
                     "新地点",
                     "新结果",
                     "更新",
-                    "latest",
-                    "new_",
                 ]
             ),
             is_stale_marked=bool(metadata.get("superseded"))
@@ -1429,6 +2100,12 @@ class RetrievalPlanner:
             params_hash=params_hash,
             produced_at=produced_at,
             effective_until=effective_until,
+            superseded_by=superseded_by,
+            supersedes_tool_call_ids=supersedes_tool_call_ids,
+            fresh_score=self._float_metadata(metadata.get("fresh_score"), 0.0),
+            expired=bool(metadata.get("expired", False)),
+            query_relevance=self._float_metadata(metadata.get("query_relevance"), 0.0),
+            error_signal=self._float_metadata(metadata.get("error_signal"), 0.0),
             metadata=metadata,
         )
 
@@ -1440,16 +2117,41 @@ class RetrievalPlanner:
         except (TypeError, ValueError):
             return float(fallback)
 
+    def _string_list_metadata(self, value: Any) -> list[str]:
+        """把 metadata 中的 id 列表兼容解析成字符串列表。"""
+
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, (list, tuple, set)):
+            return [str(item) for item in value if item]
+        return [str(value)]
+
     def _tool_ttl_seconds(self, tool_type: str) -> float:
         """返回工具类型对应的默认证据有效期秒数。"""
 
-        return {
-            "weather": 6 * 60 * 60,
-            "neo": 12 * 60 * 60,
-            "event": 24 * 60 * 60,
-            "position": 2 * 60 * 60,
-            "ephemeris": 2 * 60 * 60,
-        }.get(tool_type, 24 * 60 * 60)
+        return TOOL_TTL_SECONDS.get(tool_type, TOOL_TTL_SECONDS["generic"])
+
+    def _tool_tau_seconds(self, tool_type: str) -> float:
+        """返回 freshness 指数衰减的 tau；默认与 TTL 策略一致。"""
+
+        return self._tool_ttl_seconds(tool_type)
+
+    def _tool_fresh_score(
+        self,
+        meta: ToolEvidenceMeta,
+        reference_time: float | None = None,
+    ) -> float:
+        """用 exp(-age/tau_tool_type) 计算结构化 freshness 分数。"""
+
+        tau = self._tool_tau_seconds(meta.tool_type)
+        if tau <= 0:
+            return 1.0
+        now = time.time() if reference_time is None else reference_time
+        produced_at = meta.produced_at or meta.timestamp
+        age = max(0.0, now - produced_at)
+        return self._clamp01(math.exp(-age / tau))
 
     def _tool_is_expired(
         self,
@@ -1602,11 +2304,14 @@ class RetrievalPlanner:
 
         preferred_tool_types = set()
         type_keywords = {
+            "visibility": ["透明度", "能见度", "视宁度", "seeing"],
             "weather": ["天气", "云量", "湿度", "透明度", "气象"],
             "position": ["高度", "升起", "落下", "位置"],
+            "ephemeris": ["星历", "赤经", "赤纬"],
             "photo": ["曝光", "ISO", "拍摄", "摄影", "参数"],
             "event": ["流星雨", "天象", "什么时候看", "观测窗口", "峰值"],
             "neo": ["小行星", "NEO", "neo", "近地"],
+            "catalog": ["星表", "目录", "catalog", "simbad"],
         }
         for tool_type, keywords in type_keywords.items():
             if any(keyword in focus_text for keyword in keywords):
@@ -1688,10 +2393,16 @@ class RetrievalPlanner:
         """根据工具名称推断工具证据类型。"""
 
         name = (tool_name or "").lower()
+        if any(token in name for token in ["visibility", "seeing", "透明度", "能见度"]):
+            return "visibility"
         if any(token in name for token in ["weather", "天气"]):
             return "weather"
         if any(token in name for token in ["celestial-position", "position", "位置"]):
             return "position"
+        if any(token in name for token in ["ephemeris", "星历"]):
+            return "ephemeris"
+        if any(token in name for token in ["catalog", "simbad", "messier", "ngc", "gaia"]):
+            return "catalog"
         if any(
             token in name
             for token in [

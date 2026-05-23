@@ -1,3 +1,10 @@
+"""全局配置聚合。
+
+本文件定义 API、天文、模型、记忆和 Agent 治理等配置组，并通过 Settings
+提供向后兼容的扁平属性访问。新增记忆策略开关也在这里集中声明，供短期/
+长期记忆服务读取。
+"""
+
 from typing import Dict, List, Optional, Tuple
 
 from pydantic import AliasChoices, Field
@@ -5,6 +12,8 @@ from pydantic_settings import BaseSettings
 
 
 def _legacy_memory_env(name: str) -> str:
+    """生成旧版 STM_* 环境变量名，兼容历史短期记忆配置。"""
+
     return "S" + "TM_" + name
 
 
@@ -351,6 +360,21 @@ class MemoryConfig(BaseSettings):
     LTM_EXTRACT_MODEL_NAME: str = Field(
         "qwen-plus", description="长期记忆抽取使用的轻量模型名称"
     )
+    LTM_SEMANTIC_RETRIEVAL_ENABLED: bool = Field(
+        True, description="是否启用长期记忆语义召回"
+    )
+    LTM_INJECTION_RERANK_ENABLED: bool = Field(
+        True, description="是否启用长期记忆注入前 rerank"
+    )
+    LTM_EMBED_TIMEOUT_SECONDS: float = Field(
+        0.8, description="长期记忆 embedding 调用超时时间"
+    )
+    LTM_RERANK_TIMEOUT_SECONDS: float = Field(
+        1.2, description="长期记忆 rerank 调用超时时间"
+    )
+    LTM_EMBED_BACKFILL_LIMIT: int = Field(
+        50, description="长期记忆维护时单批 embedding 回填条数"
+    )
 
     RAG_ENABLED: bool = Field(True, description="是否启用 RAG 检索")
     VECTOR_DB_PATH: str = Field("./vector_db", description="向量数据库存储路径")
@@ -510,12 +534,16 @@ class Settings(BaseSettings):
     }
 
     def __getattr__(self, name: str):
+        """把旧调用方访问的扁平配置名转发到对应配置组。"""
+
         group_name = _DELEGATION_MAP.get(name)
         if group_name is not None:
             return getattr(getattr(self, group_name), name)
         raise AttributeError(f"'Settings' object has no attribute '{name}'")
 
     def __setattr__(self, name: str, value):
+        """支持用扁平配置名修改内部配置组字段，便于测试 monkeypatch。"""
+
         group_name = _DELEGATION_MAP.get(name)
         if group_name is not None:
             setattr(getattr(self, group_name), name, value)
@@ -524,6 +552,8 @@ class Settings(BaseSettings):
 
 
 def _resolve_project_root() -> str:
+    """根据当前文件位置推导项目根目录。"""
+
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent.parent
@@ -536,6 +566,8 @@ if not settings.PROJECT_ROOT:
 
 
 def resolve_path(relative_path: str) -> str:
+    """把相对项目根目录的路径解析成绝对路径。"""
+
     from pathlib import Path
 
     if Path(relative_path).is_absolute():

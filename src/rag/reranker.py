@@ -35,11 +35,17 @@ class DashScopeReranker:
         model_name: Optional[str] = None,
         api_key: Optional[str] = None,
         top_n: Optional[int] = None,
+        request_timeout: float = 30,
+        enabled: Optional[bool] = None,
     ):
+        """初始化 DashScope rerank 客户端、超时和显式启停配置。"""
+
         self.model_name = model_name or settings.RERANK_MODEL_NAME
         self.api_key = api_key or settings.DASHSCOPE_API_KEY
         self.top_n = top_n or settings.RERANK_TOP_N
-        self.enabled = bool(settings.RERANK_ENABLED) and bool(self.api_key)
+        self.request_timeout = request_timeout
+        rerank_enabled = settings.RERANK_ENABLED if enabled is None else enabled
+        self.enabled = bool(rerank_enabled) and bool(self.api_key)
 
         if not self.enabled:
             if not self.api_key:
@@ -56,6 +62,8 @@ class DashScopeReranker:
 
     @staticmethod
     def _check_sdk_available() -> bool:
+        """检测本地 dashscope SDK 是否提供 TextReRank 能力。"""
+
         try:
             import dashscope
             return hasattr(dashscope, "TextReRank")
@@ -164,7 +172,7 @@ class DashScopeReranker:
                 self.RERANK_API_URL,
                 json=payload,
                 headers=headers,
-                timeout=30,
+                timeout=getattr(self, "request_timeout", 30),
             )
             resp.raise_for_status()
 
