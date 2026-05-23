@@ -1,3 +1,6 @@
+"""执行层公共模型与证据聚合工具，供 planned DAG 和 direct 路径共享步骤结果、事件回调和证据结构。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -15,6 +18,7 @@ ParamBuilder = Callable[[str, str], Dict[str, Any]]
 
 
 def _extract_mcp_tools_from_sources(sources: List[Dict[str, Any]]) -> List[str]:
+    """从 sources 中提取实际调用过的 MCP 工具名。"""
     tools: List[str] = []
     for source in sources:
         if not isinstance(source, dict):
@@ -31,6 +35,7 @@ def _extract_mcp_tools_from_sources(sources: List[Dict[str, Any]]) -> List[str]:
 
 @dataclass
 class StepExecutionResult:
+    """单个执行步骤的结构化结果，供 trace、审计和证据聚合复用。"""
     step_id: str
     title: str
     kind: str
@@ -56,6 +61,7 @@ class StepExecutionResult:
     fallback_strategy: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前对象转换为 dict 相关的兼容结构。"""
         return {
             "step_id": self.step_id,
             "title": self.title,
@@ -91,6 +97,7 @@ class StepExecutionResult:
 
 @dataclass
 class ExecutionOutcome:
+    """一次 planned DAG 执行的整体结果。"""
     plan: ExecutionPlan
     skill_results: List[SkillResult] = field(default_factory=list)
     step_results: List[StepExecutionResult] = field(default_factory=list)
@@ -102,9 +109,10 @@ class ExecutionOutcome:
 
 
 class EvidenceAggregator:
-    """Collect stable evidence records from DAG step results."""
+    """从 DAG 步骤结果中收集稳定、去重的证据记录。"""
 
     def __init__(self) -> None:
+        """初始化 EvidenceAggregator 的依赖、配置和内部状态。"""
         self._by_key: Dict[str, Dict[str, Any]] = {}
         self._items: List[Dict[str, Any]] = []
         self._seen_sources: set[tuple[str, str, str]] = set()
@@ -116,6 +124,7 @@ class EvidenceAggregator:
         step_result: StepExecutionResult,
         skill_result: Optional[SkillResult],
     ) -> None:
+        """把单步执行结果及其 SkillResult 写入证据聚合器。"""
         evidence_key = key or step_result.evidence_key or step_result.step_id
         record = {
             "key": evidence_key,
@@ -152,6 +161,7 @@ class EvidenceAggregator:
                 self._append_item(source)
 
     def _append_item(self, item: Dict[str, Any]) -> None:
+        """去重追加单条证据来源。"""
         identity = (
             str(item.get("source_id") or ""),
             str(item.get("title") or ""),
@@ -163,4 +173,5 @@ class EvidenceAggregator:
         self._items.append(dict(item))
 
     def snapshot(self) -> tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
+        """返回当前累计指标或证据的快照。"""
         return dict(self._by_key), list(self._items)

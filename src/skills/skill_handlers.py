@@ -1,3 +1,6 @@
+"""复杂高层技能 handler，实现观测计划、天象预报、深空指导、NEO、摄影和位置计算。
+"""
+
 from __future__ import annotations
 
 import json
@@ -17,6 +20,7 @@ from src.skills.mcp_client import MCPClient
 
 
 def _summarize_weather(raw: str) -> str:
+    """从天气工具原始响应中提取适合回答展示的摘要文本。"""
     envelope = parse_tool_response(raw)
     if envelope is not None:
         if is_tool_error(raw):
@@ -69,6 +73,7 @@ def _summarize_weather(raw: str) -> str:
 
 
 def _extract_weather_data(raw: str) -> Dict[str, Any]:
+    """把天气工具响应解析为字典数据，失败时保留原始内容。"""
     envelope = parse_tool_response(raw)
     if envelope is not None:
         if is_tool_error(raw):
@@ -82,6 +87,7 @@ def _extract_weather_data(raw: str) -> Dict[str, Any]:
 
 
 def _format_tool_display_text(data: Any) -> str:
+    """把工具 payload 规范化为可展示文本。"""
     if data is None:
         return ""
     if isinstance(data, str):
@@ -108,6 +114,7 @@ def _format_tool_display_text(data: Any) -> str:
 
 
 def _extract_tool_payload_and_text(raw: Any) -> tuple[Any, str]:
+    """从工具原始响应中同时提取结构化 payload 和展示文本。"""
     payload = extract_tool_data(raw)
     if payload is None and is_tool_error(raw):
         envelope = parse_tool_response(raw)
@@ -118,6 +125,7 @@ def _extract_tool_payload_and_text(raw: Any) -> tuple[Any, str]:
 
 
 def _tool_source_entry(tool_name: str, raw: Any, *, snippet_text: Optional[str] = None) -> Dict[str, Any]:
+    """构造统一 sources 条目，记录工具名和结果片段。"""
     text = snippet_text
     if text is None:
         _, text = _extract_tool_payload_and_text(raw)
@@ -126,6 +134,7 @@ def _tool_source_entry(tool_name: str, raw: Any, *, snippet_text: Optional[str] 
 
 
 def _is_date_like(text: str) -> bool:
+    """判断文本是否像日期或常见相对日期表达。"""
     t = text.strip()
     if not t:
         return False
@@ -178,6 +187,7 @@ PLANET_NAME_ALIASES: Dict[str, str] = {
 
 
 def _parse_location(location: str) -> tuple[Optional[float], Optional[float]]:
+    """把城市名或“纬度,经度”文本解析为经纬度。"""
     if not location:
         return None, None
     text = str(location).strip()
@@ -196,6 +206,7 @@ def _parse_location(location: str) -> tuple[Optional[float], Optional[float]]:
 
 
 def _parse_time_range(time_range: Optional[str]) -> tuple[str, str]:
+    """把近地天体查询的自然语言时间范围解析为起止日期。"""
     today = datetime.now().date()
     if not time_range:
         return today.strftime("%Y-%m-%d"), (today + timedelta(days=7)).strftime("%Y-%m-%d")
@@ -218,6 +229,8 @@ def _parse_time_range(time_range: Optional[str]) -> tuple[str, str]:
 
 
 class ObservationPlannerHandler:
+    """观测计划技能 handler，聚合天气、天象事件和今晚推荐目标。"""
+
     def __call__(
         self,
         mcp: MCPClient,
@@ -225,6 +238,7 @@ class ObservationPlannerHandler:
         location: Optional[str] = None,
         duration: Optional[str] = None,
     ) -> SkillResult:
+        """生成指定日期、地点和时段的观测计划。"""
         started = time.perf_counter()
         sources = []
 
@@ -352,6 +366,8 @@ class ObservationPlannerHandler:
 
 
 class CelestialEventsForecastHandler:
+    """天象预报技能 handler，按周度或月度 operation 调用事件工具。"""
+
     def __call__(
         self,
         mcp: MCPClient,
@@ -360,6 +376,7 @@ class CelestialEventsForecastHandler:
         event_type: Optional[str] = None,
         operation: Optional[str] = None,
     ) -> SkillResult:
+        """查询指定时间范围内的天象事件并整理为用户可读摘要。"""
         started = time.perf_counter()
         sources = []
 
@@ -482,6 +499,8 @@ class CelestialEventsForecastHandler:
 
 
 class DeepSkyObservingGuideHandler:
+    """深空观测指导技能 handler，查询目标资料并生成观测建议。"""
+
     def __call__(
         self,
         mcp: MCPClient,
@@ -490,6 +509,7 @@ class DeepSkyObservingGuideHandler:
         date: Optional[str] = None,
         equipment: Optional[str] = None,
     ) -> SkillResult:
+        """为指定深空目标生成基础信息、设备约束和观测建议。"""
         started = time.perf_counter()
 
         if not target:
@@ -567,6 +587,7 @@ class DeepSkyObservingGuideHandler:
         )
 
     def _is_galaxy_target(self, target: str) -> bool:
+        """判断目标是否更适合补充星系数据库信息。"""
         normalized = (target or "").strip().lower().replace(" ", "")
         if "galaxy" in normalized or "星系" in normalized or "银河系" in normalized:
             return True
@@ -585,6 +606,8 @@ class DeepSkyObservingGuideHandler:
 
 
 class NeoTrackerHandler:
+    """近地天体技能 handler，调用 NASA NEO 工具并筛选飞掠目标。"""
+
     def __call__(
         self,
         mcp: MCPClient,
@@ -593,6 +616,7 @@ class NeoTrackerHandler:
         max_distance: Optional[float] = None,
         observable_only: Optional[bool] = None,
     ) -> SkillResult:
+        """按时间、尺寸、距离和可观测性筛选近地天体飞掠事件。"""
         started = time.perf_counter()
         sources = []
         start_date, end_date = _parse_time_range(time_range)
@@ -748,6 +772,8 @@ class NeoTrackerHandler:
 
 
 class AstrophotographyCalculatorHandler:
+    """天文摄影参数技能 handler，生成曝光、叠加和赤道仪建议。"""
+
     def __call__(
         self,
         mcp: MCPClient,
@@ -760,6 +786,7 @@ class AstrophotographyCalculatorHandler:
         iso: Optional[str] = None,
         aperture: Optional[str] = None,
     ) -> SkillResult:
+        """根据目标、相机和设备参数生成摄影建议。"""
         started = time.perf_counter()
         obs_date = ParamParser.parse_date(date) if date else datetime.now()
 
@@ -824,6 +851,8 @@ class AstrophotographyCalculatorHandler:
 
 
 class CelestialPositionCalculatorHandler:
+    """天体位置计算技能 handler，按 operation 调用位置、升落或坐标转换工具。"""
+
     def __call__(
         self,
         mcp: MCPClient,
@@ -837,6 +866,7 @@ class CelestialPositionCalculatorHandler:
         epoch: Optional[str] = None,
         target_system: Optional[str] = None,
     ) -> SkillResult:
+        """计算目标在指定时间地点的位置、升落时间或坐标转换结果。"""
         started = time.perf_counter()
 
         requested_operation = (operation or "").strip().lower()

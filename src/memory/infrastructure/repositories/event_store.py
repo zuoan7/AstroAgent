@@ -1,3 +1,9 @@
+"""短期记忆事件仓储。
+
+EventStore 保存 append-only memory_event 表，并提供按会话、来源和删除标记
+读取事件的能力，是短期记忆投影的事实来源。
+"""
+
 from typing import Iterable, Optional, Sequence
 
 from src.memory.domain.events import MemoryEvent
@@ -9,6 +15,8 @@ class EventStore(SQLiteRepository):
     """SQLite append-only store for raw memory events."""
 
     def initialize(self) -> None:
+        """创建事件表和常用查询索引。"""
+
         with self._connect() as conn:
             conn.executescript(
                 """
@@ -65,6 +73,8 @@ class EventStore(SQLiteRepository):
         return stored or event
 
     def get(self, event_id: str) -> Optional[MemoryEvent]:
+        """按 event_id 读取单条事件。"""
+
         self.initialize()
         with self._connect() as conn:
             row = conn.execute(
@@ -90,6 +100,8 @@ class EventStore(SQLiteRepository):
         limit: int = 500,
         descending: bool = False,
     ) -> list[MemoryEvent]:
+        """按会话读取事件，可按类型、来源、时间和覆盖点过滤。"""
+
         self.initialize()
         conditions = ["session_id = ?"]
         params: list[object] = [session_id]
@@ -140,6 +152,8 @@ class EventStore(SQLiteRepository):
         source_id: str,
         include_deleted: bool = False,
     ) -> list[MemoryEvent]:
+        """按 source_type/source_id 找回某个消息、工具调用或投影的事件。"""
+
         self.initialize()
         condition = "" if include_deleted else " AND is_deleted = 0"
         with self._connect() as conn:
@@ -161,6 +175,8 @@ class EventStore(SQLiteRepository):
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
     ) -> int:
+        """按会话或时间范围 tombstone 标记事件。"""
+
         self.initialize()
         conditions = ["session_id = ?"]
         params: list[object] = [session_id]
@@ -178,6 +194,8 @@ class EventStore(SQLiteRepository):
         return cursor.rowcount
 
     def mark_deleted_by_source(self, session_id: str, source_type: str, source_id: str) -> int:
+        """按来源对象 tombstone 标记事件。"""
+
         self.initialize()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -191,6 +209,8 @@ class EventStore(SQLiteRepository):
         return cursor.rowcount
 
     def mark_deleted(self, event_ids: Iterable[str]) -> int:
+        """批量按 event_id tombstone 标记事件。"""
+
         ids = list(event_ids)
         if not ids:
             return 0
@@ -203,6 +223,8 @@ class EventStore(SQLiteRepository):
         return count
 
     def _from_row(self, row) -> MemoryEvent:
+        """把 SQLite Row 反序列化为领域事件对象。"""
+
         return MemoryEvent(
             event_id=row["event_id"],
             tenant_id=row["tenant_id"],

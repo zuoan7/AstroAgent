@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 # streamable_mcp_server.py - Streamable HTTP MCP服务器
 # 使用FastMCP框架，完整支持标准MCP协议和HTTP传输
+"""FastMCP 天文工具服务入口，注册天文计算、数据查询、天气、搜索和天象事件工具。
+"""
 
 import os
 import sys
@@ -86,6 +88,7 @@ mcp = FastMCP(name="Astronomy Server")
 
 
 def _require_planetary():
+    """确保行星计算服务已初始化。"""
     if planetary is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
@@ -94,6 +97,7 @@ def _require_planetary():
 
 
 def _require_celestial_db():
+    """确保天体数据库服务已初始化。"""
     if celestial_db is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
@@ -102,6 +106,7 @@ def _require_celestial_db():
 
 
 def _require_nasa_api():
+    """确保 NASA API 服务已初始化。"""
     if nasa_api is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
@@ -110,6 +115,7 @@ def _require_nasa_api():
 
 
 def _require_weather():
+    """确保天气服务已初始化。"""
     if weather is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
@@ -118,6 +124,7 @@ def _require_weather():
 
 
 def _require_search():
+    """确保搜索服务已初始化。"""
     if search is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
@@ -126,6 +133,7 @@ def _require_search():
 
 
 def _require_events_predictor():
+    """确保天象事件预测服务已初始化。"""
     if events_predictor is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
@@ -137,6 +145,7 @@ def _require_events_predictor():
 @safe_tool_call
 def get_planet_position(planet_name: str, observation_time: str = None,
                        latitude: float = None, longitude: float = None) -> str:
+    """查询指定行星在给定时间地点的赤道坐标。"""
     params = validate_tool_input(
         "get_planet_position",
         {
@@ -159,6 +168,7 @@ def get_planet_position(planet_name: str, observation_time: str = None,
 @safe_tool_call
 def get_altaz(planet_name: str, observation_time: str = None,
               latitude: float = None, longitude: float = None) -> str:
+    """查询指定行星在给定时间地点的高度角和方位角。"""
     params = validate_tool_input(
         "get_altaz",
         {
@@ -180,6 +190,7 @@ def get_altaz(planet_name: str, observation_time: str = None,
 @mcp.tool()
 @safe_tool_call
 def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5") -> str:
+    """执行赤经赤纬坐标到目标坐标系统的转换。"""
     params = validate_tool_input(
         "coordinate_transformation",
         {
@@ -201,6 +212,7 @@ def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", targe
 @mcp.tool()
 @safe_tool_call
 def get_rise_set_times(body_name: str, latitude: float, longitude: float, date: str = None) -> str:
+    """计算天体在指定地点和日期的升起、落下时间。"""
     params = validate_tool_input(
         "get_rise_set_times",
         {
@@ -222,6 +234,7 @@ def get_rise_set_times(body_name: str, latitude: float, longitude: float, date: 
 @mcp.tool()
 @safe_tool_call
 def get_current_sky_objects(latitude: float, longitude: float, date: str = None) -> str:
+    """查询指定地点和日期当前可见的主要天空目标。"""
     params = validate_tool_input(
         "get_current_sky_objects",
         {"latitude": latitude, "longitude": longitude, "date": date},
@@ -237,6 +250,7 @@ def get_current_sky_objects(latitude: float, longitude: float, date: str = None)
 @mcp.tool()
 @safe_tool_call
 def get_astrophysical_object_info(object_name: str) -> str:
+    """查询天体物理数据库中的目标基础信息。"""
     params = validate_tool_input(
         "get_astrophysical_object_info",
         {"object_name": object_name},
@@ -248,6 +262,7 @@ def get_astrophysical_object_info(object_name: str) -> str:
 @mcp.tool()
 @safe_tool_call
 def get_galaxy_data(galaxy_name: str) -> str:
+    """查询星系数据库中的目标资料。"""
     params = validate_tool_input("get_galaxy_data", {"galaxy_name": galaxy_name})
     _require_celestial_db()
     return celestial_db.get_galaxy_data(params.galaxy_name)
@@ -256,6 +271,7 @@ def get_galaxy_data(galaxy_name: str) -> str:
 @mcp.tool()
 @safe_tool_call
 def get_nasa_apod(date: str = None, hd: bool = False) -> str:
+    """查询 NASA APOD 每日天文图片。"""
     params = validate_tool_input("get_nasa_apod", {"date": date, "hd": hd})
     _require_nasa_api()
     return nasa_api.get_apod(params.date, params.hd)
@@ -264,6 +280,7 @@ def get_nasa_apod(date: str = None, hd: bool = False) -> str:
 @mcp.tool()
 @safe_tool_call
 def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) -> str:
+    """查询 NASA 近地天体飞掠数据，并限制 API 支持的最大日期范围。"""
     params = validate_tool_input(
         "get_neo_data",
         {"start_date": start_date, "end_date": end_date, "limit": limit},
@@ -294,6 +311,7 @@ def get_neo_data(start_date: str = None, end_date: str = None, limit: int = 10) 
 @mcp.tool()
 @safe_tool_call
 def get_weather(city: str = None, extensions: str = "base") -> str:
+    """查询指定城市或区域的天气信息。"""
     params = validate_tool_input(
         "get_weather",
         {"city": city, "extensions": extensions},
@@ -305,6 +323,7 @@ def get_weather(city: str = None, extensions: str = "base") -> str:
 @mcp.tool()
 @safe_tool_call
 def web_search(query: str, max_results: int = 5) -> str:
+    """执行外部联网搜索并返回搜索结果摘要。"""
     params = validate_tool_input(
         "web_search",
         {"query": query, "max_results": max_results},
@@ -316,6 +335,7 @@ def web_search(query: str, max_results: int = 5) -> str:
 @mcp.tool()
 @safe_tool_call
 def get_tonight_best() -> str:
+    """查询今晚推荐观测目标。"""
     validate_tool_input("get_tonight_best", {})
     _require_events_predictor()
     return events_predictor.get_tonight_best()
@@ -324,6 +344,7 @@ def get_tonight_best() -> str:
 @mcp.tool()
 @safe_tool_call
 def get_weekly_events(start_date: Optional[str] = None) -> str:
+    """查询从指定日期开始的一周天象事件。"""
     params = ParamParser.parse_tool_input(
         start_date,
         expected_params={"start_date": None}
@@ -346,6 +367,7 @@ def get_weekly_events(start_date: Optional[str] = None) -> str:
 @safe_tool_call
 def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
                        month: Optional[Union[int, str]] = None) -> str:
+    """查询指定年月的月度天象事件。"""
     params = ParamParser.parse_tool_input(
         {"year": year, "month": month},
         expected_params={"year": None, "month": None}
@@ -365,6 +387,7 @@ def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
 
 @mcp.resource("status://server")
 def get_server_status() -> str:
+    """返回 MCP server 当前运行状态。"""
     return json.dumps({
         "status": "running",
         "mode": "streamable-http",
@@ -374,6 +397,7 @@ def get_server_status() -> str:
 
 @mcp.prompt()
 def observation_guide(target: str) -> str:
+    """返回观测指导 prompt 模板。"""
     return f"""
 请帮我制定一个观测 {target} 的完整计划，包含以下内容：
 
@@ -408,6 +432,7 @@ def observation_guide(target: str) -> str:
 
 
 def main():
+    """启动 Streamable HTTP 模式的 FastMCP 服务。"""
     print("\n" + "="*60)
     print("🌌 天文MCP服务器 - Streamable HTTP模式")
     print("="*60)

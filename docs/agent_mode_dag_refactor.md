@@ -103,9 +103,9 @@ DAG 支持：
 本轮新增和更新的重点测试：
 
 - `tests/unit/test_workflow_executor_dag.py`
-- `tests/unit/test_workflow_graph_phase5.py`
-- `tests/unit/test_dag_agent_phase8.py`
-- `tests/unit/test_execution_trace_phase7.py`
+- `tests/regression/compat/test_workflow_graph_compat.py`
+- `tests/regression/compat/test_dag_agent_compatibility.py`
+- `tests/regression/compat/test_execution_trace_compat.py`
 - `tests/unit/test_latency_optimization.py`
 - `tests/unit/test_tool_necessity_gate.py`
 - `tests/unit/test_tool_necessity_router_integration.py`
@@ -113,7 +113,7 @@ DAG 支持：
 建议 smoke：
 
 ```bash
-pytest tests/unit/test_workflow_executor_dag.py tests/unit/test_workflow_graph_phase5.py -q
-pytest tests/unit/test_dag_agent_phase8.py tests/unit/test_execution_trace_phase7.py -q
+pytest tests/unit/test_workflow_executor_dag.py tests/regression/compat/test_workflow_graph_compat.py -q
+pytest tests/regression/compat/test_dag_agent_compatibility.py tests/regression/compat/test_execution_trace_compat.py -q
 python scripts/evaluation/evaluate_tool_routing_static.py --suite smoke --limit 12
 ```

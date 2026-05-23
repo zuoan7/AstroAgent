@@ -1,3 +1,6 @@
+-- 短期记忆事件流与工具 artifact 基础表。
+-- memory_event 保存可重放的会话事件，tool_artifact 保存工具原始输出。
+
 CREATE TABLE IF NOT EXISTS memory_event (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id TEXT NOT NULL UNIQUE,

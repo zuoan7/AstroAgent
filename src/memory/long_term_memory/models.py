@@ -1,3 +1,9 @@
+"""长期记忆领域模型。
+
+本文件定义正式记忆、候选记忆、确认请求、事件日志、画像投影、删除结果和
+查询条件等核心数据结构，并提供 SQLite 行与 API 字典之间的转换方法。
+"""
+
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -7,6 +13,8 @@ from typing import Any, Dict, List, Optional
 
 
 class MemoryType(str, Enum):
+    """长期记忆支持的语义类型。"""
+
     PREFERENCE = "preference"
     HABIT = "habit"
     CONSTRAINT = "constraint"
@@ -15,6 +23,8 @@ class MemoryType(str, Enum):
 
 
 class MemoryStatus(str, Enum):
+    """长期记忆和候选记忆的生命周期状态。"""
+
     ACTIVE = "active"
     CANDIDATE = "candidate"
     NEEDS_CONFIRM = "needs_confirm"
@@ -27,6 +37,8 @@ class MemoryStatus(str, Enum):
 
 
 class SourceType(str, Enum):
+    """长期记忆来源类型，用于置信度和审计判断。"""
+
     AUTO = "auto"
     EXPLICIT = "explicit"
     MANUAL = "manual"
@@ -34,6 +46,8 @@ class SourceType(str, Enum):
 
 
 class ConfirmationStatus(str, Enum):
+    """人工确认请求的处理状态。"""
+
     PENDING = "pending"
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
@@ -41,6 +55,8 @@ class ConfirmationStatus(str, Enum):
 
 
 class ConflictResolution(str, Enum):
+    """检测到记忆冲突后的处理策略。"""
+
     UPDATE = "update"
     OVERWRITE = "overwrite"
     KEEP_OLD = "keep_old"
@@ -48,6 +64,8 @@ class ConflictResolution(str, Enum):
 
 
 class EventType(str, Enum):
+    """长期记忆生命周期事件类型。"""
+
     CREATED = "created"
     UPDATED = "updated"
     DELETED = "deleted"
@@ -126,18 +144,26 @@ for _name, _spec in FACT_CATEGORIES.items():
 
 
 def _utcnow_iso() -> str:
+    """返回长期记忆记录使用的本地 ISO 时间字符串。"""
+
     return datetime.now().isoformat()
 
 
 def _generate_id() -> str:
+    """生成长期记忆表使用的无前缀 UUID hex。"""
+
     return uuid.uuid4().hex
 
 
 def _json_dumps(value: Any) -> str:
+    """序列化 JSON 字段，保留中文可读性。"""
+
     return json.dumps(value, ensure_ascii=False)
 
 
 def _json_loads(value: Optional[str], default: Any = None) -> Any:
+    """安全解析 JSON 字段，失败时返回默认值。"""
+
     if not value:
         return default
     try:
@@ -148,6 +174,8 @@ def _json_loads(value: Optional[str], default: Any = None) -> Any:
 
 @dataclass
 class MemoryItem:
+    """正式长期记忆条目，是用户画像的事实来源。"""
+
     id: str
     user_id: str
     memory_type: str
@@ -171,6 +199,8 @@ class MemoryItem:
     deleted_at: Optional[str] = None
 
     def __post_init__(self):
+        """补齐 id 和创建/更新时间。"""
+
         if not self.id:
             self.id = _generate_id()
         if not self.created_at:
@@ -179,6 +209,8 @@ class MemoryItem:
             self.updated_at = self.created_at
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化为 API 返回结构。"""
+
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -204,6 +236,8 @@ class MemoryItem:
         }
 
     def to_db_row(self) -> Dict[str, Any]:
+        """序列化为 SQLite 写入字段，复杂值以 JSON 保存。"""
+
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -230,6 +264,8 @@ class MemoryItem:
 
     @classmethod
     def from_db_row(cls, row: Any) -> "MemoryItem":
+        """从 SQLite Row 恢复正式记忆对象。"""
+
         return cls(
             id=row["id"],
             user_id=row["user_id"],
@@ -270,6 +306,8 @@ class MemoryItem:
         metadata: Optional[Dict[str, Any]] = None,
         expires_at: Optional[str] = None,
     ) -> "MemoryItem":
+        """创建 active 状态的正式长期记忆。"""
+
         return cls(
             id=_generate_id(),
             user_id=user_id,
@@ -290,6 +328,8 @@ class MemoryItem:
 
 @dataclass
 class MemoryVersion:
+    """正式记忆的历史版本快照。"""
+
     id: int = 0
     memory_id: str = ""
     version: int = 1
@@ -299,10 +339,14 @@ class MemoryVersion:
     changed_at: str = ""
 
     def __post_init__(self):
+        """补齐版本变更时间。"""
+
         if not self.changed_at:
             self.changed_at = _utcnow_iso()
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化版本快照。"""
+
         return {
             "id": self.id,
             "memory_id": self.memory_id,
@@ -316,6 +360,8 @@ class MemoryVersion:
 
 @dataclass
 class MemoryCandidate:
+    """尚未提升为正式记忆的抽取候选。"""
+
     id: str = ""
     user_id: str = ""
     memory_type: str = ""
@@ -336,6 +382,8 @@ class MemoryCandidate:
     updated_at: str = ""
 
     def __post_init__(self):
+        """补齐候选 id、首次/最近出现时间和更新时间。"""
+
         if not self.id:
             self.id = _generate_id()
         if not self.first_seen_at:
@@ -348,6 +396,8 @@ class MemoryCandidate:
             self.updated_at = self.last_seen_at
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化候选记忆。"""
+
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -370,6 +420,8 @@ class MemoryCandidate:
         }
 
     def to_db_row(self) -> Dict[str, Any]:
+        """序列化为 SQLite 写入字段。"""
+
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -393,6 +445,8 @@ class MemoryCandidate:
 
     @classmethod
     def from_db_row(cls, row: Any) -> "MemoryCandidate":
+        """从 SQLite Row 恢复候选记忆对象。"""
+
         return cls(
             id=row["id"],
             user_id=row["user_id"],
@@ -415,6 +469,8 @@ class MemoryCandidate:
         )
 
     def to_memory_item(self) -> MemoryItem:
+        """把候选提升为正式记忆对象。"""
+
         return MemoryItem.create(
             user_id=self.user_id,
             memory_type=self.memory_type,
@@ -431,6 +487,8 @@ class MemoryCandidate:
 
 @dataclass
 class MemoryConfirmation:
+    """需要用户确认的长期记忆请求。"""
+
     id: str = ""
     user_id: str = ""
     memory_id: str = ""
@@ -441,12 +499,16 @@ class MemoryConfirmation:
     resolved_at: Optional[str] = None
 
     def __post_init__(self):
+        """补齐确认请求 id 和创建时间。"""
+
         if not self.id:
             self.id = _generate_id()
         if not self.created_at:
             self.created_at = _utcnow_iso()
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化确认请求。"""
+
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -459,6 +521,8 @@ class MemoryConfirmation:
         }
 
     def to_db_row(self) -> Dict[str, Any]:
+        """序列化为 SQLite 写入字段。"""
+
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -472,6 +536,8 @@ class MemoryConfirmation:
 
     @classmethod
     def from_db_row(cls, row: Any) -> "MemoryConfirmation":
+        """从 SQLite Row 恢复确认请求。"""
+
         return cls(
             id=row["id"],
             user_id=row["user_id"],
@@ -486,6 +552,8 @@ class MemoryConfirmation:
 
 @dataclass
 class EventLogEntry:
+    """长期记忆生命周期审计日志。"""
+
     id: int = 0
     user_id: str = ""
     memory_id: Optional[str] = None
@@ -497,10 +565,14 @@ class EventLogEntry:
     created_at: str = ""
 
     def __post_init__(self):
+        """补齐日志创建时间。"""
+
         if not self.created_at:
             self.created_at = _utcnow_iso()
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化事件日志。"""
+
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -514,6 +586,8 @@ class EventLogEntry:
         }
 
     def to_db_row(self) -> Dict[str, Any]:
+        """序列化为 SQLite 写入字段。"""
+
         return {
             "user_id": self.user_id,
             "memory_id": self.memory_id,
@@ -528,6 +602,8 @@ class EventLogEntry:
 
 @dataclass
 class UserProfile:
+    """由 active memories 聚合出的用户画像投影。"""
+
     user_id: str
     preferences: Dict[str, Any] = field(default_factory=dict)
     habits: Dict[str, Any] = field(default_factory=dict)
@@ -538,12 +614,16 @@ class UserProfile:
     updated_at: str = ""
 
     def __post_init__(self):
+        """补齐画像创建和更新时间。"""
+
         if not self.created_at:
             self.created_at = _utcnow_iso()
         if not self.updated_at:
             self.updated_at = self.created_at
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化用户画像投影。"""
+
         return {
             "user_id": self.user_id,
             "preferences": self.preferences,
@@ -602,6 +682,8 @@ class LongTermMemoryDeletionResult:
 
 @dataclass
 class MemoryEvent:
+    """兼容旧长期记忆链路的事件式记忆记录。"""
+
     user_id: str
     event_type: str
     key: str
@@ -616,6 +698,8 @@ class MemoryEvent:
     updated_at: str = ""
 
     def __post_init__(self):
+        """补齐事件 id 和时间字段。"""
+
         if not self.event_id:
             self.event_id = _generate_id()
         if not self.created_at:
@@ -624,6 +708,8 @@ class MemoryEvent:
             self.updated_at = self.created_at
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化兼容事件记忆。"""
+
         return {
             "event_id": self.event_id,
             "user_id": self.user_id,
@@ -640,6 +726,8 @@ class MemoryEvent:
         }
 
     def to_db_row(self) -> Dict[str, Any]:
+        """序列化为 SQLite 写入字段。"""
+
         payload = self.to_dict()
         payload["value"] = _json_dumps(self.value)
         payload["metadata"] = _json_dumps(self.metadata)
@@ -647,6 +735,8 @@ class MemoryEvent:
 
     @classmethod
     def from_db_row(cls, row: Any) -> "MemoryEvent":
+        """从 SQLite Row 恢复兼容事件记忆。"""
+
         return cls(
             event_id=row["event_id"],
             user_id=row["user_id"],
@@ -665,6 +755,8 @@ class MemoryEvent:
 
 @dataclass
 class CandidateMemory:
+    """兼容旧链路的候选记忆轻量结构。"""
+
     user_id: str
     event_type: str
     key: str
@@ -674,10 +766,14 @@ class CandidateMemory:
     promoted: bool = False
 
     def __post_init__(self):
+        """补齐创建时间。"""
+
         if not self.created_at:
             self.created_at = _utcnow_iso()
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化兼容候选记忆。"""
+
         return {
             "user_id": self.user_id,
             "event_type": self.event_type,
@@ -691,6 +787,8 @@ class CandidateMemory:
 
 @dataclass
 class ExtractionResult:
+    """从一轮对话抽取得到的长期记忆候选。"""
+
     should_extract: bool = False
     memory_type: str = ""
     category: str = ""
@@ -703,6 +801,8 @@ class ExtractionResult:
     raw_content: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化抽取结果。"""
+
         return {
             "should_extract": self.should_extract,
             "memory_type": self.memory_type,
@@ -719,6 +819,8 @@ class ExtractionResult:
 
 @dataclass
 class ConflictInfo:
+    """长期记忆冲突详情和默认解决策略。"""
+
     existing_id: str
     existing_value: Any
     existing_confidence: float
@@ -729,6 +831,8 @@ class ConflictInfo:
     resolution: str = ConflictResolution.NEEDS_CONFIRM
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化冲突详情。"""
+
         return {
             "existing_id": self.existing_id,
             "existing_value": self.existing_value,
@@ -743,6 +847,8 @@ class ConflictInfo:
 
 @dataclass
 class MemoryQuery:
+    """长期记忆查询条件。"""
+
     user_id: str
     memory_type: Optional[str] = None
     category: Optional[str] = None
@@ -761,6 +867,8 @@ class MemoryQuery:
     order_desc: bool = True
 
     def to_where_clause(self) -> tuple:
+        """把查询条件转换为 SQL WHERE、参数和排序子句。"""
+
         conditions = ["user_id = ?"]
         params: list = [self.user_id]
 

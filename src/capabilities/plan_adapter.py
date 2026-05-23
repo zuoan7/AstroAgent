@@ -1,3 +1,6 @@
+"""能力计划适配器，把技能或原子工具能力转换为 planned 路径 PlanStep。
+"""
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -7,13 +10,14 @@ from src.capabilities.registry import CapabilityRegistry, get_default_capability
 
 
 class CapabilityPlanAdapter:
-    """Build PlanStep objects from capability metadata.
+    """根据能力元数据构建 PlanStep。
 
-    `PlanStep.skill` is kept as a legacy mirror for skill capabilities. New code
-    should read `capability_kind` and `capability_name` first.
+    PlanStep.skill 只保留为技能能力的 legacy 镜像；新代码应优先读取
+    capability_kind 和 capability_name。
     """
 
     def __init__(self, registry: Optional[CapabilityRegistry] = None) -> None:
+        """初始化能力注册表依赖。"""
         self._registry = registry or get_default_capability_registry()
 
     def make_skill_step(
@@ -36,6 +40,7 @@ class CapabilityPlanAdapter:
         retry_policy: int = 0,
         timeout_ms: Optional[int] = None,
     ) -> PlanStep:
+        """根据高层技能能力创建 planned 路径步骤。"""
         spec = self._registry.get_skill(skill_name)
         return PlanStep(
             id=id,
@@ -79,6 +84,7 @@ class CapabilityPlanAdapter:
         retry_policy: int = 0,
         timeout_ms: Optional[int] = None,
     ) -> PlanStep:
+        """根据原子工具能力创建 planned 路径步骤。"""
         self._registry.get_tool(tool_name)
         return PlanStep(
             id=id,

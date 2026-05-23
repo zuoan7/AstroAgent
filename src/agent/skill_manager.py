@@ -1,6 +1,4 @@
-"""
-SkillManager - 统一的技能管理器（重构版）
-整合了原有的 AgentTools 和 AstronomySkillRouter，消除三层架构的冗余调用链。
+"""统一技能管理器，注册 LangChain 工具并把高层技能、RAG 和原子 MCP 工具转发到实际路由器。
 """
 
 from typing import Any, Callable, Dict, List, Optional
@@ -33,6 +31,7 @@ class SkillManager:
     """
 
     def __init__(self, rag_retriever: Optional[Any] = None) -> None:
+        """初始化 SkillManager 的依赖、配置和内部状态。"""
         self._rag = rag_retriever
         self._skill_router = AstronomySkillRouter()
         self._tools: Optional[List[Tool]] = None
@@ -41,28 +40,35 @@ class SkillManager:
     # ===== 公共接口 =====
 
     def get_langchain_tools(self) -> List[Tool]:
+        """返回注册给 ReAct Agent 使用的 LangChain Tool 列表。"""
         if self._tools is None:
             self._tools = self._init_tools()
         return self._tools
 
     def list_skills(self) -> Dict[str, str]:
+        """列出当前可用高层技能。"""
         return self._skill_router.list_skills()
 
     def call_skill(self, name: str, **params: Any) -> SkillResult:
+        """调用指定高层技能并返回 SkillResult。"""
         return self._skill_router.call(name, **params)
 
     def call_mcp_tool(self, tool_name: str, **kwargs) -> str:
+        """调用指定原子 MCP 工具并返回原始响应。"""
         return self._skill_router.call_mcp_tool(tool_name, **kwargs)
 
     def prewarm(self) -> bool:
+        """预热底层技能路由器和 MCP 会话。"""
         return self._skill_router.prewarm()
 
     def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
+        """返回技能路由和 MCP 调用的运行时指标快照。"""
         return self._skill_router.get_runtime_metrics_snapshot()
 
     # ===== 工具注册 =====
 
     def _init_tools(self) -> List[Tool]:
+        """初始化 RAG、高层技能和允许的原子工具 Tool 列表。"""
         registry.validate_skill_registry()
         tools = [
             Tool(
@@ -96,7 +102,9 @@ class SkillManager:
     # ===== 通用工厂方法 =====
 
     def _create_skill_func(self, spec: SkillSpec) -> Callable:
+        """为高层技能创建 LangChain Tool 兼容函数。"""
         def skill_func(tool_input: Any) -> str:
+            """解析 LangChain 输入并调用对应高层技能。"""
             parsed_input = ParamParser.parse(tool_input)
             kwargs = parsed_input if isinstance(parsed_input, dict) else {}
 
@@ -121,14 +129,18 @@ class SkillManager:
         return skill_func
 
     def _create_rag_func(self) -> Callable:
+        """创建 RAG 检索 Tool 兼容函数。"""
         def rag_func(query: Any) -> str:
+            """解析查询文本并调用本地 RAG 检索。"""
             params = ParamParser.parse_tool_input(query, primary_param="query")
             query_text = params.get("query", str(query))
             return self._rag.get_relevant_context(query_text)
         return rag_func
 
     def _create_atomic_tool_func(self, spec: AtomicToolSpec) -> Callable:
+        """为原子 MCP 工具创建 LangChain Tool 兼容函数。"""
         def atomic_tool_func(tool_input: Any) -> str:
+            """解析 LangChain 输入并调用对应原子 MCP 工具。"""
             params = self._parse_atomic_tool_input(spec, tool_input)
             result = self._skill_router.call(spec.name, **params)
             return result.to_legacy_str()
@@ -139,15 +151,18 @@ class SkillManager:
 
     @staticmethod
     def _weather_param_handler(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """规范化天气技能参数。"""
         return registry.normalize_weather_params(kwargs)
 
     @staticmethod
     def _atomic_tool_description(spec: AtomicToolSpec) -> str:
+        """生成原子工具的 LangChain 描述文本。"""
         params = ", ".join(spec.param_names) if spec.param_names else "无参数"
         return f"{spec.summary or spec.name}（atomic MCP tool: {spec.name}）。参数：{params}。"
 
     @staticmethod
     def _parse_atomic_tool_input(spec: AtomicToolSpec, tool_input: Any) -> Dict[str, Any]:
+        """解析原子工具输入并应用默认参数。"""
         if not isinstance(tool_input, dict):
             return AtomicToolParamAdapter.build(spec.name, str(tool_input or ""))
 
@@ -168,6 +183,7 @@ class SkillManager:
 
     @staticmethod
     def _safe_convert(value: Any, convert_func: type) -> Any:
+        """安全执行类型转换，失败时保留原值。"""
         try:
             if isinstance(value, str):
                 if convert_func == bool:

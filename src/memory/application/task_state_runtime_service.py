@@ -1,3 +1,9 @@
+"""运行时任务状态辅助服务。
+
+该服务位于 Agent 执行链路旁路：在请求开始/结束时生成确定性的任务状态
+patch，并可异步调用轻量模型补充目标、约束、问题等字段。
+"""
+
 from __future__ import annotations
 
 import json
@@ -82,6 +88,8 @@ class TaskStateRuntimeService:
         execution_plan: Optional[Any] = None,
         selected_task_state: Optional[Dict[str, Any] | TaskState] = None,
     ) -> Dict[str, Any]:
+        """根据用户 query、路由画像和执行计划生成 turn-started 状态补丁。"""
+
         if self._is_smalltalk(profile=profile):
             return {}
 
@@ -120,6 +128,8 @@ class TaskStateRuntimeService:
         error: Optional[BaseException | str] = None,
         fallback_message: str = "",
     ) -> Dict[str, Any]:
+        """根据执行结果生成 turn-completed 状态补丁，记录完成、待办和阻塞。"""
+
         if self._is_smalltalk(response=response, profile=profile):
             return {}
 
@@ -200,6 +210,8 @@ class TaskStateRuntimeService:
         turn_id: Optional[str] = None,
         created_by: str = "task_state_runtime",
     ) -> Optional[TaskState]:
+        """写入任务状态 patch；遇到版本冲突时读取最新版并重试一次。"""
+
         if not patch or not self._enabled() or not hasattr(self._memory, "update_task_state"):
             return None
 
@@ -235,6 +247,8 @@ class TaskStateRuntimeService:
         current_state: Optional[Dict[str, Any] | TaskState],
         tenant_id: Optional[str] = None,
     ) -> None:
+        """后台抽取补充字段，不阻塞主回答链路。"""
+
         if not self._llm_enrichment_enabled():
             return
         if not self._has_llm_available():
@@ -296,6 +310,8 @@ class TaskStateRuntimeService:
         assistant_message: str,
         current_state: Dict[str, Any],
     ) -> Dict[str, Any]:
+        """调用 LLM 生成任务状态补丁，并只保留允许写入的字段。"""
+
         llm = self._resolve_llm()
         if llm is None:
             return {}
@@ -325,6 +341,8 @@ class TaskStateRuntimeService:
         assistant_message: str,
         current_state: Dict[str, Any],
     ) -> str:
+        """渲染任务状态补充提示词。"""
+
         return get_prompt_renderer().render(
             "memory.task_state_enrichment",
             {
@@ -339,6 +357,8 @@ class TaskStateRuntimeService:
         )
 
     def _sanitize_enrichment_patch(self, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """清洗 LLM 输出，限制字段、长度和置信度范围。"""
+
         clean: Dict[str, Any] = {}
         for key, value in patch.items():
             if key in {"active_constraints", "open_questions", "assumptions"}:

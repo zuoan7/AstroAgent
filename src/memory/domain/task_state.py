@@ -1,3 +1,9 @@
+"""短期记忆任务状态领域模型。
+
+TaskState 保存当前任务目标、约束、进度、问题和阻塞，是跨轮追问补全和
+上下文检索聚焦的主要结构化信号。
+"""
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -28,6 +34,8 @@ class TaskState:
     is_deleted: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化任务状态，供 API、prompt context 和持久化使用。"""
+
         return {
             "task_state_id": self.task_state_id,
             "tenant_id": self.tenant_id,
@@ -50,6 +58,8 @@ class TaskState:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TaskState":
+        """从字典恢复任务状态，并填充兼容旧数据的默认值。"""
+
         return cls(
             task_state_id=data.get("task_state_id") or new_memory_id("task"),
             tenant_id=data["tenant_id"],

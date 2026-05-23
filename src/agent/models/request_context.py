@@ -1,11 +1,7 @@
-"""
-RequestContext — 统一请求上下文，Phase 2 引入。
+"""统一请求上下文模型，保存查询、短期历史、用户画像和请求级元信息。
 
-打包 query / chat_history / user_profile / request_id，
-目标替代执行入口和 StreamingService 中散落传递的同名参数。
-
-当前状态：StreamingService 已优先构造 RequestContext 并传入新主链路；
-          from_legacy_params() 仅保留给历史兼容入口。
+该模型用于替代 StreamingService 和执行入口中散落传递的同名参数，
+legacy 构造方法仅保留给历史兼容入口。
 """
 from __future__ import annotations
 
@@ -16,6 +12,7 @@ from typing import Optional
 
 @dataclass
 class RequestContext:
+    """请求上下文，保存用户查询、会话历史、用户画像和请求标识。"""
     query: str
     chat_history: str = ""
     user_profile: str = ""
@@ -23,6 +20,7 @@ class RequestContext:
     use_long_term_memory: bool = True
 
     def to_dict(self) -> dict:
+        """将当前模型转换为可序列化字典。"""
         return {
             "query": self.query,
             "chat_history": self.chat_history,

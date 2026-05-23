@@ -1,3 +1,6 @@
+-- 短期记忆摘要快照、删除任务和审计表。
+-- summary_snapshot 压缩事件区间，deletion_job/audit_log 记录 tombstone 删除。
+
 CREATE TABLE IF NOT EXISTS summary_snapshot (
     snapshot_id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,

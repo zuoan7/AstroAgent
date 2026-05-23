@@ -1,3 +1,9 @@
+"""短期记忆 prompt 投影模型。
+
+这些模型不是数据库 schema 本身，而是从事件流恢复出的消息、工具调用和
+显著事实对象，供检索规划器和兼容接口使用。
+"""
+
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -5,11 +11,15 @@ from typing import Any, Dict
 
 
 def _new_id(prefix: str) -> str:
+    """生成短期记忆投影对象使用的轻量 id。"""
+
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 @dataclass
 class Message:
+    """会话消息投影，对应 message_created 事件。"""
+
     role: str
     content: str
     timestamp: float
@@ -21,6 +31,8 @@ class Message:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化为 API 和测试使用的字典结构。"""
+
         return {
             "message_id": self.message_id,
             "session_id": self.session_id,
@@ -35,6 +47,8 @@ class Message:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Message":
+        """从字典恢复消息投影，兼容缺省 id。"""
+
         return cls(
             message_id=data.get("message_id") or _new_id("msg"),
             session_id=data.get("session_id", ""),
@@ -50,6 +64,8 @@ class Message:
 
 @dataclass
 class ToolCallRecord:
+    """工具调用投影，原始输出由 raw_artifact_id 指向 artifact 表。"""
+
     tool_name: str
     timestamp: float
     tool_call_id: str = field(default_factory=lambda: _new_id("tool"))
@@ -65,6 +81,8 @@ class ToolCallRecord:
     importance: int = 1
 
     def __post_init__(self):
+        """归一化兼容字段，保证旧数据也有可用 id 和 content_type。"""
+
         if not self.tool_call_id:
             self.tool_call_id = _new_id("tool")
         self.raw_size_bytes = int(self.raw_size_bytes or 0)
@@ -83,6 +101,8 @@ class ToolCallRecord:
         return self.status == "success"
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化为兼容旧字段名和新字段名的字典。"""
+
         return {
             "tool_call_id": self.tool_call_id,
             "tool_name": self.tool_name,
@@ -104,6 +124,8 @@ class ToolCallRecord:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ToolCallRecord":
+        """从字典恢复工具调用投影，并兼容旧 success 字段。"""
+
         status = data.get("status")
         if not status:
             status = "success" if data.get("success", True) else "error"
@@ -126,6 +148,8 @@ class ToolCallRecord:
 
 @dataclass
 class SalientFact:
+    """从事件流中抽取出的显著事实投影。"""
+
     fact_type: str
     content: str
     timestamp: float
@@ -135,6 +159,8 @@ class SalientFact:
     source: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化事实投影。"""
+
         return {
             "fact_id": self.fact_id,
             "fact_type": self.fact_type,
@@ -147,6 +173,8 @@ class SalientFact:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SalientFact":
+        """从字典恢复显著事实投影。"""
+
         return cls(
             fact_id=data.get("fact_id") or _new_id("fact"),
             fact_type=data["fact_type"],
@@ -156,4 +184,3 @@ class SalientFact:
             source_id=data.get("source_id", ""),
             source=data.get("source", ""),
         )
-

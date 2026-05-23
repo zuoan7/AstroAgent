@@ -1,3 +1,9 @@
+"""长期记忆 query-aware 检索。
+
+根据任务类型、记忆类型、置信度、显式来源和 query 命中情况为长期记忆打分，
+为 prompt 注入和命中解释提供统一排序依据。
+"""
+
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -25,6 +31,8 @@ LEARNING_KEYWORDS: Set[str] = {"什么是", "为什么", "怎么", "如何", "�
 
 @dataclass
 class RetrievalHit:
+    """长期记忆检索命中，包含分数和可解释原因。"""
+
     item: MemoryItem
     score: float
     reasons: List[str]
@@ -51,6 +59,8 @@ class LongTermMemoryRetriever:
         }
 
     def classify_task_type(self, query: str) -> str:
+        """根据关键词粗分天文问答、观测、学习等任务类型。"""
+
         text = query.lower()
         obs_score = sum(1 for kw in OBSERVATION_KEYWORDS if kw in text)
         learn_score = sum(1 for kw in LEARNING_KEYWORDS if kw in text)
@@ -64,6 +74,8 @@ class LongTermMemoryRetriever:
         return "general"
 
     def score(self, item: MemoryItem, query: str, task_type: str) -> Tuple[float, List[str]]:
+        """计算单条长期记忆与 query/task_type 的相关性分数和原因。"""
+
         reasons = [f"任务类型={task_type}"]
         score = item.confidence * self.type_weights.get(item.memory_type, 1.0)
 
@@ -97,6 +109,8 @@ class LongTermMemoryRetriever:
         return min(score, 2.0), reasons
 
     def retrieve(self, user_id: str, query: str, task_type: Optional[str] = None, limit: Optional[int] = None) -> List[RetrievalHit]:
+        """查询 active memories，过滤低分结果并按相关性返回。"""
+
         resolved_task_type = task_type or self.classify_task_type(query)
         items = self._repo.query_memories(
             MemoryQuery(

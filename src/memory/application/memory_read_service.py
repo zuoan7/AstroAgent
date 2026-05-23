@@ -1,3 +1,9 @@
+"""短期记忆读取服务。
+
+从事件投影、任务状态和 summary snapshot 中组装 prompt 上下文，
+同时提供调试、导出和兼容旧接口的读取能力。
+"""
+
 from typing import Any, Dict
 
 from src.memory.api.dto import BuildContextRequest
@@ -26,9 +32,13 @@ class MemoryReadService:
         self.projection_reader = EventProjectionReader(event_store)
 
     def get_task_state(self, session_id: str, tenant_id: str) -> TaskState:
+        """读取会话任务状态；不存在时由 manager 返回默认投影。"""
+
         return self.task_state_manager.get_state(tenant_id, session_id)
 
     def build_context(self, request: BuildContextRequest) -> Dict[str, Any]:
+        """收集稳定投影并交给 RetrievalPlanner 做预算内上下文选择。"""
+
         token_budget = request.max_tokens or 4000
         task_state = self.get_task_state(request.session_id, request.tenant_id)
         summary_snapshot = self.summary_snapshot_manager.get_latest(request.session_id)
@@ -46,6 +56,8 @@ class MemoryReadService:
         )
 
     def get_debug_info(self, session_id: str) -> Dict[str, Any]:
+        """统计当前会话事件、消息、工具调用、事实和摘要可用性。"""
+
         messages = self.projection_reader.list_messages(session_id, limit=1000)
         tool_calls = self.projection_reader.list_tool_calls(session_id, limit=1000)
         facts = self.projection_reader.list_salient_facts(session_id, limit=1000)
@@ -82,6 +94,8 @@ class MemoryReadService:
         return latest.summary_text if latest else ""
 
     def export_memory(self, session_id: str, tenant_id: str) -> Dict[str, Any]:
+        """导出会话事件流、任务状态和最新 summary snapshot。"""
+
         latest = self.summary_snapshot_manager.get_latest(session_id)
         return {
             "session_id": session_id,

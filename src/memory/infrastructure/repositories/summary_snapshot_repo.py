@@ -1,3 +1,8 @@
+"""summary snapshot 仓储。
+
+保存短期记忆摘要快照及其覆盖事件范围，供上下文构建和维护服务读取。
+"""
+
 from typing import Optional
 
 from src.memory.domain.summary_snapshot import SummarySnapshot
@@ -8,6 +13,8 @@ class SummarySnapshotRepository(SQLiteRepository):
     """Repository for summary snapshot projection records."""
 
     def initialize(self) -> None:
+        """创建 summary_snapshot 表和会话索引。"""
+
         with self._connect() as conn:
             conn.executescript(
                 """
@@ -33,6 +40,8 @@ class SummarySnapshotRepository(SQLiteRepository):
             )
 
     def save(self, snapshot: SummarySnapshot) -> SummarySnapshot:
+        """插入或更新一条摘要快照。"""
+
         self.initialize()
         with self._connect() as conn:
             conn.execute(
@@ -75,6 +84,8 @@ class SummarySnapshotRepository(SQLiteRepository):
         snapshot_type: str = "working",
         include_deleted: bool = False,
     ) -> Optional[SummarySnapshot]:
+        """读取指定会话和快照类型下最新的未删除快照。"""
+
         self.initialize()
         condition = "" if include_deleted else " AND is_deleted = 0"
         with self._connect() as conn:
@@ -93,6 +104,8 @@ class SummarySnapshotRepository(SQLiteRepository):
         return self._from_row(row) if row else None
 
     def mark_superseded(self, old_snapshot_id: str, new_snapshot_id: str) -> bool:
+        """标记旧快照已被新快照替代。"""
+
         self.initialize()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -102,12 +115,16 @@ class SummarySnapshotRepository(SQLiteRepository):
         return cursor.rowcount > 0
 
     def mark_deleted_by_session(self, session_id: str) -> int:
+        """按会话 tombstone 标记所有摘要快照。"""
+
         self.initialize()
         with self._connect() as conn:
             cursor = conn.execute("UPDATE summary_snapshot SET is_deleted = 1 WHERE session_id = ?", (session_id,))
         return cursor.rowcount
 
     def _from_row(self, row) -> SummarySnapshot:
+        """把 SQLite Row 反序列化为 SummarySnapshot。"""
+
         return SummarySnapshot(
             snapshot_id=row["snapshot_id"],
             tenant_id=row["tenant_id"],

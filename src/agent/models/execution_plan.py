@@ -1,3 +1,6 @@
+"""兼容执行计划模型，保留 planned 步骤、依赖、失败策略和前端展示字段。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class PlanStep:
+    """兼容计划步骤，描述单个 planned 节点的能力、参数和失败策略。"""
     id: str
     kind: str
     title: str = ""
@@ -28,6 +32,7 @@ class PlanStep:
     timeout_ms: Optional[int] = None
 
     def __post_init__(self) -> None:
+        """在 dataclass 初始化后校验和规范化字段。"""
         if self.skill and not self.capability_name and not self.capability_kind:
             self.capability_kind = self.capability_kind or "skill"
             self.capability_name = self.skill
@@ -40,6 +45,7 @@ class PlanStep:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PlanStep":
+        """从字典恢复当前模型对象。"""
         skill = data.get("skill")
         capability_kind = str(data.get("capability_kind", "") or "")
         capability_name = str(data.get("capability_name", "") or "")
@@ -74,6 +80,7 @@ class PlanStep:
         )
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "id": self.id,
             "kind": self.kind,
@@ -115,12 +122,15 @@ class ExecutionPlan:
     budget_policy_version: str = "budget_v1"
 
     def tool_steps(self) -> List[PlanStep]:
+        """筛选计划中需要执行工具或技能的步骤。"""
         return [s for s in self.steps if s.kind == "tool"]
 
     def required_steps(self) -> List[PlanStep]:
+        """筛选计划中标记为必需的步骤。"""
         return [s for s in self.steps if s.required]
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "task_type": self.task_type,
             "output_schema": self.output_schema,
@@ -133,6 +143,7 @@ class ExecutionPlan:
         }
 
     def to_frontend_steps(self) -> List[Dict[str, Any]]:
+        """把执行计划步骤转换为前端计划面板结构。"""
         frontend_steps: List[Dict[str, Any]] = []
         for step in self.steps:
             frontend_steps.append(
@@ -162,6 +173,7 @@ class ExecutionPlan:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ExecutionPlan":
+        """从字典恢复当前模型对象。"""
         return cls(
             task_type=str(data.get("task_type", "observation_recommendation")),
             output_schema=str(data.get("output_schema", "generic_answer_v1")),

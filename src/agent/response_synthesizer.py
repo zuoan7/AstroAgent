@@ -1,3 +1,6 @@
+"""答案合成器，汇总技能结果、DAG 证据和 RAG 上下文，生成统一 FinalResponse。
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -28,6 +31,7 @@ class ResponseSynthesizer:
         budget_tracker: Optional[RequestBudgetTracker] = None,
         synth_prompt_version: Optional[str] = None,
     ) -> None:
+        """初始化 ResponseSynthesizer 的依赖、配置和内部状态。"""
         self._llm = llm
         self._budget_tracker = budget_tracker
         self._synth_prompt_version = (
@@ -54,6 +58,7 @@ class ResponseSynthesizer:
         versions: Optional[Dict[str, Any]] = None,
         evidence: Optional[Dict[str, Any]] = None,
     ) -> FinalResponse:
+        """合成 planned 路径最终答案。"""
         collected_outputs = []
         sources: List[Dict[str, Any]] = []
         tools_used: List[Dict[str, Any]] = []
@@ -153,6 +158,7 @@ class ResponseSynthesizer:
 
     @property
     def prompt_version(self) -> str:
+        """返回当前答案合成提示词版本。"""
         return self._synth_prompt_version
 
     def synthesize_direct(
@@ -164,6 +170,7 @@ class ResponseSynthesizer:
         raw_answer: Optional[str] = None,
         route: str = "direct_task",
     ) -> FinalResponse:
+        """合成 direct 单工具路径答案。"""
         sources: List[Dict[str, Any]] = []
         tools_used: List[Dict[str, Any]] = []
         structured_payload: Dict[str, Any] = {}
@@ -204,6 +211,7 @@ class ResponseSynthesizer:
         retrieval: Optional[Dict[str, Any]] = None,
         route: str = "direct_task",
     ) -> FinalResponse:
+        """包装简单问答或 RAG 快路径答案。"""
         sources = []
         tools_used = []
         if rag_context:
@@ -238,6 +246,7 @@ class ResponseSynthesizer:
         self,
         answer: str,
     ) -> FinalResponse:
+        """包装闲聊回复为 FinalResponse。"""
         return FinalResponse(
             answer=answer,
             summary=answer,
@@ -248,6 +257,7 @@ class ResponseSynthesizer:
         )
 
     def _invoke_llm(self, prompt: str) -> str:
+        """同步调用底层 LLM 并抽取文本内容。"""
         if self._budget_tracker:
             self._budget_tracker.register_context_chars(len(prompt))
             self._budget_tracker.register_llm_call()
@@ -255,6 +265,7 @@ class ResponseSynthesizer:
         return getattr(result, "content", None) or str(result)
 
     def _default_versions(self) -> Dict[str, Any]:
+        """生成默认版本元信息。"""
         return {
             "schema_version": str(getattr(settings, "SCHEMA_VERSION", "schema_v2")),
             "synth_prompt_version": self._synth_prompt_version,
@@ -262,6 +273,7 @@ class ResponseSynthesizer:
 
     @staticmethod
     def _compute_confidence(skill_results: List[SkillResult]) -> float:
+        """根据工具结果、证据和记忆命中估算回答置信度。"""
         if not skill_results:
             return 0.35
         confidence = 0.45
@@ -279,6 +291,7 @@ class ResponseSynthesizer:
         task_type: str,
         skill_results: List[SkillResult],
     ) -> bool:
+        """判断是否可跳过 LLM 直接使用工具摘要合成答案。"""
         if not bool(getattr(settings, "ENABLE_DETERMINISTIC_TOOL_SYNTHESIS", True)):
             return False
         if not skill_results:
@@ -308,6 +321,7 @@ class ResponseSynthesizer:
         query: str,
         skill_results: List[SkillResult],
     ) -> str:
+        """根据成功工具摘要构造确定性答案。"""
         successful = [
             sr for sr in skill_results if sr.success and (sr.summary or "").strip()
         ]
@@ -335,6 +349,7 @@ class ResponseSynthesizer:
 
     @staticmethod
     def _clean_tool_summary(summary: str) -> str:
+        """清洗并截断工具摘要。"""
         text = (summary or "").strip()
         if len(text) <= 3500:
             return text
@@ -342,6 +357,7 @@ class ResponseSynthesizer:
 
     @staticmethod
     def _display_skill_name(skill_name: str) -> str:
+        """把内部技能名转换为用户可读名称。"""
         names = {
             "observation-planner": "观测计划",
             "celestial-events-forecast": "天象预报",
@@ -354,6 +370,7 @@ class ResponseSynthesizer:
 
     @staticmethod
     def _format_dag_evidence(evidence: Dict[str, Any]) -> str:
+        """把 DAG 聚合证据格式化为提示词文本。"""
         lines: list[str] = []
         for key, record in evidence.items():
             if not isinstance(record, dict):
@@ -375,6 +392,7 @@ class ResponseSynthesizer:
         versions: Optional[Dict[str, Any]],
         mode: str,
     ) -> Dict[str, Any]:
+        """在版本元信息中补充答案合成模式。"""
         payload = dict(versions or self._default_versions())
         payload["synthesis_mode"] = mode
         return payload

@@ -1,3 +1,8 @@
+"""短期记忆应用服务导出。
+
+应用层编排读写、压缩、删除、任务状态和摘要快照能力，隐藏底层仓储细节。
+"""
+
 from src.memory.application.compression_service import CompressionService
 from src.memory.application.deletion_service import DeletionService
 from src.memory.application.event_projection_reader import EventProjectionReader

@@ -1,3 +1,6 @@
+"""原子工具规则选择器，根据用户查询和能力提示识别可直接调用的底层工具。
+"""
+
 from __future__ import annotations
 
 import re
@@ -27,6 +30,8 @@ DEFAULT_WEATHER_CITY = "北京"
 
 @dataclass(frozen=True)
 class ToolSelectionDecision:
+    """原子工具选择结果，包含工具名、参数、置信度和命中原因。"""
+
     mode: str
     tool_name: str
     params: Dict[str, Any] = field(default_factory=dict)
@@ -34,6 +39,7 @@ class ToolSelectionDecision:
     reason: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        """将工具选择结果转换为可序列化字典。"""
         return {
             "mode": self.mode,
             "tool_name": self.tool_name,
@@ -44,7 +50,7 @@ class ToolSelectionDecision:
 
 
 class AtomicToolParamAdapter:
-    """Deterministic parameter adapter for stable atomic MCP tools."""
+    """稳定原子 MCP 工具的确定性参数适配器。"""
 
     @classmethod
     def build(
@@ -54,6 +60,7 @@ class AtomicToolParamAdapter:
         *,
         explicit_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """根据工具名和自然语言查询构造原子工具参数。"""
         if isinstance(explicit_params, dict):
             return dict(explicit_params)
 
@@ -76,6 +83,7 @@ class AtomicToolParamAdapter:
 
     @staticmethod
     def _extract_web_search_query(query: str) -> str:
+        """从自然语言查询中提取联网搜索关键词。"""
         cleaned = (query or "").strip()
         cleaned = re.sub(r"^(请|帮我|麻烦)?\s*(查一下|查询|搜索|搜一下)", "", cleaned)
         cleaned = re.sub(r"(是什么|有哪些|怎么样)[？?。]*$", "", cleaned)
@@ -83,6 +91,7 @@ class AtomicToolParamAdapter:
 
     @staticmethod
     def _extract_iso_date(query: str) -> Optional[str]:
+        """从查询中提取 ISO 日期或解析今天/昨天/明天等相对日期。"""
         text = query or ""
         match = re.search(r"\d{4}-\d{2}-\d{2}", text)
         if match:
@@ -99,6 +108,7 @@ class AtomicToolParamAdapter:
 
     @staticmethod
     def _extract_weather_city(query: str) -> Optional[str]:
+        """从查询中提取天气工具可用的城市或经纬度。"""
         text = query or ""
         coord_match = re.search(
             r"(?<!\d)(-?\d{1,2}(?:\.\d+)?)\s*[,，]\s*(-?\d{2,3}(?:\.\d+)?)(?!\d)",
@@ -113,10 +123,9 @@ class AtomicToolParamAdapter:
 
 
 class ToolSelector:
-    """Rule-only selector for stable atomic MCP tools.
+    """稳定原子 MCP 工具的纯规则选择器。
 
-    v1 intentionally covers only high-confidence direct lookups and does not
-    call an LLM.
+    当前只覆盖高置信直接查询，不调用 LLM。
     """
 
     def select(
@@ -125,6 +134,7 @@ class ToolSelector:
         *,
         profile: Optional[Any] = None,
     ) -> Optional[ToolSelectionDecision]:
+        """根据查询文本和任务画像提示选择可直接调用的原子工具。"""
         text = (query or "").strip()
         if not text:
             return None
@@ -164,6 +174,7 @@ class ToolSelector:
         query: str,
         profile: Optional[Any],
     ) -> Optional[ToolSelectionDecision]:
+        """优先根据 TaskProfile 中的原子工具提示生成选择结果。"""
         if profile is None:
             return None
 
@@ -189,12 +200,14 @@ class ToolSelector:
 
     @staticmethod
     def _normalize_tool_hint(hint: str) -> str:
+        """把能力提示规范化为受支持的原子工具名。"""
         if hint in {"get_weather", "get_nasa_apod", "web_search"}:
             return hint
         return ""
 
     @staticmethod
     def _is_apod_lookup(text: str) -> bool:
+        """判断查询是否为 NASA APOD 图片查找。"""
         has_reference = "APOD" in text or "每日天文图" in text
         if not has_reference:
             return False
@@ -217,6 +230,7 @@ class ToolSelector:
 
     @staticmethod
     def _is_web_search_lookup(text: str) -> bool:
+        """判断查询是否需要新近外部信息的联网搜索。"""
         if any(token in text for token in ("天象", "流星雨", "月食", "日食", "合月")):
             return False
         has_freshness = any(
@@ -230,6 +244,7 @@ class ToolSelector:
 
     @staticmethod
     def _is_weather_lookup(text: str) -> bool:
+        """判断查询是否为单一地点和时间的天气查询。"""
         if any(token in text for token in ("同时", "并且", "以及", "天象")):
             return False
         if "并" in text and any(token in text for token in ("摄影", "计划", "安排")):
@@ -266,6 +281,7 @@ class ToolSelector:
         confidence: float,
         reason: str,
     ) -> ToolSelectionDecision:
+        """构造原子工具选择结果并同步生成工具参数。"""
         return ToolSelectionDecision(
             mode="atomic_tool",
             tool_name=tool_name,

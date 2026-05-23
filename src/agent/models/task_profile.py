@@ -1,8 +1,7 @@
-"""
-TaskProfile — 中性任务画像，Phase 1 引入。
+"""任务画像模型，承载路由分类、复杂度、工具需求和兼容 route 元信息。
 
-当前阶段：已成为 RequestRouter 内部主分类结果。
-收敛计划：后续继续向 UnifiedExecutionEngine 主输入收口，旧 RouteDecision 仅保留兼容输出。
+该模型是 RequestRouter 的主输出，并继续向统一执行引擎输入收口；
+旧 RouteDecision 仅作为兼容输出存在。
 """
 from __future__ import annotations
 
@@ -19,6 +18,7 @@ LEGACY_ROUTE_MAP: Dict[str, str] = {
 
 @dataclass
 class TaskProfile:
+    """任务画像，描述任务类型、复杂度、开放性和工具需求。"""
     task_type: str
     complexity: str          # low | medium | high
     openness: str            # low | medium | high
@@ -44,6 +44,7 @@ class TaskProfile:
     tool_necessity_forbidden_skill_hints: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict:
+        """将当前模型转换为可序列化字典。"""
         return {
             "task_type": self.task_type,
             "complexity": self.complexity,

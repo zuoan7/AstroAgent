@@ -11,7 +11,15 @@
 7. celestial-position-calculator - 天体位置计算
 """
 
+from src.agent.models.skill_result import SkillResult
 from src.agent.skill_manager import SkillManager
+
+
+def _assert_successful_skill_result(result, expected_skill):
+    assert isinstance(result, SkillResult)
+    assert result.skill_name == expected_skill
+    assert result.success is True
+    assert result.summary
 
 
 def test_weather_lookup(skill_manager):
@@ -30,6 +38,7 @@ def test_weather_lookup(skill_manager):
         print(f"\n📋 {description}")
         result = skill_manager.call_skill("weather-lookup", city=city)
         print(result.to_legacy_str())
+        _assert_successful_skill_result(result, "weather-lookup")
 
 
 def test_observation_planner(skill_manager):
@@ -54,6 +63,7 @@ def test_observation_planner(skill_manager):
             duration=test_case["duration"]
         )
         print(result.to_legacy_str())
+        _assert_successful_skill_result(result, "observation-planner")
 
 
 def test_celestial_events_forecast(skill_manager):
@@ -78,6 +88,7 @@ def test_celestial_events_forecast(skill_manager):
             event_type=test_case["event_type"]
         )
         print(result.to_legacy_str())
+        _assert_successful_skill_result(result, "celestial-events-forecast")
 
 
 def test_deep_sky_observing_guide(skill_manager):
@@ -103,6 +114,7 @@ def test_deep_sky_observing_guide(skill_manager):
             equipment=test_case["equipment"]
         )
         print(result.to_legacy_str())
+        _assert_successful_skill_result(result, "deep-sky-observing-guide")
 
 
 def test_neo_tracker(skill_manager):
@@ -128,6 +140,7 @@ def test_neo_tracker(skill_manager):
             observable_only=test_case["observable_only"]
         )
         print(result.to_legacy_str())
+        _assert_successful_skill_result(result, "neo-tracker")
 
 
 def test_astrophotography_calculator(skill_manager):
@@ -155,6 +168,7 @@ def test_astrophotography_calculator(skill_manager):
             date=test_case["date"]
         )
         print(result.to_legacy_str())
+        _assert_successful_skill_result(result, "astrophotography-calculator")
 
 
 def test_celestial_position_calculator(skill_manager):
@@ -180,6 +194,7 @@ def test_celestial_position_calculator(skill_manager):
             output_format=test_case["output_format"]
         )
         print(result.to_legacy_str())
+        _assert_successful_skill_result(result, "celestial-position-calculator")
 
 
 def main():

@@ -1,3 +1,9 @@
+"""任务状态投影仓储。
+
+task_state 表保存每个会话当前的结构化任务进度；历史变化仍以事件形式保存在
+EventStore 中。
+"""
+
 from typing import Optional
 
 from src.memory.domain.task_state import TaskState
@@ -9,6 +15,8 @@ class TaskStateRepository(SQLiteRepository):
     """Repository for the current structured task state projection."""
 
     def initialize(self) -> None:
+        """创建 task_state 表和会话索引。"""
+
         with self._connect() as conn:
             conn.executescript(
                 """
@@ -37,6 +45,8 @@ class TaskStateRepository(SQLiteRepository):
             )
 
     def get(self, session_id: str, include_deleted: bool = False) -> Optional[TaskState]:
+        """按会话读取当前任务状态投影。"""
+
         self.initialize()
         condition = "" if include_deleted else " AND is_deleted = 0"
         with self._connect() as conn:
@@ -53,6 +63,8 @@ class TaskStateRepository(SQLiteRepository):
         return self._from_row(row) if row else None
 
     def save(self, state: TaskState) -> TaskState:
+        """插入或更新会话当前任务状态。"""
+
         self.initialize()
         with self._connect() as conn:
             conn.execute(
@@ -102,12 +114,16 @@ class TaskStateRepository(SQLiteRepository):
         return state
 
     def mark_deleted(self, session_id: str) -> bool:
+        """按会话 tombstone 标记任务状态投影。"""
+
         self.initialize()
         with self._connect() as conn:
             cursor = conn.execute("UPDATE task_state SET is_deleted = 1 WHERE session_id = ?", (session_id,))
         return cursor.rowcount > 0
 
     def _from_row(self, row) -> TaskState:
+        """把 SQLite Row 反序列化为 TaskState。"""
+
         return TaskState(
             task_state_id=row["task_state_id"],
             tenant_id=row["tenant_id"],

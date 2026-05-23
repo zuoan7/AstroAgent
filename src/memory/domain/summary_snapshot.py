@@ -1,3 +1,9 @@
+"""短期记忆摘要快照领域模型。
+
+摘要快照覆盖一段事件区间，用于压缩早期上下文；新的工作快照可通过
+superseded_by 关联替代旧快照。
+"""
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
@@ -7,6 +13,8 @@ from src.memory.domain.events import new_memory_id
 
 @dataclass
 class SummarySnapshot:
+    """一条可追溯到事件区间的短期记忆摘要。"""
+
     """Versioned summary snapshot covering a range of raw events."""
 
     tenant_id: str
@@ -25,6 +33,8 @@ class SummarySnapshot:
     is_deleted: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化摘要快照，供调试、导出和 API 使用。"""
+
         return {
             "snapshot_id": self.snapshot_id,
             "tenant_id": self.tenant_id,

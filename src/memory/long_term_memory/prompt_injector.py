@@ -1,3 +1,9 @@
+"""长期记忆 prompt 注入器。
+
+按 query 和任务类型选择相关长期记忆，在 token 预算内渲染为模型可读的
+用户偏好、约束、背景和事实区块。
+"""
+
 from typing import Any, Dict, List, Optional, Set
 
 from src.core.logger import logger
@@ -21,6 +27,8 @@ from src.memory.long_term_memory.retrieval import (
 
 
 class PromptInjector:
+    """选择并格式化可注入 prompt 的长期记忆。"""
+
     def __init__(
         self,
         repository: LongTermMemoryRepository,
@@ -60,15 +68,21 @@ class PromptInjector:
         return int(chinese_chars * 1.5 + other_chars * 0.25)
 
     def classify_task_type(self, query: str) -> str:
+        """复用长期记忆检索器的任务类型分类。"""
+
         return self._retriever.classify_task_type(query)
 
     def compute_relevance(self, item: MemoryItem, query: str, task_type: str) -> float:
+        """计算单条记忆对 query 的相关性分数。"""
+
         score, _ = self._retriever.score(item, query, task_type)
         return score
 
     def select_memories(
         self, user_id: str, query: str, task_type: Optional[str] = None
     ) -> List[MemoryItem]:
+        """在数量和 token 预算内选择最相关的长期记忆。"""
+
         if not task_type:
             task_type = self.classify_task_type(query)
 
@@ -95,6 +109,8 @@ class PromptInjector:
         return selected
 
     def _format_single_memory(self, item: MemoryItem) -> str:
+        """把单条长期记忆格式化为一行 prompt 文本。"""
+
         type_labels = {
             MemoryType.PREFERENCE: "偏好",
             MemoryType.HABIT: "习惯",
@@ -109,6 +125,8 @@ class PromptInjector:
         return f"- [{label}] {item.key}: {value_str}"
 
     def format_for_prompt(self, user_id: str, query: str, task_type: Optional[str] = None) -> str:
+        """按类型分组渲染 query-aware 长期记忆上下文。"""
+
         memories = self.select_memories(user_id, query, task_type)
         if not memories:
             return "暂无用户偏好信息"
@@ -138,6 +156,8 @@ class PromptInjector:
         return "\n\n".join(parts) if parts else "暂无用户偏好信息"
 
     def _format_profile(self, profile: Dict[str, Any]) -> str:
+        """把完整用户画像投影渲染为 prompt 文本。"""
+
         parts = []
         if profile.get("preferences"):
             lines = [f"- {k}: {v}" for k, v in profile["preferences"].items()]
@@ -162,6 +182,8 @@ class PromptInjector:
         return "\n\n".join(parts)
 
     def _select_events_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> List[MemoryEvent]:
+        """选择兼容旧事件模型的高置信记忆事件。"""
+
         events = self._repo.get_active_events(user_id, limit=self.max_memories)
         return sorted(
             events,
@@ -170,12 +192,16 @@ class PromptInjector:
         )[: self.max_memories]
 
     def _format_events(self, events: List[MemoryEvent]) -> str:
+        """把旧版 memory_events 渲染为 prompt 附加区块。"""
+
         if not events:
             return ""
         lines = [f"- {event.event_type}.{event.key}: {event.value}" for event in events]
         return "【近期记忆事件】\n" + "\n".join(lines)
 
     def format_profile_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> str:
+        """渲染完整画像和旧版 active events，主要用于兼容路径。"""
+
         profile = self._projection.build(user_id)
         if not any(
             profile.get(key)

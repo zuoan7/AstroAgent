@@ -1,8 +1,7 @@
-"""ExecutionEvent — 统一执行事件模型。
+"""统一执行事件模型，承载路由、计划、工具调用、fallback 和最终答案事件。
 
-封装 router / policy / engine / executor 内部产生的结构化事件，
-作为 StreamingService 的上游协议。旧前端事件名继续保留，
-由适配层完成 ExecutionEvent -> StreamEvent 映射。
+router、policy、engine、executor 产生的结构化事件先统一为本模型，
+再由适配层映射为 StreamingService 和旧前端可消费的事件格式。
 """
 from __future__ import annotations
 
@@ -53,6 +52,7 @@ class ExecutionEvent:
         return FrontendExecutionEventAdapter.FRONTEND_EVENT_TYPE_MAP.get(self.type)
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "type": self.type,
             "payload": dict(self.payload),

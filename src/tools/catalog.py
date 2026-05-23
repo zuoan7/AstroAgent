@@ -1,3 +1,6 @@
+"""原子 MCP 工具目录，集中声明 Agent 工具层可识别的底层工具及参数名。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,6 +9,8 @@ from typing import Dict, Iterable, List, Optional
 
 @dataclass(frozen=True)
 class AtomicToolSpec:
+    """单个原子 MCP 工具的静态描述。"""
+
     name: str
     summary: str = ""
     param_names: List[str] = field(default_factory=list)
@@ -82,23 +87,28 @@ _ATOMIC_TOOL_SPECS: tuple[AtomicToolSpec, ...] = (
 
 
 class ToolCatalog:
-    """Static catalog for MCP atomic tools known to the agent layer."""
+    """Agent 工具层已知的原子 MCP 工具静态目录。"""
 
     def __init__(self, specs: Optional[Iterable[AtomicToolSpec]] = None) -> None:
+        """初始化工具目录，并按工具名建立索引。"""
         self._specs: Dict[str, AtomicToolSpec] = {
             spec.name: spec for spec in (specs or _ATOMIC_TOOL_SPECS)
         }
 
     def list_specs(self) -> List[AtomicToolSpec]:
+        """返回所有原子工具描述。"""
         return list(self._specs.values())
 
     def list_names(self) -> List[str]:
+        """返回所有原子工具名称。"""
         return list(self._specs.keys())
 
     def has_tool(self, name: str) -> bool:
+        """判断指定原子工具是否在目录中注册。"""
         return name in self._specs
 
     def get_tool(self, name: str) -> AtomicToolSpec:
+        """读取指定原子工具描述，不存在时抛出 KeyError。"""
         try:
             return self._specs[name]
         except KeyError as exc:
@@ -106,4 +116,5 @@ class ToolCatalog:
 
 
 def get_default_tool_catalog() -> ToolCatalog:
+    """构造默认原子工具目录。"""
     return ToolCatalog()

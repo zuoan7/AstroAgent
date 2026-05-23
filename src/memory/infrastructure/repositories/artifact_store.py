@@ -1,3 +1,9 @@
+"""短期记忆工具 artifact 仓储。
+
+工具原始输出保存在 tool_artifact 表中，EventStore 只保存摘要和 artifact_id，
+以控制 prompt 大小并保留完整调试材料。
+"""
+
 import hashlib
 import time
 from typing import Optional
@@ -15,6 +21,8 @@ class ArtifactStore(SQLiteRepository):
     """
 
     def initialize(self) -> None:
+        """创建工具 artifact 表和会话/哈希索引。"""
+
         with self._connect() as conn:
             conn.executescript(
                 """
@@ -105,6 +113,8 @@ class ArtifactStore(SQLiteRepository):
         return stored
 
     def get(self, artifact_id: str, include_deleted: bool = False) -> Optional[ToolArtifact]:
+        """读取 artifact 元数据，不返回 raw_content。"""
+
         self.initialize()
         condition = "" if include_deleted else " AND is_deleted = 0"
         with self._connect() as conn:
@@ -121,6 +131,8 @@ class ArtifactStore(SQLiteRepository):
         return self._artifact_from_row(row) if row else None
 
     def get_content(self, artifact_id: str, include_deleted: bool = False) -> Optional[str]:
+        """读取 artifact 原始内容。"""
+
         self.initialize()
         condition = "" if include_deleted else " AND is_deleted = 0"
         with self._connect() as conn:
@@ -131,18 +143,24 @@ class ArtifactStore(SQLiteRepository):
         return row["raw_content"] if row else None
 
     def mark_deleted(self, artifact_id: str) -> bool:
+        """按 artifact_id tombstone 标记原始输出。"""
+
         self.initialize()
         with self._connect() as conn:
             cursor = conn.execute("UPDATE tool_artifact SET is_deleted = 1 WHERE artifact_id = ?", (artifact_id,))
         return cursor.rowcount > 0
 
     def mark_deleted_by_session(self, session_id: str) -> int:
+        """按会话 tombstone 标记所有 artifact。"""
+
         self.initialize()
         with self._connect() as conn:
             cursor = conn.execute("UPDATE tool_artifact SET is_deleted = 1 WHERE session_id = ?", (session_id,))
         return cursor.rowcount
 
     def mark_deleted_by_tool_call(self, session_id: str, tool_call_id: str) -> int:
+        """按工具调用 tombstone 标记对应 artifact。"""
+
         self.initialize()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -152,6 +170,8 @@ class ArtifactStore(SQLiteRepository):
         return cursor.rowcount
 
     def _artifact_from_row(self, row) -> ToolArtifact:
+        """把 SQLite Row 反序列化为 artifact 元数据对象。"""
+
         return ToolArtifact(
             artifact_id=row["artifact_id"],
             tenant_id=row["tenant_id"],

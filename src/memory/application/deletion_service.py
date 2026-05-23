@@ -1,3 +1,9 @@
+"""短期记忆删除编排。
+
+通过 tombstone 标记事件、artifact、任务状态和摘要快照，保留删除审计事件，
+避免物理删除破坏事件溯源链路。
+"""
+
 import time
 from typing import Any, Dict, Optional
 
@@ -75,6 +81,8 @@ class DeletionService:
         selector: Dict[str, Any],
         requested_by: Optional[str],
     ) -> Dict[str, Any]:
+        """按删除 scope 标记相关记录，并追加 memory_deleted 审计事件。"""
+
         session_id = selector.get("session_id")
         if not session_id:
             raise ValueError("selector.session_id is required")
@@ -167,6 +175,8 @@ class DeletionService:
         return result
 
     def _target_id(self, scope: str, selector: Dict[str, Any]) -> Optional[str]:
+        """从不同删除 selector 中提取最适合审计展示的目标 id。"""
+
         return (
             selector.get("message_id")
             or selector.get("tool_call_id")

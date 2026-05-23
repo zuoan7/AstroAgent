@@ -1,3 +1,9 @@
+"""记忆系统配置适配层。
+
+本文件把全局 settings 中的短期/长期记忆参数收敛为稳定的数据结构，
+供服务初始化和测试覆盖使用，避免业务代码直接散落读取环境配置。
+"""
+
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
 
@@ -38,6 +44,8 @@ class LongTermMemoryConfig:
 
 
 def get_short_term_memory_config() -> ShortTermMemoryConfig:
+    """读取短期记忆配置，包含上下文预算、摘要阈值和任务状态开关。"""
+
     return ShortTermMemoryConfig(
         default_user_id=settings.DEFAULT_USER_ID,
         memory_size=settings.MEMORY_SIZE,
@@ -59,6 +67,8 @@ def get_short_term_memory_config() -> ShortTermMemoryConfig:
 def get_long_term_memory_config(
     db_path: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None
 ) -> LongTermMemoryConfig:
+    """读取长期记忆配置，并允许测试或调用方覆盖部分字段。"""
+
     config = LongTermMemoryConfig(
         db_path=db_path or settings.LONG_TERM_MEMORY_PATH,
         default_confidence=0.5,

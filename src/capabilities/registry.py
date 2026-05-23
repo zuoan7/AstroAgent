@@ -1,3 +1,6 @@
+"""能力注册表，合并高层技能和底层原子 MCP 工具的可执行能力视图。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -12,6 +15,8 @@ CapabilitySpecKind = Literal["skill", "tool"]
 
 @dataclass(frozen=True)
 class CapabilitySpec:
+    """Agent 可执行能力的统一描述，可表示高层技能或原子工具。"""
+
     name: str
     kind: CapabilitySpecKind
     summary: str
@@ -51,45 +56,55 @@ _REQUIRED_PARAMS: Dict[str, List[str]] = {
 
 
 class CapabilityRegistry:
-    """Read model that joins high-level skills with MCP atomic tools."""
+    """连接高层技能和 MCP 原子工具的只读能力注册表。"""
 
     def __init__(self, tool_catalog: Optional[ToolCatalog] = None) -> None:
+        """初始化工具目录，并构建技能能力和工具能力索引。"""
         self._tool_catalog = tool_catalog or get_default_tool_catalog()
         self._skill_specs = self._build_skill_specs()
         self._tool_specs = self._build_tool_specs()
 
     @property
     def tool_catalog(self) -> ToolCatalog:
+        """返回底层原子工具目录。"""
         return self._tool_catalog
 
     def list_skills(self) -> List[CapabilitySpec]:
+        """列出所有高层技能能力。"""
         return list(self._skill_specs.values())
 
     def list_tools(self) -> List[CapabilitySpec]:
+        """列出所有原子工具能力。"""
         return list(self._tool_specs.values())
 
     def list_all(self) -> List[CapabilitySpec]:
+        """列出所有高层技能和原子工具能力。"""
         return [*self.list_skills(), *self.list_tools()]
 
     def has_skill(self, name: str) -> bool:
+        """判断指定高层技能能力是否存在。"""
         return name in self._skill_specs
 
     def has_tool(self, name: str) -> bool:
+        """判断指定原子工具能力是否存在。"""
         return name in self._tool_specs
 
     def get_skill(self, name: str) -> CapabilitySpec:
+        """读取指定高层技能能力描述。"""
         try:
             return self._skill_specs[name]
         except KeyError as exc:
             raise KeyError(f"Unknown skill capability: {name}") from exc
 
     def get_tool(self, name: str) -> CapabilitySpec:
+        """读取指定原子工具能力描述。"""
         try:
             return self._tool_specs[name]
         except KeyError as exc:
             raise KeyError(f"Unknown tool capability: {name}") from exc
 
     def get(self, name: str, *, kind: Optional[CapabilitySpecKind] = None) -> CapabilitySpec:
+        """按名称和可选类型读取能力描述。"""
         if kind == "skill":
             return self.get_skill(name)
         if kind == "tool":
@@ -99,6 +114,7 @@ class CapabilityRegistry:
         return self.get_tool(name)
 
     def _build_skill_specs(self) -> Dict[str, CapabilitySpec]:
+        """从技能注册表和 operation 策略构建高层技能能力描述。"""
         specs: Dict[str, CapabilitySpec] = {}
         operation_specs = skill_registry.get_operation_specs()
         operations_by_skill: Dict[str, List[str]] = {}
@@ -141,6 +157,7 @@ class CapabilityRegistry:
         return specs
 
     def _build_tool_specs(self) -> Dict[str, CapabilitySpec]:
+        """从原子工具目录构建工具能力描述。"""
         return {
             tool.name: CapabilitySpec(
                 name=tool.name,
@@ -154,8 +171,10 @@ class CapabilityRegistry:
 
 
 def get_default_capability_registry() -> CapabilityRegistry:
+    """构造默认能力注册表。"""
     return CapabilityRegistry()
 
 
 def capability_names(specs: Iterable[CapabilitySpec]) -> List[str]:
+    """从能力描述列表中提取能力名称。"""
     return [spec.name for spec in specs]

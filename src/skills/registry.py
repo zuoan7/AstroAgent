@@ -1,3 +1,6 @@
+"""技能注册表，声明高层技能、LangChain 工具名、参数和 operation 子工具策略。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,6 +12,8 @@ RouteType = Literal["simple", "handler"]
 
 @dataclass(frozen=True)
 class SkillSpec:
+    """高层技能的静态定义。"""
+
     skill_name: str
     langchain_tool_name: str
     summary: str
@@ -24,6 +29,8 @@ class SkillSpec:
 
 @dataclass(frozen=True)
 class OperationSpec:
+    """高层技能 operation 与底层原子工具之间的策略定义。"""
+
     logical_skill: str
     operation: str
     atomic_tool_name: str
@@ -253,10 +260,12 @@ _OPERATION_SPECS: tuple[OperationSpec, ...] = (
 
 
 def get_skill_specs() -> List[SkillSpec]:
+    """返回所有高层技能定义。"""
     return list(_ASTRONOMY_SKILL_SPECS)
 
 
 def get_skill_spec(skill_name: str) -> SkillSpec:
+    """按技能名读取单个技能定义。"""
     for spec in get_skill_specs():
         if spec.skill_name == skill_name:
             return spec
@@ -264,10 +273,12 @@ def get_skill_spec(skill_name: str) -> SkillSpec:
 
 
 def get_operation_specs() -> List[OperationSpec]:
+    """返回所有 operation 子工具策略定义。"""
     return list(_OPERATION_SPECS)
 
 
 def get_operation_spec(logical_skill: str, operation: str) -> OperationSpec:
+    """按高层技能和 operation 读取子工具策略定义。"""
     for spec in get_operation_specs():
         if spec.logical_skill == logical_skill and spec.operation == operation:
             return spec
@@ -275,14 +286,17 @@ def get_operation_spec(logical_skill: str, operation: str) -> OperationSpec:
 
 
 def list_operations_for_skill(logical_skill: str) -> List[OperationSpec]:
+    """列出指定高层技能支持的所有 operation。"""
     return [spec for spec in get_operation_specs() if spec.logical_skill == logical_skill]
 
 
 def list_skill_descriptions() -> Dict[str, str]:
+    """返回技能名到摘要文案的映射。"""
     return {spec.skill_name: spec.summary for spec in get_skill_specs()}
 
 
 def list_langchain_tool_names() -> List[str]:
+    """返回注册给 LangChain ReAct Agent 的工具名列表。"""
     return [spec.langchain_tool_name for spec in get_skill_specs()]
 
 
@@ -290,6 +304,7 @@ def validate_skill_registry(
     specs: Optional[Sequence[SkillSpec]] = None,
     handler_names: Optional[Set[str]] = None,
 ) -> None:
+    """校验技能注册表、handler 注册关系和工具名唯一性。"""
     specs = list(specs or get_skill_specs())
 
     seen_skill_names: Set[str] = set()

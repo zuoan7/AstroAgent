@@ -1,3 +1,9 @@
+"""长期记忆服务 facade。
+
+长期记忆负责把明确的用户画像信号提取为候选记忆，经置信度、确认和提升
+流程落入正式记忆，再重建用户画像投影并注入 prompt。
+"""
+
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
 from typing import Any, Dict, List, Optional, Set
@@ -43,6 +49,8 @@ class LongTermMemoryService:
     def __init__(
         self, db_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None
     ):
+        """初始化长期记忆仓储、质量控制、候选、投影和后台抽取线程池。"""
+
         self.config = get_long_term_memory_config(
             db_path=db_path,
             overrides=config,
@@ -97,6 +105,8 @@ class LongTermMemoryService:
         priority: int = 0,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[MemoryItem]:
+        """直接写入或更新一条正式长期记忆，并同步画像投影。"""
+
         resolved_confidence = confidence
         if resolved_confidence is None:
             resolved_confidence = self.quality.confidence_scorer.initial_confidence(
@@ -149,6 +159,8 @@ class LongTermMemoryService:
         source_content_snippet: Optional[str],
         metadata: Optional[Dict[str, Any]],
     ) -> MemoryItem:
+        """合并同 user/type/key 的已有记忆，保留版本和事件日志。"""
+
         if existing.value != value:
             self._save_version(existing, "value_update")
             old_value = existing.value
@@ -180,6 +192,8 @@ class LongTermMemoryService:
         return existing
 
     def _save_version(self, item: MemoryItem, reason: str):
+        """保存记忆当前值的版本快照，用于回滚和审计。"""
+
         versions = self.repository.get_versions(item.id, limit=1)
         next_version = (versions[0].version + 1) if versions else 1
         self.repository.add_version(
@@ -193,6 +207,8 @@ class LongTermMemoryService:
         user_id: str,
         conversation_id: Optional[str] = None,
     ) -> List[MemoryItem]:
+        """同步抽取用户画像信息，并按候选提升规则写入长期记忆。"""
+
         if not self.extractor.should_attempt_extraction(user_message):
             return []
         extracted = self.extractor.extract_from_conversation(
@@ -209,6 +225,8 @@ class LongTermMemoryService:
         user_id: str,
         conversation_id: Optional[str] = None,
     ) -> Optional[Future]:
+        """后台执行长期记忆抽取，避免主回答链路被 LLM 抽取阻塞。"""
+
         # Main flow only performs lightweight gating. Real extraction/storage runs
         # in a background worker and failures are logged without affecting replies.
         if not self.extractor.should_attempt_extraction(user_message):
@@ -242,6 +260,8 @@ class LongTermMemoryService:
         extracted_items: List[ExtractionResult],
         conversation_id: Optional[str] = None,
     ) -> List[MemoryItem]:
+        """把抽取结果交给候选管理器处理，返回本次提升为正式记忆的条目。"""
+
         promoted: List[MemoryItem] = []
         for item in extracted_items:
             if not item.should_extract or item.is_temporary:
@@ -270,6 +290,8 @@ class LongTermMemoryService:
     def upsert_profile(
         self, user_id: str, profile_data: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """兼容旧画像格式，把 profile_data 拆成正式记忆后重建画像。"""
+
         for key, value in (profile_data.get("preferences") or {}).items():
             self.add_memory(
                 user_id=user_id,
@@ -339,6 +361,8 @@ class LongTermMemoryService:
         return self.rebuild_profile(user_id)
 
     def get_memory(self, memory_id: str) -> Optional[MemoryItem]:
+        """读取单条长期记忆，并记录访问日志和访问次数。"""
+
         item = self.repository.get_memory(memory_id)
         if item:
             self.repository.increment_access_count(memory_id)
@@ -356,6 +380,8 @@ class LongTermMemoryService:
         confirmed_by_user: Optional[bool] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[MemoryItem]:
+        """手动更新长期记忆字段，必要时保存版本并重建画像。"""
+
         item = self.repository.get_memory(memory_id)
         if not item or item.user_id != user_id:
             return None
@@ -384,6 +410,8 @@ class LongTermMemoryService:
         return item
 
     def delete_memory(self, memory_id: str, user_id: str, reason: str = "") -> bool:
+        """按 memory_id tombstone 删除一条长期记忆。"""
+
         result = self.delete(
             LongTermMemoryDeletionRequest(
                 user_id=user_id, scope="memory", target_id=memory_id, reason=reason
@@ -392,6 +420,8 @@ class LongTermMemoryService:
         return result.deleted_memories > 0
 
     def delete_profile(self, user_id: str, reason: str = "") -> bool:
+        """删除用户画像投影，但不直接删除正式记忆。"""
+
         result = self.delete(
             LongTermMemoryDeletionRequest(
                 user_id=user_id, scope="profile", reason=reason
@@ -402,15 +432,23 @@ class LongTermMemoryService:
     def delete(
         self, request: LongTermMemoryDeletionRequest
     ) -> LongTermMemoryDeletionResult:
+        """执行长期记忆删除请求并返回审计结果。"""
+
         return self.deletion.delete(request)
 
     def query_memories(self, query: MemoryQuery) -> List[MemoryItem]:
+        """按 MemoryQuery 查询长期记忆列表。"""
+
         return self.repository.query_memories(query)
 
     def count_memories(self, query: MemoryQuery) -> int:
+        """按 MemoryQuery 统计长期记忆数量。"""
+
         return self.repository.count_memories(query)
 
     def promote_candidate(self, candidate_id: str) -> Optional[MemoryItem]:
+        """强制把候选记忆提升为正式记忆，并重建画像。"""
+
         item = self.candidates.promote_candidate(candidate_id, force=True)
         if item:
             self._save_version(item, "candidate_promoted")
@@ -418,6 +456,8 @@ class LongTermMemoryService:
         return item
 
     def promote_all_eligible(self, user_id: str) -> List[MemoryItem]:
+        """批量提升达到阈值的低风险候选记忆。"""
+
         items = self.candidates.promote_all_eligible(user_id)
         for item in items:
             self._save_version(item, "candidate_promoted")
@@ -426,14 +466,20 @@ class LongTermMemoryService:
         return items
 
     def rebuild_profile(self, user_id: str) -> Dict[str, Any]:
+        """从 active memories 重建用户画像投影。"""
+
         return self.projection.rebuild(user_id)
 
     def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """读取画像投影；缺失时如果存在 active memories 则自动重建。"""
+
         return self.projection.load_or_rebuild(user_id)
 
     def render_profile_prompt(
         self, user_id: str, task_type: Optional[str] = None
     ) -> str:
+        """渲染完整画像 prompt 区块，主要兼容旧调用方。"""
+
         return self.prompt_injector.format_profile_for_prompt(
             user_id, task_type=task_type
         )
@@ -441,6 +487,8 @@ class LongTermMemoryService:
     def build_prompt_context(
         self, user_id: str, query: str, task_type: Optional[str] = None
     ) -> str:
+        """按 query 选择相关长期记忆并渲染为 prompt 上下文。"""
+
         return self.prompt_injector.format_for_prompt(
             user_id, query, task_type=task_type
         )
@@ -448,6 +496,8 @@ class LongTermMemoryService:
     def explain_retrieval_hits(
         self, user_id: str, query: str, task_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        """返回长期记忆命中及打分原因，供前端和调试面板展示。"""
+
         resolved_task_type = task_type or self.prompt_injector.classify_task_type(query)
         hits = []
         for item in self.prompt_injector.select_memories(
@@ -484,6 +534,8 @@ class LongTermMemoryService:
         status: str = "candidate",
         metadata: Optional[Dict[str, Any]] = None,
     ):
+        """兼容旧 memory_event 格式的记录入口。"""
+
         event = MemoryEvent(
             user_id=user_id,
             event_type=event_type,
@@ -522,6 +574,8 @@ class LongTermMemoryService:
     def restore_version(
         self, memory_id: str, version: int, user_id: str
     ) -> Optional[MemoryItem]:
+        """把一条长期记忆恢复到指定历史版本。"""
+
         item = self.repository.get_memory(memory_id)
         if not item or item.user_id != user_id:
             return None
@@ -575,11 +629,15 @@ class LongTermMemoryService:
         offset: int = 0,
         status: Optional[str] = None,
     ) -> List[MemoryCandidate]:
+        """列出用户候选记忆，可按候选状态过滤。"""
+
         return self.candidates.list_candidates(
             user_id, limit=limit, offset=offset, status=status
         )
 
     def reject_candidate(self, candidate_id: str, reason: str = "") -> bool:
+        """拒绝候选记忆并写入事件日志。"""
+
         return self.candidates.reject_candidate(candidate_id, reason)
 
     def list_pending_confirmations(
@@ -598,6 +656,8 @@ class LongTermMemoryService:
         return self.confirmations.batch_confirm(user_id, confirmation_ids, status)
 
     def run_maintenance(self, user_id: str) -> Dict[str, int]:
+        """执行长期记忆维护：过期、归档、候选提升、画像重建和自动备份。"""
+
         expired = self.repository.expire_old_memories(user_id, _utcnow_iso())
         archived = self.repository.archive_unused_memories(user_id)
         promoted = self.promote_all_eligible(user_id)
@@ -659,9 +719,13 @@ class LongTermMemoryService:
             }
 
     def get_stats(self, user_id: str) -> Dict[str, Any]:
+        """返回长期记忆统计信息。"""
+
         return self.repository.get_memory_stats(user_id)
 
     def export_profile_snapshot(self, user_id: str) -> Dict[str, Any]:
+        """导出画像、active 记忆数量和统计信息的快照。"""
+
         profile = self.repository.load_profile(user_id)
         if not profile:
             return {}
@@ -676,10 +740,16 @@ class LongTermMemoryService:
         }
 
     def create_backup(self, tag: Optional[str] = None) -> Optional[str]:
+        """创建长期记忆数据库备份。"""
+
         return self.backups.create_backup(tag)
 
     def list_backups(self) -> List[dict]:
+        """列出长期记忆数据库备份文件。"""
+
         return self.backups.list_backups()
 
     def restore_from_backup(self, backup_path: str) -> bool:
+        """从指定备份恢复长期记忆数据库。"""
+
         return self.backups.restore_from_backup(backup_path)

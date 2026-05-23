@@ -1,3 +1,9 @@
+"""短期记忆 artifact 领域模型。
+
+工具原始输出不直接注入 prompt，而是以 artifact 形式保存；prompt 侧只使用
+摘要字段，需要排查时再按 artifact_id 读取原文。
+"""
+
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
@@ -27,6 +33,8 @@ class ToolArtifact:
     is_deleted: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化 artifact 元数据，不包含原始内容。"""
+
         return {
             "artifact_id": self.artifact_id,
             "tenant_id": self.tenant_id,

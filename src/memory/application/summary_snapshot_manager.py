@@ -1,3 +1,9 @@
+"""summary snapshot 投影管理器。
+
+摘要快照是短期记忆事件流的可重建投影，用于在 prompt 预算有限时保留
+早期上下文摘要，同时用 superseded_by 记录工作快照演进。
+"""
+
 from typing import Optional, Sequence
 
 from src.memory.domain.events import MemoryEvent, MemoryEventType

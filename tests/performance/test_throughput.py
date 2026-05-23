@@ -449,10 +449,11 @@ class TestConcurrentUserSimulation:
 
         errors = []
         results = []
+        memories = [LongTermMemory(db_path=temp_db_path) for _ in range(20)]
 
         def write_user(user_id):
             try:
-                memory = LongTermMemory(db_path=temp_db_path)
+                memory = memories[user_id]
                 memory.upsert_profile(
                     f"user_{user_id}",
                     {
@@ -477,6 +478,7 @@ class TestConcurrentUserSimulation:
             t.join(timeout=10)
 
         assert len(errors) == 0, f"并发写入错误: {errors}"
+        assert len(results) == 20
         assert all(results), "部分用户画像未成功写入"
 
     def test_concurrent_memory_service(self):

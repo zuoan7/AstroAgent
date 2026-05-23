@@ -1,3 +1,9 @@
+"""长期记忆事件日志与确认管理。
+
+事件日志用于审计正式记忆、候选、冲突、确认、备份等生命周期动作；
+确认管理器负责创建和解决人工确认请求。
+"""
+
 from typing import Any, Dict, List, Optional
 
 from src.core.logger import logger
@@ -12,6 +18,8 @@ from src.memory.long_term_memory.repository import LongTermMemoryRepository
 
 
 class EventLogger:
+    """向 memory_event_log 写入长期记忆生命周期事件。"""
+
     def __init__(self, repository: LongTermMemoryRepository):
         self._repo = repository
 
@@ -25,6 +33,8 @@ class EventLogger:
         new_value: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> int:
+        """写入通用事件日志并返回日志 id。"""
+
         entry = EventLogEntry(
             user_id=user_id,
             memory_id=memory_id,
@@ -133,6 +143,8 @@ class EventLogger:
     def get_event_logs(
         self, user_id: str, memory_id: Optional[str] = None, limit: int = 50, offset: int = 0
     ) -> List[EventLogEntry]:
+        """读取用户事件日志，可限定到单条记忆。"""
+
         return self._repo.get_event_logs(user_id, memory_id=memory_id, limit=limit, offset=offset)
 
     def get_memory_trace(self, user_id: str, memory_id: str) -> List[EventLogEntry]:
@@ -140,6 +152,8 @@ class EventLogger:
 
 
 class ConfirmationManager:
+    """管理长期记忆人工确认请求。"""
+
     def __init__(self, repository: LongTermMemoryRepository, event_logger: EventLogger):
         self._repo = repository
         self._event_logger = event_logger
@@ -151,6 +165,8 @@ class ConfirmationManager:
         confirmation_type: str,
         content: str,
     ) -> MemoryConfirmation:
+        """创建一条待用户确认的记忆请求。"""
+
         confirmation = MemoryConfirmation(
             user_id=user_id,
             memory_id=memory_id,
@@ -170,6 +186,8 @@ class ConfirmationManager:
     def resolve_confirmation(
         self, confirmation_id: str, status: str
     ) -> Optional[MemoryConfirmation]:
+        """解决确认请求并写入确认结果事件。"""
+
         confirmation = self._repo.get_confirmation(confirmation_id)
         if not confirmation:
             return None

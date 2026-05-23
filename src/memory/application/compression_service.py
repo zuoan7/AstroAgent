@@ -1,3 +1,9 @@
+"""短期记忆压缩工具。
+
+负责把大型工具输出压成 prompt 友好的摘要，并把事件批次压缩成可重建的
+summary snapshot。当前实现是确定性的规则摘要，便于测试和回归比较。
+"""
+
 import json
 from typing import Any, Iterable, Sequence
 
@@ -68,6 +74,8 @@ class CompressionService:
         )
 
     def summarize_events(self, events: Iterable[MemoryEvent]) -> str:
+        """把消息、工具调用和任务状态事件拼成短摘要文本。"""
+
         lines: list[str] = []
         for event in events:
             payload: dict[str, Any] = event.payload or {}
@@ -87,6 +95,8 @@ class CompressionService:
         return self._truncate("\n".join(line for line in lines if line.strip()), self.max_summary_chars)
 
     def _digest_json(self, payload: Any) -> str:
+        """为 JSON 工具输出生成字段级摘要，避免把完整结构塞进 prompt。"""
+
         if isinstance(payload, dict):
             keys = list(payload.keys())
             parts = [f"json fields={','.join(keys[:8]) or 'none'}"]
@@ -98,12 +108,16 @@ class CompressionService:
         return str(payload)
 
     def _estimate_quality(self, summary_text: str, events: Sequence[MemoryEvent]) -> float:
+        """用摘要长度相对事件数量粗略估计快照覆盖质量。"""
+
         if not events:
             return 0.0
         coverage = min(len(summary_text) / max(len(events) * 80, 1), 1.0)
         return round(max(0.2, coverage), 2)
 
     def _truncate(self, text: str, max_chars: int) -> str:
+        """按字符数截断文本，并在空间足够时追加省略号。"""
+
         if len(text) <= max_chars:
             return text
         if max_chars <= 3:

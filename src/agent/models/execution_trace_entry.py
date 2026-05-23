@@ -1,13 +1,7 @@
-"""ExecutionTraceEntry — 统一执行 trace 模型（Phase 7 引入）。
+"""统一执行 trace 模型，把 direct、planned、react 的步骤结果标准化。
 
-三种执行路径（direct / planned / react）的步骤执行结果统一表示。
-设计原则：与 StepExecutionResult 结构保持 1:1 映射，同时可从旧 dict（FinalResponse.execution_trace）
-         无损恢复，实现与旧数据格式的双向兼容。
-
-当前状态：StepExecutionResult 新增 to_trace_entry()；FinalResponse.execution_trace 仍为 list[dict]，
-          不做 breaking change。
-收敛计划：Phase 8 可将 FinalResponse.execution_trace 类型升级为 List[ExecutionTraceEntry]，
-          届时删除 from_dict 中的兼容性注释。
+该结构与 StepExecutionResult 保持字段对齐，同时支持从旧 dict trace 无损恢复；
+FinalResponse.execution_trace 仍保持 list[dict] 以避免 breaking change。
 """
 
 from __future__ import annotations
@@ -50,6 +44,7 @@ class ExecutionTraceEntry:
     duration_sec: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "step_id": self.step_id,
             "title": self.title,

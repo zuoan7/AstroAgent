@@ -1,3 +1,9 @@
+"""长期记忆数据库备份管理。
+
+BackupManager 负责创建、列出、清理和恢复 SQLite 备份，并把备份动作写入
+长期记忆事件日志。
+"""
+
 import os
 import time
 from datetime import datetime
@@ -9,6 +15,8 @@ from src.memory.long_term_memory.repository import LongTermMemoryRepository
 
 
 class BackupManager:
+    """管理长期记忆 SQLite 数据库备份文件。"""
+
     BACKUP_DIR_NAME = "backups"
     MAX_BACKUPS = 10
 
@@ -33,12 +41,16 @@ class BackupManager:
         self._last_backup_time = 0.0
 
     def _generate_backup_path(self, tag: Optional[str] = None) -> str:
+        """按时间戳和可选 tag 生成备份文件路径。"""
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         tag_suffix = f"_{tag}" if tag else ""
         filename = f"ltm_backup_{timestamp}{tag_suffix}.sqlite"
         return os.path.join(self.backup_dir, filename)
 
     def create_backup(self, tag: Optional[str] = None) -> Optional[str]:
+        """创建数据库备份，成功后清理超出保留数量的旧备份。"""
+
         backup_path = self._generate_backup_path(tag)
         success = self._repo.backup_database(backup_path)
         if success:
@@ -55,6 +67,8 @@ class BackupManager:
         return None
 
     def restore_from_backup(self, backup_path: str) -> bool:
+        """恢复前先创建安全备份，然后用指定备份覆盖数据库。"""
+
         if not os.path.exists(backup_path):
             logger.error(f"备份文件不存在: {backup_path}")
             return False
@@ -75,6 +89,8 @@ class BackupManager:
         return success
 
     def list_backups(self) -> List[dict]:
+        """列出备份目录下的长期记忆备份文件及元数据。"""
+
         backups = []
         if not os.path.exists(self.backup_dir):
             return backups
@@ -95,6 +111,8 @@ class BackupManager:
         return backups
 
     def delete_backup(self, backup_path: str) -> bool:
+        """删除指定备份文件。"""
+
         try:
             if os.path.exists(backup_path):
                 os.remove(backup_path)
@@ -106,12 +124,16 @@ class BackupManager:
             return False
 
     def _cleanup_old_backups(self):
+        """保留最新 max_backups 个备份，删除更旧文件。"""
+
         backups = self.list_backups()
         while len(backups) > self.max_backups:
             oldest = backups.pop()
             self.delete_backup(oldest["path"])
 
     def maybe_auto_backup(self) -> Optional[str]:
+        """达到自动备份间隔时创建 auto 备份。"""
+
         now = time.time()
         interval_seconds = self.auto_backup_interval_hours * 3600
         if now - self._last_backup_time >= interval_seconds:

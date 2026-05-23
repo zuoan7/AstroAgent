@@ -1,3 +1,6 @@
+"""能力选择结果模型，描述执行器下一步应调用的高层技能、原子工具或无需能力。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -29,6 +32,7 @@ class CapabilityDecision:
 
     @classmethod
     def none(cls, *, reason: str = "", confidence: float = 0.0) -> "CapabilityDecision":
+        """构造无需额外技能或工具的能力选择结果。"""
         return cls(kind="none", reason=reason, confidence=confidence)
 
     @classmethod
@@ -44,6 +48,7 @@ class CapabilityDecision:
         operation: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> "CapabilityDecision":
+        """构造指向高层技能的能力选择结果。"""
         return cls(
             kind="skill",
             name=name,
@@ -66,6 +71,7 @@ class CapabilityDecision:
         required_params: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> "CapabilityDecision":
+        """构造指向原子工具的能力选择结果。"""
         return cls(
             kind="tool",
             name=name,
@@ -77,6 +83,7 @@ class CapabilityDecision:
         )
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "kind": self.kind,
             "name": self.name,

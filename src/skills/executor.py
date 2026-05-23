@@ -1,3 +1,6 @@
+"""高层技能执行器，统一处理 simple skill、复杂 handler 和原子工具 fallback。
+"""
+
 from __future__ import annotations
 
 import json
@@ -13,15 +16,19 @@ from src.tools.runtime import ToolRuntime
 
 
 class _CallableToolBackend:
+    """把普通 call_tool 函数包装成 ToolRuntime 可用的后端对象。"""
+
     def __init__(self, call_tool: Callable[..., str]) -> None:
+        """保存底层同步工具调用函数。"""
         self._call_tool = call_tool
 
     def call_tool(self, tool_name: str, **kwargs: Any) -> str:
+        """转发同步原子工具调用。"""
         return self._call_tool(tool_name, **kwargs)
 
 
 class SkillExecutor:
-    """Executes high-level skills while preserving the legacy call contract."""
+    """执行高层技能，同时保持旧版调用契约。"""
 
     def __init__(
         self,
@@ -31,6 +38,7 @@ class SkillExecutor:
         capability_registry: Optional[CapabilityRegistry] = None,
         simple_tool_caller: Optional[Callable[..., str]] = None,
     ) -> None:
+        """初始化工具运行时、handler、能力注册表和 simple skill 映射。"""
         self._tool_runtime = tool_runtime
         self._handlers = dict(handlers)
         self._capabilities = capability_registry or get_default_capability_registry()
@@ -40,6 +48,7 @@ class SkillExecutor:
         self._register_registry_simple_skills()
 
     def call(self, name: str, **params: Any) -> SkillResult:
+        """调用指定高层技能、原子工具或对应 handler。"""
         try:
             spec = registry.get_skill_spec(name)
         except KeyError:
@@ -73,12 +82,14 @@ class SkillExecutor:
         tool_name: str,
         param_mapping: Optional[Dict[str, str]] = None,
     ) -> None:
+        """注册一个直接映射到底层 MCP 工具的 simple skill。"""
         self._simple_skills[skill_name] = {
             "tool_name": tool_name,
             "param_mapping": param_mapping or {},
         }
 
     def _register_registry_simple_skills(self) -> None:
+        """从技能注册表自动注册 route_type=simple 的技能。"""
         for spec in registry.get_skill_specs():
             if spec.route_type != "simple" or not spec.mcp_tool_name:
                 continue
@@ -89,6 +100,7 @@ class SkillExecutor:
             )
 
     def _call_simple_skill(self, name: str, **params: Any) -> SkillResult:
+        """调用已注册的 simple skill。"""
         cfg = self._simple_skills[name]
         return self._call_atomic_tool(
             name,
@@ -105,6 +117,7 @@ class SkillExecutor:
         param_mapping: Optional[Dict[str, str]] = None,
         **params: Any,
     ) -> SkillResult:
+        """调用原子 MCP 工具并包装成 SkillResult。"""
         started = time.perf_counter()
         resolved_tool_name = tool_name or name
         mapping: Dict[str, str] = dict(param_mapping or {})
@@ -194,6 +207,7 @@ class SkillExecutor:
         simple: bool = False,
         operation_policy: Optional[OperationToolPolicy] = None,
     ) -> ToolRuntime:
+        """为指定技能构造带允许工具策略的 ToolRuntime。"""
         spec = self._capabilities.get_skill(skill_name)
         runtime = self._tool_runtime
         if simple and self._simple_tool_caller is not None:
@@ -221,6 +235,7 @@ class SkillExecutor:
         name: str,
         params: Dict[str, Any],
     ) -> Dict[str, Any]:
+        """按技能注册表的参数列表、默认值和特殊处理规范化参数。"""
         spec = registry.get_skill_spec(name)
         normalized: Dict[str, Any] = dict(spec.defaults or {})
         candidate = dict(params or {})
@@ -242,6 +257,7 @@ class SkillExecutor:
 
     @staticmethod
     def _attach_default_metadata(result: SkillResult, skill_name: str) -> None:
+        """为 handler 返回结果补齐默认 logical_skill。"""
         if result.logical_skill is None:
             result.logical_skill = skill_name
 
@@ -250,6 +266,7 @@ class SkillExecutor:
         result: SkillResult,
         operation_policy: Optional[OperationToolPolicy],
     ) -> None:
+        """把 operation 级工具策略写入 SkillResult 的审计字段。"""
         if operation_policy is None:
             return
         if result.operation is None:

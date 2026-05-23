@@ -1,7 +1,4 @@
-"""WorkflowExecutor — native DAG executor for planned tasks.
-
-Executes ready WorkflowGraph nodes concurrently while respecting dependencies,
-step retry policy, failure strategy, and evidence aggregation.
+"""WorkflowGraph DAG 执行器，按依赖关系并发执行节点，并处理重试、跳过、失败策略和证据聚合。
 """
 
 from __future__ import annotations
@@ -27,9 +24,10 @@ from src.agent.policies.budget_policy import RequestBudgetTracker
 
 
 class WorkflowExecutor:
-    """Execute WorkflowGraph nodes as a dependency-aware DAG."""
+    """按依赖关系执行 WorkflowGraph 节点的 DAG 执行器。"""
 
     def __init__(self, skill_manager: Any) -> None:
+        """初始化 WorkflowExecutor 的依赖、配置和内部状态。"""
         self._skill_manager = skill_manager
 
     async def execute(
@@ -42,11 +40,10 @@ class WorkflowExecutor:
         event_callback: Optional[EventCallback] = None,
         budget_tracker: Optional[RequestBudgetTracker] = None,
     ) -> ExecutionOutcome:
-        """Execute a DAG with bounded concurrency.
+        """在受控并发下执行 DAG。
 
-        `plan` remains a compatibility view and carries step-level policy
-        (`retry_policy`, `required`, `fallback_strategy`, `evidence_key`) for
-        graph nodes that originated from PlanStep.
+        plan 仍作为兼容视图存在，用来承载来自 PlanStep 的步骤级策略，
+        包括 retry_policy、required、fallback_strategy 和 evidence_key。
         """
         outcome = ExecutionOutcome(plan=plan)
         evidence = EvidenceAggregator()
@@ -207,6 +204,7 @@ class WorkflowExecutor:
 
     @staticmethod
     def _chunks(nodes: List[WorkflowNode], size: int) -> List[List[WorkflowNode]]:
+        """按最大并发数切分可执行节点批次。"""
         chunk_size = max(size, 1)
         return [nodes[i : i + chunk_size] for i in range(0, len(nodes), chunk_size)]
 
@@ -215,25 +213,30 @@ class WorkflowExecutor:
         budget_tracker: Optional[RequestBudgetTracker],
         ready_count: int,
     ) -> int:
+        """根据预算和就绪节点数计算本批最大并发数。"""
         if budget_tracker is None:
             return max(ready_count, 1)
         return max(min(ready_count, budget_tracker.budget.max_parallelism), 1)
 
     @staticmethod
     def _step_for_node(node: WorkflowNode, step_by_id: Dict[str, Any]) -> Any:
+        """从兼容计划中查找当前 DAG 节点对应的 PlanStep。"""
         return step_by_id.get(node.id)
 
     def _retry_policy(self, node: WorkflowNode, step_by_id: Dict[str, Any]) -> int:
+        """读取节点对应的重试次数策略。"""
         step = self._step_for_node(node, step_by_id)
         return int(getattr(step, "retry_policy", 0) or 0)
 
     def _is_required(self, node: WorkflowNode, step_by_id: Dict[str, Any]) -> bool:
+        """判断节点是否为必需步骤。"""
         step = self._step_for_node(node, step_by_id)
         if step is not None:
             return bool(getattr(step, "required", True))
         return not node.optional
 
     def _fallback_strategy(self, node: WorkflowNode, step_by_id: Dict[str, Any]) -> str:
+        """解析节点失败后的 fallback 策略。"""
         step = self._step_for_node(node, step_by_id)
         raw = str(getattr(step, "fallback_strategy", "") or "").strip().lower()
         if raw in {"continue", "partial", "partial_answer", "ignore"}:
@@ -247,6 +250,7 @@ class WorkflowExecutor:
         return "halt" if self._is_required(node, step_by_id) else "continue"
 
     def _evidence_key(self, node: WorkflowNode, step_by_id: Dict[str, Any]) -> str:
+        """计算节点结果应写入的证据键。"""
         step = self._step_for_node(node, step_by_id)
         return (
             str(getattr(step, "evidence_key", "") or "")
@@ -260,6 +264,7 @@ class WorkflowExecutor:
         terminal: Dict[str, StepExecutionResult],
         step_by_id: Dict[str, Any],
     ) -> str:
+        """判断依赖结果是否会阻塞当前节点执行。"""
         for dep_id in dependencies:
             dep_result = terminal.get(dep_id)
             if dep_result is None or dep_result.status == "success":
@@ -287,6 +292,7 @@ class WorkflowExecutor:
         node: WorkflowNode,
         step_by_id: Dict[str, Any],
     ) -> bool:
+        """判断节点失败后是否应中止整个 DAG。"""
         strategy = self._fallback_strategy(node, step_by_id)
         return strategy in {"halt", "react_fallback"} and self._is_required(
             node,
@@ -298,6 +304,7 @@ class WorkflowExecutor:
         node_id: str,
         successor_map: Dict[str, List[str]],
     ) -> List[str]:
+        """计算某节点在 DAG 中的所有后代节点。"""
         seen: set[str] = set()
         stack = list(successor_map.get(node_id, []))
         while stack:
@@ -321,6 +328,7 @@ class WorkflowExecutor:
         evidence: EvidenceAggregator,
         reason: str,
     ) -> None:
+        """在 DAG 中止后把尚未执行的节点标记为 skipped。"""
         for node_id in sorted(list(pending)):
             node = node_by_id[node_id]
             step_result = await self._skip_node(
@@ -351,6 +359,7 @@ class WorkflowExecutor:
         dependencies: List[str],
         step_by_id: Dict[str, Any],
     ) -> tuple[StepExecutionResult, Optional[SkillResult]]:
+        """执行单个 DAG 节点并生成步骤结果和 SkillResult。"""
         executable = self._resolve_executable(node)
         capability_kind = executable["capability_kind"]
         capability_name = executable["capability_name"]
@@ -519,6 +528,7 @@ class WorkflowExecutor:
         step_by_id: Dict[str, Any],
         event_callback: Optional[EventCallback],
     ) -> StepExecutionResult:
+        """把单个节点标记为 skipped 并发出结束事件。"""
         step_result = StepExecutionResult(
             step_id=node.id,
             title=(
@@ -564,6 +574,7 @@ class WorkflowExecutor:
         event_type: str,
         payload: Dict[str, Any],
     ) -> None:
+        """调用可选事件回调，兼容同步和异步回调。"""
         if not event_callback:
             return
         maybe_result = event_callback(event_type, payload)
@@ -572,6 +583,7 @@ class WorkflowExecutor:
 
     @staticmethod
     def _resolve_executable(node: WorkflowNode) -> Dict[str, Optional[str]]:
+        """从 WorkflowNode 的能力字段解析可执行技能或原子工具。"""
         capability_kind = getattr(node, "capability_kind", "") or ""
         capability_name = getattr(node, "capability_name", "") or ""
         return {
@@ -589,6 +601,7 @@ class WorkflowExecutor:
         query: str,
         param_builder: ParamBuilder,
     ) -> tuple[Dict[str, Any], str]:
+        """合并计划输入和参数构建器结果，得到节点调用参数。"""
         capability_kind = executable["capability_kind"] or ""
         capability_name = executable["capability_name"] or ""
         executable_skill = executable["skill"]
@@ -621,6 +634,7 @@ class WorkflowExecutor:
         capability_name: str,
         query: str,
     ) -> Dict[str, Any]:
+        """通过参数构建器为技能或工具能力生成参数。"""
         if hasattr(param_builder, "build_for_capability"):
             return dict(
                 param_builder.build_for_capability(  # type: ignore[attr-defined]
@@ -637,6 +651,7 @@ class WorkflowExecutor:
         executable: Dict[str, Optional[str]],
         params: Dict[str, Any],
     ) -> SkillResult:
+        """根据可执行能力调用高层技能或原子工具。"""
         if executable.get("tool"):
             return self._call_atomic_tool_as_skill_result(
                 str(executable["tool"]),
@@ -654,6 +669,7 @@ class WorkflowExecutor:
         tool_name: str,
         params: Dict[str, Any],
     ) -> SkillResult:
+        """调用原子 MCP 工具并包装为 SkillResult。"""
         if not hasattr(self._skill_manager, "call_mcp_tool"):
             raise ValueError(
                 f"skill manager does not support atomic tool calls: {tool_name}"

@@ -1,3 +1,9 @@
+"""记忆服务 API 层 DTO。
+
+这些 dataclass 是短期记忆 facade 的输入边界，用于隔离上层 Agent/API
+调用参数与底层事件、artifact、task-state 仓储模型。
+"""
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 

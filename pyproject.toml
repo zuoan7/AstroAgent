@@ -86,6 +86,8 @@ addopts = [
 ]
 markers = [
     "integration: 集成测试 - 验证模块间交互",
+    "regression: 回归测试 - 锁定历史兼容层和关键行为基线",
+    "evaluation: 评估测试 - 验证离线评估脚本和报告输出",
     "performance: 性能测试 - 测量吞吐量和响应时间",
     "boundary: 边界测试 - 验证极端和边界条件",
     "slow: 慢速测试 - 执行时间较长的测试",

@@ -1,3 +1,6 @@
+"""能力选择器，把 TaskProfile 和执行决策转换为下一步可执行能力。
+"""
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -12,18 +15,20 @@ from src.tools.selector import ToolSelector
 
 
 class CapabilitySelector:
-    """Compatibility selector between TaskProfile and executable capabilities."""
+    """在 TaskProfile 和可执行能力之间做兼容选择。"""
 
     def __init__(
         self,
         registry: Optional[CapabilityRegistry] = None,
         tool_selector: Optional[ToolSelector] = None,
     ) -> None:
+        """初始化能力注册表和原子工具规则选择器。"""
         self._registry = registry or get_default_capability_registry()
         self._tool_selector = tool_selector or ToolSelector()
 
     @property
     def registry(self) -> CapabilityRegistry:
+        """返回当前能力注册表。"""
         return self._registry
 
     def select(
@@ -33,6 +38,7 @@ class CapabilitySelector:
         execution_decision: Optional[Any] = None,
         query: str = "",
     ) -> CapabilityDecision:
+        """根据任务画像、执行模式和查询文本选择技能、工具或无能力。"""
         hints = list(getattr(profile, "capability_hints", []) or [])
 
         for hint in hints:

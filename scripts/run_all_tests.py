@@ -43,41 +43,21 @@ def run_command(cmd, description):
     }
 
 
-def run_integration_tests():
-    return run_command(
-        [sys.executable, "-m", "pytest",
-         "tests/integration/", "-v",
-         "--tb=short",
-         f"--junitxml={REPORTS_DIR}/integration_junit.xml",
-         f"--cov=src", f"--cov-report=xml:{REPORTS_DIR}/integration_coverage.xml",
-         f"--cov-report=term-missing",
-         "-x"],
-        "集成测试"
-    )
-
-
-def run_performance_tests():
-    return run_command(
-        [sys.executable, "-m", "pytest",
-         "tests/performance/", "-v",
-         "--tb=short",
-         f"--junitxml={REPORTS_DIR}/performance_junit.xml",
-         "-x"],
-        "性能测试"
-    )
-
-
-def run_boundary_tests():
-    return run_command(
-        [sys.executable, "-m", "pytest",
-         "tests/boundary/", "-v",
-         "--tb=short",
-         f"--junitxml={REPORTS_DIR}/boundary_junit.xml",
-         f"--cov=src", f"--cov-report=xml:{REPORTS_DIR}/boundary_coverage.xml",
-         f"--cov-report=term-missing",
-         "-x"],
-        "边界测试"
-    )
+def run_pytest_suite(path, description, report_name, with_coverage=False):
+    cmd = [
+        sys.executable, "-m", "pytest",
+        path, "-v",
+        "--tb=short",
+        f"--junitxml={REPORTS_DIR}/{report_name}_junit.xml",
+        "-x",
+    ]
+    if with_coverage:
+        cmd.extend([
+            "--cov=src",
+            f"--cov-report=xml:{REPORTS_DIR}/{report_name}_coverage.xml",
+            "--cov-report=term-missing",
+        ])
+    return run_command(cmd, description)
 
 
 def run_unit_tests():
@@ -90,6 +70,51 @@ def run_unit_tests():
          f"--cov-report=term-missing",
          "-x"],
         "单元测试"
+    )
+
+
+def run_regression_tests():
+    return run_pytest_suite(
+        "tests/regression/",
+        "回归兼容测试",
+        "regression",
+        with_coverage=True,
+    )
+
+
+def run_integration_tests():
+    return run_pytest_suite(
+        "tests/integration/",
+        "集成测试",
+        "integration",
+        with_coverage=True,
+    )
+
+
+def run_boundary_tests():
+    return run_pytest_suite(
+        "tests/boundary/",
+        "边界测试",
+        "boundary",
+        with_coverage=False,
+    )
+
+
+def run_performance_tests():
+    return run_pytest_suite(
+        "tests/performance/",
+        "性能测试",
+        "performance",
+        with_coverage=False,
+    )
+
+
+def run_evaluation_tests():
+    return run_pytest_suite(
+        "tests/evaluation/",
+        "评估测试",
+        "evaluation",
+        with_coverage=False,
     )
 
 
@@ -179,19 +204,29 @@ def main():
     results = []
 
     test_suites = [
-        ("1", "集成测试", run_integration_tests),
-        ("2", "性能测试", run_performance_tests),
-        ("3", "边界测试", run_boundary_tests),
-        ("4", "单元测试", run_unit_tests),
+        ("1", "unit", "单元测试", run_unit_tests),
+        ("2", "regression", "回归兼容测试", run_regression_tests),
+        ("3", "integration", "集成测试", run_integration_tests),
+        ("4", "boundary", "边界测试", run_boundary_tests),
+        ("5", "performance", "性能测试", run_performance_tests),
+        ("6", "evaluation", "评估测试", run_evaluation_tests),
     ]
 
     if len(sys.argv) > 1:
-        selected = sys.argv[1:]
-        test_suites = [(n, d, f) for n, d, f in test_suites if n in selected]
+        selected = set(sys.argv[1:])
+        test_suites = [
+            (n, key, d, f)
+            for n, key, d, f in test_suites
+            if n in selected or key in selected
+        ]
     else:
-        test_suites = [(n, d, f) for n, d, f in test_suites if n in ("1", "2", "3")]
+        test_suites = [
+            (n, key, d, f)
+            for n, key, d, f in test_suites
+            if key in {"unit", "regression", "integration"}
+        ]
 
-    for num, desc, func in test_suites:
+    for num, key, desc, func in test_suites:
         result = func()
         results.append(result)
 

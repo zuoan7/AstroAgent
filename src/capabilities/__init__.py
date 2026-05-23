@@ -1,3 +1,6 @@
+"""能力层公共导出，提供能力注册表、参数构建、计划适配和能力选择器。
+"""
+
 from src.capabilities.registry import (
     CapabilityRegistry,
     CapabilitySpec,
@@ -16,6 +19,7 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    """按需延迟导入计划适配器和能力选择器，避免循环依赖。"""
     if name == "CapabilityPlanAdapter":
         from src.capabilities.plan_adapter import CapabilityPlanAdapter
 

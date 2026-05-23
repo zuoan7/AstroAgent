@@ -1,3 +1,9 @@
+"""短期记忆事件领域模型。
+
+memory_event 是短期记忆的事实来源；消息、工具调用、任务状态和摘要都可
+通过 append-only 事件恢复或审计。
+"""
+
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -42,6 +48,8 @@ class MemoryEvent:
     is_deleted: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化事件，供仓储、调试和导出接口使用。"""
+
         return {
             "event_id": self.event_id,
             "tenant_id": self.tenant_id,
@@ -59,6 +67,8 @@ class MemoryEvent:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MemoryEvent":
+        """从字典恢复事件对象，兼容缺省字段。"""
+
         return cls(
             event_id=data["event_id"],
             tenant_id=data["tenant_id"],

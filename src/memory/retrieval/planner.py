@@ -1,3 +1,9 @@
+"""短期记忆上下文检索规划器。
+
+该模块根据 query、任务状态、摘要快照、最近消息、事实和工具证据，
+在 token 预算内生成可追踪的 prompt 上下文和 retrieval_plan。
+"""
+
 import re
 import time
 from dataclasses import dataclass, field
@@ -26,6 +32,8 @@ class RetrievalPlan:
 
 @dataclass
 class ToolEvidenceMeta:
+    """工具证据的轻量元信息，用于新旧证据去重和焦点匹配。"""
+
     tool_call_id: str
     tool_name: str
     tool_type: str
@@ -38,6 +46,8 @@ class ToolEvidenceMeta:
 
 @dataclass
 class RetrievalFocus:
+    """从 query 和任务状态中抽取出的检索焦点。"""
+
     locations: set[str]
     targets: set[str]
     preferred_tool_types: set[str]
@@ -65,6 +75,8 @@ class RetrievalPlanner:
         facts: Sequence[SalientFact],
         tool_calls: Sequence[ToolCallRecord],
     ) -> Dict[str, Any]:
+        """按固定优先级和 token 预算组装短期记忆上下文。"""
+
         query_type = self._classify_query(query)
         plan = RetrievalPlan(
             query=query, query_type=query_type, token_budget=token_budget
@@ -126,6 +138,8 @@ class RetrievalPlanner:
         }
 
     def _classify_query(self, query: str) -> str:
+        """粗分 query 类型，用于调试 retrieval_plan 和后续策略扩展。"""
+
         lower = (query or "").lower()
         if any(token in lower for token in ["tool", "工具", "结果", "证据", "输出"]):
             return "evidence"
@@ -148,6 +162,8 @@ class RetrievalPlanner:
         task_state: TaskState,
         messages: Sequence[Message],
     ) -> list[Message]:
+        """结合最近性、query 重叠和任务焦点选择消息。"""
+
         focus = self._extract_focus(query, task_state)
         recent_message_ids = {
             message.message_id
@@ -280,6 +296,8 @@ class RetrievalPlanner:
         task_state: TaskState,
         tool_calls: Sequence[ToolCallRecord],
     ) -> list[ToolCallRecord]:
+        """优先选择与地点/目标/工具类型匹配且未被标记为旧结果的工具证据。"""
+
         focus = self._extract_focus(query, task_state)
         scored = []
         for call in tool_calls:
@@ -314,6 +332,8 @@ class RetrievalPlanner:
         ranked_tools: Sequence[ToolCallRecord],
         focus: RetrievalFocus,
     ) -> list[ToolCallRecord]:
+        """在用户需要最新结果时，按工具类型、地点和目标保留最佳证据。"""
+
         if focus.freshness_intent in {"historical", "compare"}:
             return list(ranked_tools)
 
@@ -354,6 +374,8 @@ class RetrievalPlanner:
         call: ToolCallRecord,
         meta: ToolEvidenceMeta,
     ) -> int:
+        """给工具证据打分，地点、目标、工具类型和 freshness 都会影响排序。"""
+
         text = " ".join([call.tool_name, call.input_summary, call.output_summary])
         score = self._score(query, text)
 
@@ -384,6 +406,8 @@ class RetrievalPlanner:
         return score
 
     def _extract_tool_meta(self, call: ToolCallRecord) -> ToolEvidenceMeta:
+        """从工具名称、输入摘要和输出摘要中抽取证据元信息。"""
+
         text = " ".join([call.tool_name, call.input_summary, call.output_summary])
         return ToolEvidenceMeta(
             tool_call_id=call.tool_call_id,
@@ -418,6 +442,8 @@ class RetrievalPlanner:
         )
 
     def _extract_focus(self, query: str, task_state: TaskState) -> RetrievalFocus:
+        """从 query 与任务状态中抽取地点、目标、工具类型和新旧意图。"""
+
         fields = [
             query or "",
             task_state.current_goal or "",
@@ -585,6 +611,8 @@ class RetrievalPlanner:
         ]
 
     def _format_task_state(self, state: TaskState) -> str:
+        """把结构化任务状态渲染为 prompt 中的短文本区块。"""
+
         parts = []
         has_task_content = bool(
             state.current_goal
@@ -631,6 +659,8 @@ class RetrievalPlanner:
     def _fit_sections(
         self, sections: Sequence[tuple[str, str]], token_budget: int
     ) -> str:
+        """按区块顺序装入上下文，遇到预算不足时截断最后一个区块。"""
+
         rendered: list[str] = []
         for title, body in sections:
             section = f"=== {title} ===\n{body}"
@@ -650,6 +680,8 @@ class RetrievalPlanner:
         return "\n\n".join(rendered)
 
     def _truncate_to_budget(self, text: str, token_budget: int) -> str:
+        """优先按行截断文本，避免把长区块硬切到不可读。"""
+
         if self._estimate_tokens(text) <= token_budget:
             return text
         kept = []

@@ -1,3 +1,6 @@
+"""前端事件适配层，将统一执行事件和 trace 转换为旧工作台仍可消费的计划、工具、证据事件。
+"""
+
 from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
@@ -8,6 +11,7 @@ from src.agent.models.final_response import FinalResponse
 
 
 def _update_status(steps: List[Dict[str, Any]], step_id: str, status: str) -> None:
+    """更新前端计划步骤列表中指定步骤的状态。"""
     for step in steps:
         if step.get("id") == step_id:
             step["status"] = status
@@ -32,6 +36,7 @@ class FrontendExecutionEventAdapter:
     }
 
     def to_execution_event(self, event: Any, *, source: str = "") -> ExecutionEvent:
+        """把 dict 或 ExecutionEvent 统一转换为 ExecutionEvent 对象。"""
         if isinstance(event, ExecutionEvent):
             return event
         if isinstance(event, dict):
@@ -43,6 +48,7 @@ class FrontendExecutionEventAdapter:
         raise TypeError(f"unsupported execution event payload: {type(event)!r}")
 
     def to_frontend_event_type(self, event: ExecutionEvent) -> Optional[str]:
+        """将统一执行事件类型映射为前端事件类型。"""
         return self.FRONTEND_EVENT_TYPE_MAP.get(event.type)
 
     async def emit_execution_event(
@@ -53,6 +59,7 @@ class FrontendExecutionEventAdapter:
         emit_fn: Callable[[Any], AsyncGenerator[Any, None]],
         source: str = "",
     ) -> AsyncGenerator[Any, None]:
+        """把单个统一执行事件适配并发送到前端事件流。"""
         execution_event = self.to_execution_event(event, source=source)
         frontend_type = self.to_frontend_event_type(execution_event)
         if not frontend_type:
@@ -66,6 +73,7 @@ class FrontendExecutionEventAdapter:
         self,
         response: FinalResponse,
     ) -> List[ExecutionEvent]:
+        """从 FinalResponse 中恢复统一执行事件列表。"""
         return [
             self.to_execution_event(event)
             for event in (getattr(response, "execution_events", []) or [])
@@ -82,6 +90,7 @@ class FrontendExecutionEventAdapter:
         emit_fn: Callable[[Any], AsyncGenerator[Any, None]],
         include_answer_ready: bool = False,
     ) -> AsyncGenerator[Any, None]:
+        """批量适配 FinalResponse 内的执行事件并维护前端状态。"""
         for event in self.iter_response_execution_events(response):
             if event.type in {
                 "task_profile",
@@ -238,6 +247,7 @@ class FrontendExecutionEventAdapter:
         emit_fn: Callable[[Any], AsyncGenerator[Any, None]],
         preview_text_fn: Callable[[Any, int], str],
     ) -> AsyncGenerator[Any, None]:
+        """将单条 execution_trace 转换为前端步骤、工具和证据事件。"""
         if isinstance(trace_entry, dict):
             entry = ExecutionTraceEntry.from_dict(trace_entry)
         else:
@@ -319,6 +329,7 @@ class FrontendExecutionEventAdapter:
     def _extract_plan_steps_payload(
         event: ExecutionEvent,
     ) -> Optional[List[Dict[str, Any]]]:
+        """从计划事件 payload 中提取前端步骤列表。"""
         if isinstance(event.payload.get("steps"), list):
             return event.payload["steps"]
         plan = event.payload.get("plan")

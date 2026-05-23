@@ -1,10 +1,7 @@
-"""
-ExecutionContext — 统一执行上下文，Phase 2 引入。
+"""统一执行上下文模型，聚合 TaskProfile、RequestContext 和能力选择结果。
 
-= TaskProfile + RequestContext，作为未来执行引擎的完整输入描述。
-
-当前状态：ExecutionContext 已进入 Router/Policy/ExecutionEngine 主链路；
-          from_legacy_params() 仅保留为旧接口桥接与测试辅助。
+该模型是 ExecutionEngine 和各执行器的完整输入描述。当前已进入
+Router/Policy/ExecutionEngine 主链路，legacy 构造方法仅用于旧接口桥接和测试。
 """
 from __future__ import annotations
 
@@ -18,6 +15,7 @@ from src.agent.models.request_context import RequestContext
 
 @dataclass
 class ExecutionContext:
+    """统一执行上下文，作为 ExecutionEngine 和各执行器的主输入。"""
     profile: TaskProfile
     request: RequestContext
     capability_decision: Optional[CapabilityDecision] = None
@@ -28,29 +26,36 @@ class ExecutionContext:
     # ── 便捷属性，减少调用层的字段访问深度 ─────────────────────────────────
     @property
     def query(self) -> str:
+        """返回当前请求的用户查询文本。"""
         return self.request.query
 
     @property
     def chat_history(self) -> str:
+        """返回当前请求的短期对话历史。"""
         return self.request.chat_history
 
     @property
     def user_profile(self) -> str:
+        """返回当前请求的长期用户画像上下文。"""
         return self.request.user_profile
 
     @property
     def request_id(self) -> str:
+        """返回当前请求的唯一标识。"""
         return self.request.request_id
 
     @property
     def task_type(self) -> str:
+        """返回任务画像中的任务类型。"""
         return self.profile.task_type
 
     @property
     def legacy_route(self) -> str:
+        """返回兼容旧链路的 route 字符串。"""
         return self.profile.legacy_route
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "profile": self.profile.to_dict(),
             "request": self.request.to_dict(),

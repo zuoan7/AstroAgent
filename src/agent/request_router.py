@@ -1,3 +1,6 @@
+"""请求路由主模块，通过规则、LLM fallback 和工具必要性门控生成 TaskProfile 与兼容路由元信息。
+"""
+
 from __future__ import annotations
 
 import re
@@ -235,7 +238,7 @@ TASK_TYPE_TO_OUTPUT_SCHEMA = {
 
 @dataclass
 class RouteDecision:
-    """Deprecated legacy router output.
+    """旧版路由输出结构。
 
     新代码应优先消费 TaskProfile；RouteDecision 仅保留给兼容调用链：
     1. 外部兼容 API（仍直接依赖 route() / RouteDecision 的调用方）
@@ -267,6 +270,7 @@ class RouteDecision:
     tool_necessity_forbidden_skill_hints: List[str] = field(default_factory=list)
 
     def to_meta(self) -> Dict[str, object]:
+        """将当前对象转换为 meta 相关的兼容结构。"""
         return {
             "route": self.route,
             "task_type": self.task_type,
@@ -324,18 +328,22 @@ class RouteDecision:
 
     @property
     def is_direct_task(self) -> bool:
+        """判断当前输入是否满足对应条件。"""
         return self.route == "direct_task"
 
     @property
     def is_planned_task(self) -> bool:
+        """判断当前输入是否满足对应条件。"""
         return self.route == "planned_task"
 
     @property
     def is_fallback_react(self) -> bool:
+        """判断当前输入是否满足对应条件。"""
         return self.route == "fallback_react"
 
 
 class RequestRouter:
+    """请求路由器，生成 TaskProfile 并附带工具必要性与兼容路由信息。"""
     def __init__(
         self,
         llm_intent_classifier: Optional[Any] = None,
@@ -344,6 +352,7 @@ class RequestRouter:
         llm_confidence_threshold: Optional[float] = None,
         tool_necessity_gate: Optional[ToolNecessityGate] = None,
     ) -> None:
+        """初始化 RequestRouter 的依赖、配置和内部状态。"""
         self._skill_specs = get_skill_specs()
         self._llm_intent_classifier = llm_intent_classifier
         self._tool_necessity_gate = tool_necessity_gate or ToolNecessityGate()
@@ -365,6 +374,7 @@ class RequestRouter:
         enabled: Optional[bool] = None,
         confidence_threshold: Optional[float] = None,
     ) -> None:
+        """配置路由器的 LLM 意图分类 fallback。"""
         self._llm_intent_classifier = classifier
         if enabled is not None:
             self._enable_llm_fallback = bool(enabled)
@@ -372,7 +382,7 @@ class RequestRouter:
             self._llm_confidence_threshold = float(confidence_threshold)
 
     def route(self, query: str) -> RouteDecision:
-        """Deprecated compatibility entry.
+        """旧版兼容入口。
 
         新代码应优先调用 profile() 获取 TaskProfile；route() 仅保留给：
         1. 外部兼容 API
@@ -386,7 +396,7 @@ class RequestRouter:
         return RouteDecision.from_task_profile(self.profile(query))
 
     def profile(self, query: str) -> TaskProfile:
-        """Router 内部主分类入口，返回 TaskProfile。
+        """路由器内部主分类入口，返回 TaskProfile。
 
         历史 ENABLE_TASK_PROFILE 配置位已退场，不再切换该主路径。
         """
@@ -413,6 +423,7 @@ class RequestRouter:
         self,
         gate_decision: ToolNecessityDecision,
     ) -> TaskProfile:
+        """根据工具必要性门控结果构造直接回答或澄清任务画像。"""
         task_type = (
             "clarification"
             if gate_decision.action == "clarify"
@@ -434,6 +445,7 @@ class RequestRouter:
         profile: TaskProfile,
         gate_decision: ToolNecessityDecision,
     ) -> TaskProfile:
+        """把工具必要性门控的允许/禁止技能提示合并进任务画像。"""
         if gate_decision.action != "use_tool":
             return profile
 
@@ -493,6 +505,7 @@ class RequestRouter:
         profile: TaskProfile,
         gate_decision: ToolNecessityDecision,
     ) -> TaskProfile:
+        """把工具必要性门控元信息写回 TaskProfile。"""
         profile.tool_necessity_action = gate_decision.action
         profile.tool_necessity_reason = gate_decision.reason
         profile.tool_necessity_confidence = gate_decision.confidence
@@ -508,7 +521,7 @@ class RequestRouter:
         return profile
 
     def _rule_profile(self, query: str) -> TaskProfile:
-        """Deterministic rule router used as the first-pass classification."""
+        """使用确定性规则完成第一轮路由分类。"""
         text = (query or "").strip()
         lowered = text.lower()
 
@@ -597,6 +610,7 @@ class RequestRouter:
         )
 
     def _apply_llm_fallback(self, query: str, rule_profile: TaskProfile) -> TaskProfile:
+        """在规则信心不足时调用 LLM 分类器修正任务画像。"""
         text = (query or "").strip()
         if not self._should_consult_llm_fallback(text, rule_profile):
             return rule_profile
@@ -617,6 +631,7 @@ class RequestRouter:
         text: str,
         rule_profile: TaskProfile,
     ) -> bool:
+        """判断当前规则分类是否需要触发 LLM fallback。"""
         if (
             not self._enable_llm_fallback
             or self._llm_intent_classifier is None
@@ -655,6 +670,7 @@ class RequestRouter:
         result: Any,
         rule_profile: TaskProfile,
     ) -> Optional[TaskProfile]:
+        """把 LLM 分类结果规范化为 TaskProfile。"""
         if result is None:
             return None
 
@@ -725,6 +741,7 @@ class RequestRouter:
         llm_confidence: Optional[float] = None,
         gate_decision: Optional[ToolNecessityDecision] = None,
     ) -> TaskProfile:
+        """根据路由字段构造标准 TaskProfile。"""
         gate = gate_decision
         return TaskProfile.from_legacy_route(
             route=legacy_route,
@@ -758,6 +775,7 @@ class RequestRouter:
         )
 
     def _is_smalltalk(self, text: str) -> bool:
+        """判断查询是否属于寒暄闲聊。"""
         if any(re.search(pattern, text, re.IGNORECASE) for pattern in SMALLTALK_PATTERNS):
             return True
 
@@ -768,16 +786,19 @@ class RequestRouter:
         return False
 
     def _is_simple_qa(self, text: str) -> bool:
+        """判断查询是否属于无需工具的简单知识问答。"""
         if len(text) <= 24 and text.endswith(("?", "？")):
             return True
         return any(hint in text for hint in SIMPLE_QA_HINTS)
 
     def _is_complex(self, text: str) -> bool:
+        """判断查询是否表现为多步骤或复杂任务。"""
         if len(text) > 40 and any(token in text for token in ("，", ",", "；", ";")):
             return True
         return any(hint in text for hint in COMPLEX_HINTS)
 
     def _is_open_ended(self, text: str) -> bool:
+        """判断查询是否属于开放式推理或创作。"""
         if any(hint in text for hint in OPEN_ENDED_HINTS):
             return True
         return len(text) > 120 and not any(
@@ -785,6 +806,7 @@ class RequestRouter:
         )
 
     def _infer_task_type(self, text: str, capability_hints: List[str]) -> str:
+        """根据文本和技能提示推断任务类型。"""
         skill_set = set(capability_hints)
         if "observation-planner" in skill_set and any(
             token in text for token in ("计划", "安排", "推荐", "观测顺序", "看什么", "先看")
@@ -803,6 +825,7 @@ class RequestRouter:
         return "observation_recommendation"
 
     def _infer_supporting_skills(self, text: str) -> List[str]:
+        """从查询文本推断 planned 路径需要的辅助技能。"""
         matched = self._match_capability_hints(text, text.lower())
         if matched:
             return matched
@@ -823,6 +846,7 @@ class RequestRouter:
         return inferred
 
     def _match_capability_hints(self, text: str, lowered: str) -> List[str]:
+        """匹配高层技能和原子工具能力提示。"""
         hints = self._match_skills(text, lowered)
         if self._is_apod_lookup_intent(text):
             hints.append("get_nasa_apod")
@@ -831,6 +855,7 @@ class RequestRouter:
         return list(dict.fromkeys(hints))
 
     def _match_skills(self, text: str, lowered: str) -> List[str]:
+        """根据技能注册表和关键词匹配高层技能。"""
         matched: List[str] = []
         for spec in self._skill_specs:
             tokens = [
@@ -877,6 +902,7 @@ class RequestRouter:
         return list(dict.fromkeys(matched))
 
     def _is_weather_intent(self, text: str) -> bool:
+        """判断查询是否需要天气工具。"""
         if not any(word in text for word in WEATHER_HINTS):
             return False
         if any(token in text for token in ("预报说", "天气晴但", "湿度很高", "视宁度不好")):
@@ -892,6 +918,7 @@ class RequestRouter:
         return has_city and has_time and asks_lookup
 
     def _is_observation_recommendation_intent(self, text: str) -> bool:
+        """判断查询是否是观测推荐或观测计划意图。"""
         if "拍" in text:
             return False
         if re.search(r"\bM\s?\d{1,3}\b", text, re.IGNORECASE) and "差别" in text:
@@ -935,6 +962,7 @@ class RequestRouter:
         )
 
     def _is_deep_sky_intent(self, text: str) -> bool:
+        """判断查询是否需要深空目标指导。"""
         if any(token in text for token in ("区别", "是不是一个", "同一个", "为什么更适合", "会不会影响", "应该先选", "基本没戏", "帮助大吗")):
             return False
         has_catalog = bool(
@@ -967,6 +995,7 @@ class RequestRouter:
         return False
 
     def _is_astrophotography_intent(self, text: str) -> bool:
+        """判断查询是否需要天文摄影参数建议。"""
         if any(token in text for token in ("怎么避免", "直接拍单张", "规则现在", "怎么对焦", "有必要买吗", "一定要拍", "可能是哪一步", "分别是干什么")):
             return False
         if any(word in text for word in ASTROPHOTOGRAPHY_HINTS):
@@ -985,6 +1014,7 @@ class RequestRouter:
         )
 
     def _is_position_intent(self, text: str) -> bool:
+        """判断查询是否需要天体位置或可见性计算。"""
         if self._is_current_sky_intent(text) or self._is_coordinate_transform_intent(text):
             return True
         if any(token in text for token in ("怎么理解", "这是赤经赤纬吗", "只有 12 度高度")):
@@ -992,14 +1022,17 @@ class RequestRouter:
         return self._has_celestial_target(text) and any(word in text for word in POSITION_HINTS)
 
     def _has_celestial_target(self, text: str) -> bool:
+        """判断文本中是否包含天体或深空目标。"""
         return any(
             word in text for word in CELESTIAL_TARGET_HINTS
         ) or self._is_deep_sky_intent(text)
 
     def _has_dynamic_context(self, text: str) -> bool:
+        """判断文本是否包含今天、今晚、实时等动态上下文。"""
         return any(word in text for word in DYNAMIC_CONTEXT_HINTS)
 
     def _looks_astronomy_related(self, text: str) -> bool:
+        """判断文本是否属于天文相关语境。"""
         if self._has_celestial_target(text):
             return True
         if any(word in text for word in ASTRONOMY_CONTEXT_HINTS):
@@ -1018,6 +1051,7 @@ class RequestRouter:
 
     @staticmethod
     def _is_apod_lookup_intent(text: str) -> bool:
+        """判断查询是否需要 NASA APOD 原子工具。"""
         has_apod_reference = "APOD" in text or "每日天文图" in text
         if not has_apod_reference:
             return False
@@ -1032,6 +1066,7 @@ class RequestRouter:
 
     @staticmethod
     def _is_web_search_intent(text: str) -> bool:
+        """判断查询是否需要联网搜索原子工具。"""
         if any(token in text for token in ("天象", "流星雨", "月食", "日食", "合月")):
             return False
         return any(token in text for token in ("最近", "最新", "新闻", "新结果", "新发现")) and any(
@@ -1040,12 +1075,14 @@ class RequestRouter:
 
     @staticmethod
     def _is_current_sky_intent(text: str) -> bool:
+        """判断查询是否在询问当前可见天体。"""
         return any(token in text for token in ("天上有什么", "能看到哪些", "能看哪些", "哪些亮星", "亮星或行星")) and any(
             token in text for token in ("现在", "今晚", "当前")
         )
 
     @staticmethod
     def _is_coordinate_transform_intent(text: str) -> bool:
+        """判断查询是否涉及赤经赤纬到可见位置的转换。"""
         return ("赤经" in text and "赤纬" in text and any(token in text for token in ("哪里", "在哪里", "位置", "大概"))) or bool(
             re.search(r"\bRA\b.*\bDec\b", text, re.IGNORECASE)
             and any(token in text for token in ("哪里", "在哪里", "位置"))
@@ -1053,6 +1090,7 @@ class RequestRouter:
 
     @staticmethod
     def _is_observation_ordering_intent(text: str) -> bool:
+        """判断查询是否在比较多个目标的观测顺序。"""
         has_order_word = any(token in text for token in ("先看", "先观测", "优先看", "先看哪个"))
         has_choice = "还是" in text or "哪个" in text
         target_count = sum(
@@ -1064,11 +1102,13 @@ class RequestRouter:
 
     @staticmethod
     def _has_observing_equipment_constraint(text: str) -> bool:
+        """判断文本中是否包含望远镜、双筒或口径倍率约束。"""
         return bool(re.search(r"\b\d{1,2}\s*x\s*\d{2}\b", text, re.IGNORECASE)) or any(
             token in text for token in ("双筒", "望远镜", "DOB", "小折射", "目镜")
         )
 
     def _should_keep_single_skill_direct(self, skill_name: str, text: str) -> bool:
+        """判断单技能任务是否应保留在 direct 路径执行。"""
         if skill_name != "astrophotography-calculator":
             return False
 

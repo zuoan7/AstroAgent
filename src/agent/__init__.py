@@ -1,3 +1,6 @@
+"""AstroAgent 应用门面，统一初始化 LLM、RAG、记忆、技能、执行引擎和流式服务，并为 API 会话创建运行时。
+"""
+
 import traceback
 from typing import List, Optional
 
@@ -34,6 +37,7 @@ from src.rag.online_retriever import OnlineRetriever
 
 
 class AstroAgent:
+    """AstroAgent 总入口，聚合模型、RAG、记忆、技能和执行引擎能力。"""
     def __init__(
         self,
         user_id: Optional[str] = None,
@@ -41,6 +45,7 @@ class AstroAgent:
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
     ):
+        """初始化 AstroAgent 的依赖、配置和内部状态。"""
         self.user_id = user_id or settings.DEFAULT_USER_ID
         self.model_provider = model_provider or getattr(
             settings, "DEFAULT_LLM_PROVIDER", "dashscope"
@@ -86,6 +91,7 @@ class AstroAgent:
     def _init_llm(
         self, model_provider: Optional[str] = None, model_name: Optional[str] = None
     ):
+        """初始化指定供应商和模型名称对应的聊天模型。"""
         try:
             resolved = resolve_model_config(model_provider, model_name)
             llm = build_chat_model(
@@ -103,6 +109,7 @@ class AstroAgent:
             raise
 
     def _build_agent(self, llm=None):
+        """构建 LangChain ReAct AgentExecutor 作为开放式 fallback 执行器。"""
         try:
             template = self._load_prompt_template()
         except Exception as e:
@@ -135,11 +142,13 @@ class AstroAgent:
         return agent_executor
 
     def _get_or_create_agent_executor(self, llm=None):
+        """懒加载并复用当前会话的 ReAct AgentExecutor。"""
         if self._agent_executor is None:
             self._agent_executor = self._build_agent(llm=llm or self.llm)
         return self._agent_executor
 
     def _load_prompt_template(self) -> str:
+        """从 PromptRegistry 或 legacy 文件加载 ReAct 主提示词模板。"""
         from src.core.config import resolve_path
 
         try:
@@ -161,6 +170,7 @@ class AstroAgent:
         model_provider: Optional[str] = None,
         model_name: Optional[str] = None,
     ):
+        """为指定用户会话创建 LLM、执行引擎和流式服务运行时。"""
         selection = model_selection_payload(model_provider, model_name)
         main_llm = self._init_llm(selection["model_provider"], selection["model_name"])
         synth_selection = self.model_policy.select("synthesizer")
@@ -224,12 +234,15 @@ class AstroAgent:
         }
 
     def generate_response(self, query: str):
+        """同步生成完整文本响应。"""
         return self.streaming_service.generate_response(query)
 
     def generate_response_stream(self, query: str):
+        """异步生成纯文本答案流。"""
         return self.streaming_service.generate_response_stream(query)
 
     async def generate_events(self, query: str, image_path: Optional[str] = None):
+        """异步生成前端 JSON 事件流。"""
         if image_path:
             query = self.vision_service.build_vision_query(query, image_path)
 
@@ -237,9 +250,11 @@ class AstroAgent:
             yield event
 
     def describe_image(self, image_path: str, prompt: str) -> str:
+        """调用视觉服务生成图片描述。"""
         return self.vision_service.describe_image(image_path, prompt)
 
     def add_astronomy_knowledge(self, knowledge: List[str]):
+        """把人工补充的天文知识写入 RAG 检索库。"""
         if not knowledge:
             logger.warning("⚠️  无有效知识可添加")
             return {
@@ -269,6 +284,7 @@ class AstroAgent:
             }
 
     def clear_memory(self):
+        """清空当前 Agent 会话的短期记忆。"""
         try:
             self.memory.clear()
             logger.info("✅ 记忆已清空")
@@ -277,13 +293,16 @@ class AstroAgent:
             traceback.print_exc()
 
     def get_governance_metrics_snapshot(self):
+        """读取治理指标快照。"""
         return self.governance_metrics.snapshot()
 
     def evaluate_phase0_router_benchmark(self, path: Optional[str] = None):
+        """运行 Phase0 路由基准评测并返回统计结果。"""
         cases = load_phase0_benchmark_cases(path)
         return evaluate_router_benchmark(self.request_router, cases)
 
     def __del__(self):
+        """对象销毁时释放内部持有的外部连接或后台资源。"""
         try:
             if hasattr(self, "skill_manager") and self.skill_manager:
                 router = getattr(self.skill_manager, "_skill_router", None)

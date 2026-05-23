@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import time
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,6 +12,33 @@ import pytest
 from tests.mock_deps import mock_heavy_dependencies
 
 mock_heavy_dependencies()
+
+
+def pytest_collection_modifyitems(config, items):
+    marker_by_dir = {
+        "integration": "integration",
+        "regression": "regression",
+        "boundary": "boundary",
+        "performance": "performance",
+        "evaluation": "evaluation",
+    }
+    slow_dirs = {"boundary", "performance", "evaluation"}
+
+    for item in items:
+        raw_path = Path(str(getattr(item, "path", item.fspath)))
+        try:
+            item_path = raw_path.relative_to(Path.cwd()).as_posix()
+        except ValueError:
+            item_path = raw_path.as_posix()
+        parts = item_path.split("/")
+        if len(parts) < 2 or parts[0] != "tests":
+            continue
+
+        marker_name = marker_by_dir.get(parts[1])
+        if marker_name and item.get_closest_marker(marker_name) is None:
+            item.add_marker(getattr(pytest.mark, marker_name))
+        if parts[1] in slow_dirs and item.get_closest_marker("slow") is None:
+            item.add_marker(pytest.mark.slow)
 
 
 @pytest.fixture
@@ -498,7 +526,19 @@ def skill_manager():
         mock_settings.RAG_CACHE_MAX_SIZE = 256
 
         with patch("src.agent.skill_manager.AstronomySkillRouter") as MockRouter:
+            from src.agent.models.skill_result import SkillResult
+
             mock_router = MagicMock()
+
+            def fake_call(name, **params):
+                return SkillResult(
+                    skill_name=name,
+                    success=True,
+                    data={"params": params},
+                    summary=f"{name} result",
+                )
+
+            mock_router.call.side_effect = fake_call
             mock_router.call_mcp_tool.return_value = '{"status": "ok"}'
             MockRouter.return_value = mock_router
 

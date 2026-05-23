@@ -1,3 +1,6 @@
+-- 短期记忆任务状态投影表。
+-- 每个会话保留一份当前任务目标、约束、进度和阻塞的结构化状态。
+
 CREATE TABLE IF NOT EXISTS task_state (
     task_state_id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,

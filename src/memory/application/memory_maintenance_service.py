@@ -1,3 +1,9 @@
+"""短期记忆维护服务。
+
+负责 summary snapshot 的创建/rebase、自动摘要触发判断、原始 artifact 读取
+以及 scoped deletion 的编排。
+"""
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -63,6 +69,8 @@ class MemoryMaintenanceService:
         created_by_model: str = "rule-based",
         snapshot_batch_size: int = DEFAULT_SNAPSHOT_BATCH_SIZE,
     ) -> SummarySnapshot:
+        """从最新快照之后的事件批次创建一条新的摘要快照。"""
+
         latest = self.summary_snapshot_manager.get_latest(session_id)
         events = self._list_snapshot_batch(
             session_id=session_id,
@@ -82,6 +90,8 @@ class MemoryMaintenanceService:
         tenant_id: Optional[str] = None,
         snapshot_batch_size: int = DEFAULT_SNAPSHOT_BATCH_SIZE,
     ) -> SummarySnapshot:
+        """把已有快照作为种子，与新增事件合并成新的工作快照。"""
+
         latest = self.summary_snapshot_manager.get_latest(session_id)
         events = self._list_snapshot_batch(
             session_id,
@@ -101,6 +111,8 @@ class MemoryMaintenanceService:
         after_event_id: Optional[str],
         snapshot_batch_size: int,
     ):
+        """按快照覆盖点选择下一批可摘要事件。"""
+
         batch_size = max(1, int(snapshot_batch_size or DEFAULT_SNAPSHOT_BATCH_SIZE))
         if after_event_id:
             events = self.event_store.list_by_session(
@@ -119,6 +131,8 @@ class MemoryMaintenanceService:
         return events
 
     def delete_memory(self, request: DeleteMemoryRequest) -> DeletionJob:
+        """执行短期记忆删除请求，并保留删除任务和审计记录。"""
+
         return self.deletion_service.delete_memory(
             tenant_id=request.tenant_id or self.tenant_id,
             scope=request.scope,
@@ -127,6 +141,8 @@ class MemoryMaintenanceService:
         )
 
     def get_raw_artifact(self, artifact_id: str) -> Optional[str]:
+        """按 artifact_id 读取工具调用原始输出。"""
+
         return self.artifact_store.get_content(artifact_id)
 
     def should_create_summary_snapshot(
@@ -134,6 +150,8 @@ class MemoryMaintenanceService:
         session_id: str,
         tenant_id: Optional[str] = None,
     ) -> SummaryTriggerDecision:
+        """根据未覆盖事件数量和估算 token 数决定是否生成或 rebase 快照。"""
+
         if not settings.MEMORY_AUTO_SUMMARY_ENABLED:
             return SummaryTriggerDecision(
                 should_create=False, mode="none", reason="auto_summary_disabled"

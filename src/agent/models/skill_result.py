@@ -1,3 +1,6 @@
+"""技能调用结果模型，统一技能数据、摘要、来源、错误和工具审计字段。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class SkillResult:
+    """技能或原子工具调用的结构化结果。"""
     skill_name: str
     success: bool
     data: Dict[str, Any]
@@ -21,11 +25,13 @@ class SkillResult:
     forbidden_child_tools: List[str] = field(default_factory=list)
 
     def to_legacy_str(self) -> str:
+        """把技能结果转换为 legacy LangChain Tool 字符串。"""
         if not self.success and self.error_message:
             return f"[错误] {self.error_message}"
         return self.summary
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "skill_name": self.skill_name,
             "success": self.success,
@@ -43,6 +49,7 @@ class SkillResult:
         }
 
     def to_tool_timeline_entry(self, run_id: Optional[str] = None) -> Dict[str, Any]:
+        """把技能结果转换为前端工具时间线条目。"""
         return {
             "run_id": run_id or self.skill_name,
             "tool": self.skill_name,
@@ -63,6 +70,7 @@ class SkillResult:
         }
 
     def to_evidence_entry(self, run_id: Optional[str] = None) -> Dict[str, Any]:
+        """把技能结果转换为统一证据来源条目。"""
         return {
             "source_id": run_id or self.skill_name,
             "kind": "tool_output",
@@ -81,6 +89,7 @@ class SkillResult:
         error_message: str,
         latency_ms: Optional[float] = None,
     ) -> SkillResult:
+        """根据错误信息构造失败的 SkillResult。"""
         return cls(
             skill_name=skill_name,
             success=False,

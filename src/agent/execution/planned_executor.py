@@ -1,4 +1,5 @@
-"""PlannedExecutor — structured DAG execution path for planned tasks."""
+"""Planned 执行器，串联计划生成、WorkflowGraph DAG 执行、fallback 决策和答案合成。
+"""
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -19,7 +20,7 @@ from src.core.config import settings
 
 
 class PlannedExecutor:
-    """Run planned tasks as plan_graph -> DAG execution -> evidence synthesis."""
+    """按计划生成、DAG 执行、证据合成的顺序运行 planned 任务。"""
 
     def __init__(
         self,
@@ -30,6 +31,7 @@ class PlannedExecutor:
         fallback_policy: Optional[FallbackPolicy] = None,
         workflow_executor: Optional[WorkflowExecutor] = None,
     ) -> None:
+        """初始化 PlannedExecutor 的依赖、配置和内部状态。"""
         self._skill_manager = skill_manager
         self._llm = llm
         self._synthesizer = synthesizer
@@ -46,6 +48,7 @@ class PlannedExecutor:
         event_callback: Optional[EventCallback] = None,
         budget_tracker: Optional[RequestBudgetTracker] = None,
     ) -> FinalResponse:
+        """使用统一 ExecutionContext 执行当前路径。"""
         budget_tracker = budget_tracker or RequestBudgetTracker()
         profile = context.profile
         query = context.query
@@ -148,6 +151,7 @@ class PlannedExecutor:
         existing: list[dict[str, Any]],
         evidence_items: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        """去重合并答案已有 sources 与 DAG 证据 sources。"""
         merged: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str]] = set()
         for item in list(existing or []) + list(evidence_items or []):
@@ -187,12 +191,10 @@ class PlannedExecutor:
         failed_response: Optional[FinalResponse] = None,
         error: str = "",
     ) -> Optional[ExecutionPlan]:
-        """Build a one-shot repaired plan for structural/parameter failures.
+        """为结构或参数失败构建一次性修复计划。
 
-        This is intentionally narrow: it only normalizes an existing planned
-        response by fixing bad dependencies, converting repairable tool nodes,
-        and rebuilding params for failed tool steps. Tool outages and timeouts
-        are handled by fallback instead of broad replanning.
+        这里刻意保持窄范围：只修正已有 planned 响应中的依赖、可修复工具节点
+        和失败步骤参数。工具不可用或超时交给 fallback 处理，不做宽泛重规划。
         """
         if failed_response is None or not failed_response.execution_plan:
             return None
@@ -257,12 +259,14 @@ class PlannedExecutor:
 
     @staticmethod
     def _step_skill_capability_name(step: Any) -> str:
+        """读取计划步骤对应的高层技能能力名。"""
         if getattr(step, "capability_kind", "") == "skill":
             return str(getattr(step, "capability_name", "") or "")
         return ""
 
     @staticmethod
     def _failed_step_ids_from_response(response: FinalResponse) -> set[str]:
+        """从 fallback_path 和 trace 中提取失败步骤 ID。"""
         ids: set[str] = set()
         for fallback in response.fallback_path or []:
             metadata = fallback.get("metadata") or {}
@@ -278,6 +282,7 @@ class PlannedExecutor:
 
     @staticmethod
     def _is_param_repair_error(error: str) -> bool:
+        """判断错误是否属于可通过重建参数修复的问题。"""
         text = str(error or "").lower()
         return any(
             hint in text
@@ -300,7 +305,7 @@ class PlannedExecutor:
         user_profile: str = "",
         execution_plan: Optional[ExecutionPlan] = None,
     ) -> tuple[ExecutionPlan, WorkflowGraph]:
-        """Resolve native WorkflowGraph from TaskProfile and compatibility plan."""
+        """根据 TaskProfile 和兼容计划解析原生 WorkflowGraph。"""
         if execution_plan is not None:
             return execution_plan, WorkflowGraph.from_execution_plan(execution_plan)
 
@@ -332,6 +337,7 @@ class PlannedExecutor:
         skipped_step_ids: list[str],
         context: Optional[Any] = None,
     ) -> dict[str, Any]:
+        """构造 planned 响应的审计和可观测性元信息。"""
         route_meta = profile.to_legacy_route_meta() if profile is not None else decision.to_meta()
         capability = getattr(context, "capability_decision", None)
         capability_payload = (
@@ -433,6 +439,7 @@ class PlannedExecutor:
         response: FinalResponse,
         fallback_decision: Optional[Any],
     ) -> list[dict[str, Any]]:
+        """把 planned 执行结果转换为统一执行事件列表。"""
         events: list[dict[str, Any]] = []
         if response.execution_plan:
             events.append(

@@ -1,3 +1,6 @@
+"""高层技能 operation 到原子工具约束的策略解析模块。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,6 +12,8 @@ from src.skills import registry
 
 @dataclass(frozen=True)
 class OperationToolPolicy:
+    """某个高层技能 operation 对底层原子工具的允许/禁用策略。"""
+
     logical_skill: str
     operation: str
     allowed_tools: List[str] = field(default_factory=list)
@@ -17,7 +22,7 @@ class OperationToolPolicy:
 
 
 class OperationPolicyResolver:
-    """Resolve operation-scoped MCP tool policy for handler skills."""
+    """为 handler 技能解析 operation 级 MCP 工具策略。"""
 
     _POSITION_OPERATIONS = {
         "altaz",
@@ -33,6 +38,7 @@ class OperationPolicyResolver:
         logical_skill: str,
         params: Dict[str, Any],
     ) -> Optional[OperationToolPolicy]:
+        """根据技能名和参数解析 operation 策略。"""
         operation = self._resolve_operation(logical_skill, params)
         if not operation:
             return None
@@ -51,6 +57,7 @@ class OperationPolicyResolver:
         logical_skill: str,
         params: Dict[str, Any],
     ) -> Optional[str]:
+        """按技能类型分派 operation 推断逻辑。"""
         if logical_skill == "celestial-position-calculator":
             return self._resolve_position_operation(params)
         if logical_skill == "celestial-events-forecast":
@@ -58,6 +65,7 @@ class OperationPolicyResolver:
         return None
 
     def _resolve_position_operation(self, params: Dict[str, Any]) -> str:
+        """根据位置计算参数推断应使用的 operation。"""
         requested = str(params.get("operation") or "").strip().lower()
         if requested in self._POSITION_OPERATIONS:
             return requested
@@ -70,6 +78,7 @@ class OperationPolicyResolver:
         return "planet_position"
 
     def _resolve_event_operation(self, params: Dict[str, Any]) -> str:
+        """根据天象查询时间范围推断周度或月度 operation。"""
         requested = str(params.get("operation") or "").strip().lower()
         if requested in self._EVENT_OPERATIONS:
             return requested
@@ -82,6 +91,7 @@ class OperationPolicyResolver:
 
     @staticmethod
     def _parse_iso_date(value: Any) -> Optional[datetime]:
+        """解析 ISO 日期文本，失败时返回 None。"""
         if not value:
             return None
         text = str(value).strip()

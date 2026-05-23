@@ -1,3 +1,6 @@
+"""Agent 执行策略与治理指标模块，负责从任务画像推断执行模式并记录路由/延迟基线。
+"""
+
 from __future__ import annotations
 
 import json
@@ -19,6 +22,7 @@ VALID_AGENT_MODES = {"auto", "react", "hybrid", "planned"}
 
 @dataclass(frozen=True)
 class AgentExecutionPolicy:
+    """Agent 执行策略，根据配置和任务画像选择 direct、planned 或 react。"""
     mode: str = "hybrid"
     enable_structured_skill_result: bool = False
     enable_planner: bool = False
@@ -26,10 +30,12 @@ class AgentExecutionPolicy:
 
     @property
     def effective_mode(self) -> str:
+        """返回策略在当前配置下的实际执行模式。"""
         return "auto" if self.mode == "hybrid" else self.mode
 
     @classmethod
     def from_settings(cls) -> "AgentExecutionPolicy":
+        """从全局配置构造 Agent 执行策略。"""
         raw_mode = str(getattr(settings, "AGENT_MODE", "hybrid")).strip().lower()
         mode = raw_mode if raw_mode in VALID_AGENT_MODES else "hybrid"
         return cls(
@@ -44,11 +50,13 @@ class AgentExecutionPolicy:
         )
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前对象转换为 dict 相关的兼容结构。"""
         payload = asdict(self)
         payload["effective_mode"] = self.effective_mode
         return payload
 
     def _legacy_path_from_route(self, route: Optional[str]) -> str:
+        """把旧 route 字符串映射为 direct、planned 或 react 执行路径。"""
         if self.effective_mode == "react":
             return "react"
         if route == "direct_task":
@@ -67,6 +75,7 @@ class AgentExecutionPolicy:
 
     @staticmethod
     def _legacy_task_type_for_route(route: Optional[str]) -> str:
+        """为旧 route 推断兼容 task_type。"""
         if route == "direct_task":
             return "smalltalk"
         if route == "planned_task":
@@ -74,7 +83,7 @@ class AgentExecutionPolicy:
         return "open_domain_reasoning"
 
     def choose_path(self, route: Optional[str]) -> str:
-        """Deprecated compatibility wrapper.
+        """旧版 route 字符串兼容包装。
 
         旧接口仍返回 direct/planned/react 字符串，但主调用方应迁移到
         decide(profile, context) -> ExecutionDecision。
@@ -97,7 +106,7 @@ class AgentExecutionPolicy:
         profile: "TaskProfile",
         context: "Optional[ExecutionContext]" = None,
     ) -> "ExecutionDecision":
-        """Policy 主输出：基于 TaskProfile/ExecutionContext 推断 ExecutionDecision。
+        """策略主输出：基于 TaskProfile/ExecutionContext 推断 ExecutionDecision。
 
         规则（优先级从高到低）：
         1. effective_mode==react（全局覆盖）-> react
@@ -178,6 +187,7 @@ class AgentExecutionPolicy:
 
 @dataclass(frozen=True)
 class BenchmarkCase:
+    """路由基准评测用例结构。"""
     case_id: str
     category: str
     query: str
@@ -190,6 +200,7 @@ class BenchmarkCase:
 def load_phase0_benchmark_cases(
     path: Optional[str] = None,
 ) -> List[BenchmarkCase]:
+    """加载 Phase0 路由基准评测用例。"""
     benchmark_path = resolve_path(path or settings.PHASE0_BENCHMARK_PATH)
     with open(benchmark_path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -202,6 +213,7 @@ def evaluate_router_benchmark(
     *,
     allow_legacy_route: bool = False,
 ) -> Dict[str, Any]:
+    """执行路由基准评测并统计不匹配用例。"""
     evaluated = 0
     mismatches = 0
     by_category: Dict[str, Dict[str, int]] = {}
@@ -248,6 +260,7 @@ def evaluate_router_benchmark(
 
 @dataclass(frozen=True)
 class RequestObservation:
+    """治理指标中的单次请求观测记录。"""
     route: str
     request_total_ms: float
     agent_mode: str
@@ -258,21 +271,25 @@ class RequestObservation:
 
 
 class GovernanceMetricsRegistry:
-    """In-memory metrics store for phase-0 governance baselines."""
+    """用于治理基线统计的内存指标仓库。"""
 
     def __init__(self) -> None:
+        """初始化 GovernanceMetricsRegistry 的依赖、配置和内部状态。"""
         self._lock = threading.Lock()
         self._observations: List[RequestObservation] = []
 
     def record(self, observation: RequestObservation) -> None:
+        """记录一次请求观测。"""
         with self._lock:
             self._observations.append(observation)
 
     def clear(self) -> None:
+        """清空已记录的请求观测。"""
         with self._lock:
             self._observations.clear()
 
     def snapshot(self) -> Dict[str, Any]:
+        """返回当前累计指标或证据的快照。"""
         with self._lock:
             observations = list(self._observations)
 
@@ -316,6 +333,7 @@ class GovernanceMetricsRegistry:
 
 
 def _percentile(values: List[float], percentile: int) -> float:
+    """计算延迟列表的指定百分位值。"""
     if not values:
         return 0.0
 

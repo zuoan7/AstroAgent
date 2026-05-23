@@ -1,3 +1,6 @@
+"""最终响应模型，统一答案、来源、工具时间线、执行计划、审计和版本信息。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class FinalResponse:
+    """Agent 最终响应结构，聚合答案、证据、工具、trace 和审计元信息。"""
     answer: str
     summary: str
     sources: List[Dict[str, Any]] = field(default_factory=list)
@@ -26,6 +30,7 @@ class FinalResponse:
     versions: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         result: Dict[str, Any] = {
             "answer": self.answer,
             "summary": self.summary,
@@ -60,6 +65,7 @@ class FinalResponse:
         return result
 
     def to_legacy_dict(self) -> Dict[str, Any]:
+        """转换为旧 API 仍使用的响应字典结构。"""
         return {
             "answer": self.answer,
             "route": self.route,

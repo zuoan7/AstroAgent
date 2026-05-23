@@ -1,3 +1,6 @@
+"""工具调用防护层，在请求离开 Agent 进程前校验工具名、策略和必填参数。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,7 +10,7 @@ from src.tools.catalog import ToolCatalog, get_default_tool_catalog
 
 
 class ToolGuardViolation(ValueError):
-    """Raised when a tool call violates the current runtime policy."""
+    """工具调用违反当前运行时策略时抛出的异常。"""
 
     def __init__(
         self,
@@ -16,6 +19,7 @@ class ToolGuardViolation(ValueError):
         code: str = "TOOL_GUARD_REJECTED",
         details: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """初始化工具防护异常，保留错误码和结构化详情。"""
         super().__init__(message)
         self.code = code
         self.details = dict(details or {})
@@ -23,6 +27,8 @@ class ToolGuardViolation(ValueError):
 
 @dataclass(frozen=True)
 class ToolGuardContext:
+    """一次工具调用的策略上下文，描述允许工具、禁用工具和必填参数。"""
+
     logical_skill: str = ""
     operation: Optional[str] = None
     allowed_tools: List[str] = field(default_factory=list)
@@ -40,6 +46,7 @@ class ToolGuardContext:
         required_params: Optional[List[str]] = None,
         enforce_allowed_tools: Optional[bool] = None,
     ) -> "ToolGuardContext":
+        """基于当前上下文派生一个带局部策略的新上下文。"""
         return ToolGuardContext(
             logical_skill=self.logical_skill if logical_skill is None else logical_skill,
             operation=self.operation if operation is None else operation,
@@ -67,13 +74,15 @@ class ToolGuardContext:
 
 
 class ToolGuard:
-    """Validates MCP atomic tool calls before they leave the agent process."""
+    """在原子 MCP 工具调用离开 Agent 进程前执行校验。"""
 
     def __init__(self, catalog: Optional[ToolCatalog] = None) -> None:
+        """初始化工具防护器和可用工具目录。"""
         self._catalog = catalog or get_default_tool_catalog()
 
     @property
     def catalog(self) -> ToolCatalog:
+        """返回当前工具防护器使用的工具目录。"""
         return self._catalog
 
     def validate_tool_call(
@@ -83,6 +92,7 @@ class ToolGuard:
         params: Optional[Dict[str, Any]] = None,
         context: Optional[ToolGuardContext] = None,
     ) -> None:
+        """校验工具名、允许/禁用策略和必填参数。"""
         if not self._catalog.has_tool(tool_name):
             raise ToolGuardViolation(
                 f"Unknown MCP atomic tool: {tool_name}",
@@ -123,6 +133,7 @@ class ToolGuard:
 
     @staticmethod
     def _policy_details(ctx: ToolGuardContext, tool_name: str) -> Dict[str, Any]:
+        """生成工具防护拒绝时附带的策略详情。"""
         return {
             "tool_name": tool_name,
             "logical_skill": ctx.logical_skill,

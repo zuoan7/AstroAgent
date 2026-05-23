@@ -1,3 +1,6 @@
+"""Agent 流式主链路，负责上下文组装、路由决策、执行引擎调用、前端事件适配和记忆写入。
+"""
+
 import asyncio
 import json
 import re
@@ -46,6 +49,7 @@ FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS = 500
 
 
 class BaseStreamingGenerator:
+    """流式服务基类，封装上下文构建、路由执行、事件生成和记忆落库。"""
     def __init__(
         self,
         agent_executor: Any,
@@ -65,6 +69,7 @@ class BaseStreamingGenerator:
         execution_engine: Optional[Any] = None,
         task_state_runtime: Optional[Any] = None,
     ):
+        """初始化 BaseStreamingGenerator 的依赖、配置和内部状态。"""
         self._agent_executor = agent_executor
         self._memory = memory
         self._long_term_memory = long_term_memory
@@ -92,6 +97,7 @@ class BaseStreamingGenerator:
         self._task_state_runtime = task_state_runtime or TaskStateRuntimeService(memory)
 
     def _cleanup_action_history(self, request_id: Optional[str] = None):
+        """清理指定请求的工具动作历史并执行 LRU 淘汰。"""
         if request_id and request_id in self._action_history:
             del self._action_history[request_id]
             logger.debug(f"已清理请求 {request_id} 的操作历史")
@@ -101,6 +107,7 @@ class BaseStreamingGenerator:
             logger.debug(f"LRU淘汰最旧的操作历史: {oldest_key}")
 
     def _log_memory_usage(self):
+        """记录工具动作历史缓存的内存状态。"""
         total_entries = len(self._action_history)
         total_actions = sum(len(v) for v in self._action_history.values())
         logger.debug(
@@ -108,6 +115,7 @@ class BaseStreamingGenerator:
         )
 
     def _build_short_term_memory_context(self, query: str) -> Dict[str, Any]:
+        """调用短期记忆服务构建当前查询上下文。"""
         try:
             context = self._memory.build_context(
                 BuildContextRequest(
@@ -124,6 +132,7 @@ class BaseStreamingGenerator:
         self,
         memory_context: Optional[Dict[str, Any]] = None,
     ) -> str:
+        """把短期记忆上下文格式化为提示词中的历史对话文本。"""
         try:
             context = (
                 memory_context
@@ -140,6 +149,7 @@ class BaseStreamingGenerator:
         self,
         memory_context: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        """从记忆上下文中提取选中的任务状态。"""
         if not isinstance(memory_context, dict):
             return {}
         state = memory_context.get("selected_task_state")
@@ -150,6 +160,7 @@ class BaseStreamingGenerator:
         query: str,
         memory_context: Optional[Dict[str, Any]],
     ) -> str:
+        """结合任务状态把用户原始问题补全为有效查询。"""
         try:
             return self._task_state_runtime.build_effective_query(
                 query,
@@ -167,6 +178,7 @@ class BaseStreamingGenerator:
         self,
         state: Optional[Dict[str, Any]],
     ) -> Optional[int]:
+        """从任务状态中解析乐观锁版本号。"""
         if not isinstance(state, dict):
             return None
         try:
@@ -186,6 +198,7 @@ class BaseStreamingGenerator:
         execution_plan: Optional[ExecutionPlan],
         selected_task_state: Optional[Dict[str, Any]],
     ) -> Optional[Any]:
+        """在请求开始时写入任务状态补丁。"""
         try:
             patch = self._task_state_runtime.build_turn_started_patch(
                 effective_query or original_query,
@@ -223,6 +236,7 @@ class BaseStreamingGenerator:
         fallback_message: str = "",
         expected_version: Optional[int] = None,
     ) -> Optional[Any]:
+        """在请求结束时写入任务状态补丁。"""
         try:
             patch = self._task_state_runtime.build_turn_completed_patch(
                 response=response,
@@ -256,6 +270,7 @@ class BaseStreamingGenerator:
         assistant_message: str,
         current_state: Optional[Any],
     ) -> None:
+        """异步调度任务状态 LLM 增强。"""
         try:
             self._task_state_runtime.enrich_patch_with_llm_async(
                 session_id=session_id,
@@ -273,6 +288,7 @@ class BaseStreamingGenerator:
             )
 
     def _get_task_state_debug(self, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """读取当前任务状态调试快照。"""
         if not hasattr(self._memory, "get_task_state"):
             return None
         try:
@@ -290,6 +306,7 @@ class BaseStreamingGenerator:
         tool_timeline: list[Dict[str, Any]],
         fallback_used: bool,
     ) -> FinalResponse:
+        """根据流式执行过程中收集的状态构造 FinalResponse。"""
         task_type = getattr(decision, "task_type", "") if decision else ""
         route = getattr(decision, "route", "") if decision else ""
         trace = []
@@ -326,6 +343,7 @@ class BaseStreamingGenerator:
         )
 
     def _format_user_profile(self) -> str:
+        """把长期记忆画像格式化为提示词上下文。"""
         if not self._long_term_memory:
             return "暂无用户偏好信息"
         if hasattr(self._long_term_memory, "build_prompt_context"):
@@ -339,6 +357,7 @@ class BaseStreamingGenerator:
     def _extract_and_update_long_term_memory(
         self, user_message: str, assistant_message: str
     ):
+        """从本轮对话中抽取长期记忆并写入服务。"""
         if not self._long_term_memory:
             return
 
@@ -366,6 +385,7 @@ class BaseStreamingGenerator:
     def _schedule_long_term_memory_update(
         self, user_message: str, assistant_message: str
     ) -> None:
+        """后台调度长期记忆抽取和更新。"""
         if not self._long_term_memory:
             return
 
@@ -374,6 +394,7 @@ class BaseStreamingGenerator:
             return
 
         def _runner() -> None:
+            """在线程中执行同步长期记忆更新并记录耗时。"""
             started = time.perf_counter()
             self._extract_and_update_long_term_memory(user_message, assistant_message)
             logger.info(
@@ -388,6 +409,7 @@ class BaseStreamingGenerator:
     def _check_repeated_action(
         self, request_id: str, tool_name: str, tool_input: str
     ) -> bool:
+        """检测同一请求中是否重复执行同一工具动作。"""
         if request_id not in self._action_history:
             self._action_history[request_id] = []
 
@@ -408,6 +430,7 @@ class BaseStreamingGenerator:
     def _build_response_from_intermediate_steps(
         self, query: str, intermediate_steps: list
     ) -> str:
+        """从 ReAct 中间工具结果中尽量恢复可用回答。"""
         if not intermediate_steps:
             return ""
 
@@ -484,6 +507,7 @@ class BaseStreamingGenerator:
         use_long_term_memory: bool = True,
         memory_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
+        """准备 legacy ReAct 调用输入，包括问题、历史和用户画像。"""
         self._current_query = query
         chat_history = self._format_chat_history(memory_context)
         user_profile = (
@@ -500,6 +524,7 @@ class BaseStreamingGenerator:
     def _infer_plan_steps(
         self, query: str, use_long_term_memory: bool
     ) -> List[Dict[str, Any]]:
+        """为流式前端推断初始计划步骤。"""
         steps = [
             {
                 "id": "understand",
@@ -538,6 +563,7 @@ class BaseStreamingGenerator:
     def _update_plan_status(
         self, steps: List[Dict[str, Any]], step_id: str, status: str
     ) -> List[Dict[str, Any]]:
+        """返回更新指定步骤状态后的计划步骤列表。"""
         updated: List[Dict[str, Any]] = []
         for step in steps:
             clone = dict(step)
@@ -549,6 +575,7 @@ class BaseStreamingGenerator:
     def _explain_long_term_retrieval(
         self, query: str, use_long_term_memory: bool
     ) -> List[Dict[str, Any]]:
+        """获取长期记忆命中的解释信息。"""
         if not use_long_term_memory or not self._long_term_memory:
             return []
         if hasattr(self._long_term_memory, "explain_retrieval_hits"):
@@ -565,6 +592,7 @@ class BaseStreamingGenerator:
     def _extract_evidence(
         self, tool_name: str, tool_output: str, run_id: str
     ) -> List[Dict[str, Any]]:
+        """从工具输出中提取证据片段和外部引用。"""
         evidence: List[Dict[str, Any]] = []
         preview = self._preview_text(tool_output, 240)
         if preview:
@@ -603,6 +631,7 @@ class BaseStreamingGenerator:
         memory_hits: List[Dict[str, Any]],
         evidence_items: List[Dict[str, Any]],
     ) -> float:
+        """根据工具结果、证据和记忆命中估算回答置信度。"""
         confidence = 0.35
         if tool_runs:
             confidence += min(len(tool_runs) * 0.1, 0.3)
@@ -616,6 +645,7 @@ class BaseStreamingGenerator:
 
     @staticmethod
     def _preview_text(value: Any, max_len: int) -> str:
+        """把任意值转换为指定长度的预览文本。"""
         text = "" if value is None else str(value)
         if len(text) <= max_len:
             return text
@@ -624,6 +654,7 @@ class BaseStreamingGenerator:
     def _handle_tool_start(
         self, request_id: str, run_id: str, data: dict, check_repeated: bool = False
     ) -> Optional[str]:
+        """处理 ReAct 工具开始事件并记录运行状态。"""
         tool_name = data.get("name") or data.get("tool")
         tool_input = data.get("input")
         tool_input_str = str(tool_input) if tool_input else ""
@@ -658,6 +689,7 @@ class BaseStreamingGenerator:
     def _handle_tool_end(
         self, request_id: str, run_id: str, data: dict
     ) -> Dict[str, Any]:
+        """处理 ReAct 工具结束事件、写入记忆并提取图片链接。"""
         meta = self._tool_runs.pop(run_id, {})
         duration = None
         if meta.get("start_time") is not None:
@@ -741,6 +773,7 @@ class BaseStreamingGenerator:
         use_long_term_memory: bool = True,
         latency: Optional[LatencyTracker] = None,
     ):
+        """写入用户和助手消息，并按需触发长期记忆更新。"""
         try:
             with latency.measure("memory_save_ms") if latency else _nullcontext():
                 self._memory.append_message(
@@ -772,17 +805,20 @@ class BaseStreamingGenerator:
                 latency.set_meta("ltm_async", True)
 
     def _finalize_request(self, request_id: Optional[str]):
+        """清理当前请求的运行状态和动作历史。"""
         self._current_request_id = None
         self._cleanup_action_history(request_id)
         self._log_memory_usage()
 
     def _memory_session_id(self) -> str:
+        """计算当前短期记忆会话 ID。"""
         session_id = getattr(self._memory, "session_id", None)
         if session_id:
             return session_id
         return f"mem_{self._user_id}"
 
     def _ensure_agent_executor(self) -> Any:
+        """获取或创建 legacy ReAct AgentExecutor。"""
         if self._agent_executor is not None:
             return self._agent_executor
         if self._agent_executor_factory is None:
@@ -791,6 +827,7 @@ class BaseStreamingGenerator:
         return self._agent_executor
 
     def _use_unified_execution_engine(self) -> bool:
+        """判断当前流式服务是否配置了统一执行引擎。"""
         return getattr(self, "_execution_engine", None) is not None
 
     def _preview_execution_plan_for_streaming(
@@ -832,6 +869,7 @@ class BaseStreamingGenerator:
         request_id: Optional[str] = None,
         memory_context: Optional[Dict[str, Any]] = None,
     ) -> Any:
+        """构造统一 RequestContext 并写入当前查询。"""
         from src.agent.models.request_context import RequestContext
 
         self._current_query = query
@@ -949,6 +987,7 @@ class BaseStreamingGenerator:
         use_long_term_memory: bool,
         execution_plan: ExecutionPlan,
     ) -> List[Dict[str, Any]]:
+        """把 ExecutionPlan 转换为前端计划步骤列表。"""
         steps = [
             {
                 "id": "understand",
@@ -979,6 +1018,7 @@ class BaseStreamingGenerator:
 
     @staticmethod
     def _infer_content_type(text: str) -> str:
+        """根据文本内容推断工具输出的内容类型。"""
         stripped = (text or "").strip()
         if stripped.startswith("{") or stripped.startswith("["):
             try:
@@ -989,6 +1029,7 @@ class BaseStreamingGenerator:
         return "text/plain"
 
     def _extract_stream_text(self, data: dict) -> Optional[str]:
+        """从 LangChain 流式事件 chunk 中提取文本。"""
         chunk = data.get("chunk")
         if not chunk:
             return None
@@ -1004,6 +1045,7 @@ class BaseStreamingGenerator:
         thinking_logged: bool,
         request_id: str,
     ) -> Dict[str, Any]:
+        """解析 ReAct 流中的思考片段和最终答案片段。"""
         thinking_buffer.append(text)
         combined_thinking = "".join(thinking_buffer)
 
@@ -1049,9 +1091,11 @@ class BaseStreamingGenerator:
         return result
 
     def register_event_processor(self, processor: StreamEventProcessor):
+        """注册一个流式事件处理器。"""
         self._event_processors.append(processor)
 
     def clear_event_processors(self):
+        """清空所有流式事件处理器。"""
         self._event_processors.clear()
 
     def _build_stream_event(
@@ -1064,6 +1108,7 @@ class BaseStreamingGenerator:
         meta: Optional[Dict[str, Any]] = None,
         modality: str = "text",
     ) -> StreamEvent:
+        """构造并校验内部标准流式事件。"""
         payload = {"request_id": request_id}
         if meta:
             payload.update(meta)
@@ -1076,6 +1121,7 @@ class BaseStreamingGenerator:
         ).validate()
 
     def _snapshot_runtime_metrics(self) -> Dict[str, Dict[str, float]]:
+        """读取 MCP 和 RAG 当前运行时指标。"""
         mcp = {}
         rag = {}
         if self._skill_manager and hasattr(
@@ -1098,6 +1144,7 @@ class BaseStreamingGenerator:
     def _metric_delta(
         after: Dict[str, float], before: Dict[str, float], key: str
     ) -> float:
+        """计算单个运行时指标的前后差值。"""
         return round(after.get(key, 0.0) - before.get(key, 0.0), 2)
 
     def _record_runtime_metric_deltas(
@@ -1106,6 +1153,7 @@ class BaseStreamingGenerator:
         before: Dict[str, Dict[str, float]],
         after: Dict[str, Dict[str, float]],
     ) -> None:
+        """把 MCP/RAG 指标差值写入延迟追踪器。"""
         latency.record_ms(
             "mcp_session_init_ms",
             self._metric_delta(
@@ -1145,6 +1193,7 @@ class BaseStreamingGenerator:
         execution_decision: Optional[Any] = None,
         exec_context: Optional[Any] = None,
     ) -> FinalResponse:
+        """调用统一执行引擎完成 direct/planned/react 编排路径。"""
         with latency.measure("agent_prepare_ms"):
             if chat_history is None:
                 chat_history = self._format_chat_history()
@@ -1202,6 +1251,7 @@ class BaseStreamingGenerator:
         response_mode: str,
         use_long_term_memory: bool = True,
     ) -> AsyncGenerator[Any, None]:
+        """把内部事件流通过指定适配器转换为对外输出。"""
         async for event in self._generate_internal_events(
             query,
             stop_on_repeated_action=stop_on_repeated_action,
@@ -1220,6 +1270,7 @@ class BaseStreamingGenerator:
         response_mode: str,
         use_long_term_memory: bool = True,
     ) -> AsyncGenerator[StreamEvent, None]:
+        """生成完整内部流式事件，串联记忆、路由、执行、审计和落库。"""
         request_id = uuid.uuid4().hex[:8]
         request_started_at = time.time()
         latency = LatencyTracker()
@@ -1261,6 +1312,7 @@ class BaseStreamingGenerator:
             meta: Optional[Dict[str, Any]] = None,
             modality: str = "text",
         ) -> StreamEvent:
+            """为当前请求创建带递增序号的内部事件。"""
             nonlocal sequence
             sequence += 1
             return self._build_stream_event(
@@ -1273,6 +1325,7 @@ class BaseStreamingGenerator:
             )
 
         async def emit(event: StreamEvent) -> AsyncGenerator[StreamEvent, None]:
+            """把内部事件交给处理器链并逐个产出。"""
             processed_events = apply_event_processors(event, self._event_processors)
             for processed in processed_events:
                 yield processed
@@ -2116,15 +2169,20 @@ class BaseStreamingGenerator:
 
 
 class _nullcontext:
+    """无操作上下文管理器，用于统一可选延迟测量分支。"""
     def __enter__(self):
+        """进入无操作上下文。"""
         return None
 
     def __exit__(self, exc_type, exc, tb):
+        """退出无操作上下文且不吞掉异常。"""
         return False
 
 
 class StreamingService(BaseStreamingGenerator):
+    """对外流式服务门面，提供纯文本、JSON 事件和 SSE 三种输出形式。"""
     def generate_response(self, query: str) -> Generator[str, None, None]:
+        """同步生成完整文本响应。"""
         logger.info(f"\n=== 处理用户查询：{query} ===")
 
         tool_call_failed = False

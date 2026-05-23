@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-cov lint lint-memory format type-check clean run-api run-mcp run-ui start-all
+.PHONY: help install install-dev test test-all test-slow test-cov lint lint-memory format type-check clean run-api run-mcp run-ui start-all
 
 help: ## Show this help message
 	@echo "AstroAgent - AI-powered astronomy assistant"
@@ -12,11 +12,17 @@ install: ## Install production dependencies
 install-dev: ## Install development dependencies
 	pip install -e ".[dev]"
 
-test: ## Run tests
+test: ## Run default fast tests
+	pytest tests/unit tests/regression tests/integration -v
+
+test-all: ## Run all tests
 	pytest tests/ -v
 
+test-slow: ## Run slower boundary, performance, and evaluation tests
+	pytest tests/boundary tests/performance tests/evaluation -v
+
 test-cov: ## Run tests with coverage
-	pytest tests/ -v --cov=src --cov-report=term-missing --cov-report=html
+	pytest tests/unit tests/regression tests/integration -v --cov=src --cov-report=term-missing --cov-report=html
 
 lint: ## Run linters
 	flake8 src/ tests/

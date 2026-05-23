@@ -1,3 +1,9 @@
+"""长期记忆删除服务。
+
+支持按正式记忆、候选、画像投影或用户全量范围删除，并写入事件日志和
+删除审计表。
+"""
+
 from src.memory.long_term_memory.models import (
     EventLogEntry,
     EventType,
@@ -18,6 +24,8 @@ class LongTermMemoryDeletionService:
         self._projection = projection
 
     def delete(self, request: LongTermMemoryDeletionRequest) -> LongTermMemoryDeletionResult:
+        """执行长期记忆 tombstone/投影删除，并记录审计结果。"""
+
         if request.scope not in self.SUPPORTED_SCOPES:
             raise ValueError(f"Unsupported long-term memory deletion scope: {request.scope}")
 

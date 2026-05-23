@@ -1,4 +1,5 @@
-"""DirectExecutor — context-first direct task executor."""
+"""Direct 执行器，处理闲聊、简单问答、无需工具回答和单工具查询等低复杂度路径。
+"""
 
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ class DirectExecutor:
         llm: Any,
         synthesizer: Any,
     ) -> None:
+        """初始化 DirectExecutor 的依赖、配置和内部状态。"""
         self._skill_manager = skill_manager
         self._rag = rag_retriever
         self._llm = llm
@@ -37,6 +39,7 @@ class DirectExecutor:
         self,
         context: Any,
     ) -> FinalResponse:
+        """使用统一 ExecutionContext 执行当前路径。"""
         profile = context.profile
         query = context.query
         chat_history = context.chat_history
@@ -84,6 +87,7 @@ class DirectExecutor:
         self,
         profile: Any,
     ) -> FinalResponse:
+        """生成缺少关键信息时的澄清回答。"""
         answer = (
             getattr(profile, "clarification_prompt", "")
             or "这个请求还缺少关键信息。请补充目标、时间、地点或器材参数后我再继续。"
@@ -108,6 +112,7 @@ class DirectExecutor:
         profile: Any,
         query: str,
     ) -> FinalResponse:
+        """生成不需要工具的直接回答。"""
         answer = (
             getattr(profile, "answer_hint", "")
             or stable_knowledge_answer(query)
@@ -135,6 +140,7 @@ class DirectExecutor:
         user_profile: str = "",
         context: Any,
     ) -> FinalResponse:
+        """执行 direct 单工具或单技能查询。"""
         from src.agent.models.skill_result import SkillResult
 
         profile = context.profile
@@ -228,6 +234,7 @@ class DirectExecutor:
         capability_name: str = "",
         capability_reason: str = "",
     ) -> None:
+        """把路由、工具和能力选择审计元信息挂到响应。"""
         route_meta = profile.to_legacy_route_meta()
         response.route = str(getattr(profile, "legacy_route", ""))
         response.task_type = str(getattr(profile, "task_type", ""))
@@ -270,6 +277,7 @@ class DirectExecutor:
         chat_history: str,
         user_profile: str,
     ) -> FinalResponse:
+        """执行简单问答快路径，必要时使用 RAG 和 LLM。"""
         fast_answer = stable_knowledge_answer(query)
         if fast_answer:
             return self._synthesizer.synthesize_qa(
@@ -316,6 +324,7 @@ class DirectExecutor:
         capability_name: str = "",
         capability_reason: str = "",
     ) -> None:
+        """为 direct 响应构造工具调用和答案就绪事件。"""
         events = []
         if tool_name:
             events.append(
@@ -372,10 +381,12 @@ class DirectExecutor:
 
 
     def _invoke_llm(self, prompt: str) -> str:
+        """同步调用底层 LLM 并抽取文本内容。"""
         result = self._llm.invoke(prompt)
         return getattr(result, "content", None) or str(result)
 
     def _smalltalk_reply(self, query: str) -> str:
+        """生成固定闲聊回复。"""
         normalized = (query or "").strip().lower()
         if "谢谢" in query or "thanks" in normalized:
             return "不客气。如果你想查天象、天气或观测计划，直接告诉我时间和地点即可。"
@@ -384,6 +395,7 @@ class DirectExecutor:
         return "你好，我可以帮你查询天象、观测条件、天体位置和天文知识。"
 
     def _direct_no_tool_reply(self, query: str) -> str:
+        """调用提示词生成无需工具的直接回答。"""
         prompt = get_prompt_renderer().render(
             "direct.no_tool_answer",
             {"query": query},
@@ -398,6 +410,7 @@ class DirectExecutor:
         chat_history: str = "",
         user_profile: str = "",
     ) -> Dict[str, Any]:
+        """根据技能名和上下文构造调用参数。"""
         try:
             return self._param_builder.build(
                 skill_name,
@@ -410,6 +423,7 @@ class DirectExecutor:
 
     @staticmethod
     def _build_atomic_tool_params(capability: Any, query: str) -> Dict[str, Any]:
+        """根据能力选择信息构造原子工具参数。"""
         metadata = getattr(capability, "metadata", {}) or {}
         explicit_params = metadata.get("params")
         tool_name = getattr(capability, "name", "")
@@ -426,6 +440,7 @@ class DirectExecutor:
         tool_name: str,
         params: Dict[str, Any],
     ) -> "SkillResult":
+        """调用原子 MCP 工具并包装为 SkillResult。"""
         from src.agent.models.skill_result import SkillResult
 
         if not hasattr(self._skill_manager, "call_mcp_tool"):

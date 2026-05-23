@@ -1,4 +1,5 @@
-"""ReactExecutor — context-first ReAct executor."""
+"""ReAct 执行器，封装 LangChain ReAct Agent 的非流式和流式执行，并转换为统一响应与 trace。
+"""
 
 from __future__ import annotations
 
@@ -23,11 +24,13 @@ class ReactExecutor:
         agent_executor_factory: Optional[Callable[[], Any]] = None,
         trace_adapter: Optional[ReactToolTraceAdapter] = None,
     ) -> None:
+        """初始化 ReactExecutor 的依赖、配置和内部状态。"""
         self._agent_executor = agent_executor
         self._agent_executor_factory = agent_executor_factory
         self._trace_adapter = trace_adapter or ReactToolTraceAdapter()
 
     def ensure_executor(self) -> Any:
+        """获取或懒加载 ReAct AgentExecutor。"""
         if self._agent_executor is not None:
             return self._agent_executor
         if self._agent_executor_factory is None:
@@ -42,6 +45,7 @@ class ReactExecutor:
         chat_history: str = "",
         user_profile: str = "",
     ) -> Dict[str, str]:
+        """构造传给 ReAct AgentExecutor 的输入字典。"""
         return {
             "input": query,
             "chat_history": chat_history,
@@ -49,7 +53,7 @@ class ReactExecutor:
         }
 
     async def run_context(self, context: Any) -> FinalResponse:
-        """Context-first react non-streaming execution entry.
+        """基于 ExecutionContext 的 ReAct 非流式执行入口。
 
         优先复用 executor.invoke()；若底层只支持流式，则退化为聚合 astream_events()。
         """
@@ -83,6 +87,7 @@ class ReactExecutor:
         route_meta: Dict[str, Any],
         result: Any,
     ) -> FinalResponse:
+        """把 ReAct invoke 结果转换为 FinalResponse。"""
         payload = result if isinstance(result, dict) else {}
         output = ""
         if isinstance(payload, dict):
@@ -133,6 +138,7 @@ class ReactExecutor:
         route_meta: Dict[str, Any],
         agent_input: Dict[str, Any],
     ) -> FinalResponse:
+        """聚合 ReAct 流式事件并转换为 FinalResponse。"""
         chunks: List[str] = []
         tool_runs: Dict[str, Dict[str, Any]] = {}
         execution_trace: List[Dict[str, Any]] = []
@@ -223,6 +229,7 @@ class ReactExecutor:
         self,
         intermediate_steps: Any,
     ) -> List[ExecutionTraceEntry]:
+        """把 LangChain intermediate_steps 转换为统一 trace。"""
         entries: List[ExecutionTraceEntry] = []
         if not isinstance(intermediate_steps, list):
             return entries
@@ -244,6 +251,7 @@ class ReactExecutor:
 
     @staticmethod
     def _split_intermediate_step(item: Any) -> tuple[Any, Any]:
+        """兼容 tuple/list/dict 形式拆分 ReAct 中间步骤。"""
         if isinstance(item, (tuple, list)) and len(item) >= 2:
             return item[0], item[1]
         if isinstance(item, dict):
@@ -254,6 +262,7 @@ class ReactExecutor:
 
     @staticmethod
     def _action_tool_name(action: Any) -> str:
+        """从 ReAct action 中提取工具名。"""
         if isinstance(action, dict):
             return str(action.get("tool") or action.get("name") or "unknown_tool")
         return str(
@@ -264,6 +273,7 @@ class ReactExecutor:
 
     @staticmethod
     def _action_tool_input(action: Any) -> Any:
+        """从 ReAct action 中提取工具输入。"""
         if isinstance(action, dict):
             return action.get("tool_input", action.get("input", ""))
         return getattr(action, "tool_input", getattr(action, "input", ""))
@@ -272,6 +282,7 @@ class ReactExecutor:
     def _events_from_trace(
         execution_trace: List[ExecutionTraceEntry],
     ) -> List[Dict[str, Any]]:
+        """把 ReAct trace 条目转换为统一执行事件。"""
         events: List[Dict[str, Any]] = []
         for entry in execution_trace:
             events.extend(
@@ -283,10 +294,12 @@ class ReactExecutor:
     def _build_react_audit_metadata(
         execution_trace: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        """汇总 ReAct 工具 trace 的审计元信息。"""
         return ReactToolTraceAdapter.summarize_audit(execution_trace)
 
     @staticmethod
     def _preview_text(value: Any, max_len: int) -> str:
+        """把任意值转换为指定长度的预览文本。"""
         text = "" if value is None else str(value)
         if len(text) <= max_len:
             return text
@@ -294,6 +307,7 @@ class ReactExecutor:
 
     @staticmethod
     def _recover_answer_text(text: str) -> str:
+        """从 ReAct 原始输出中恢复用户可见最终答案。"""
         combined = (text or "").strip()
         if not combined:
             return ""

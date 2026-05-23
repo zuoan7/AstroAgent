@@ -1,3 +1,9 @@
+"""短期记忆写入服务。
+
+该层把上层 DTO 转换为 append-only 事件，同时把大型工具原文保存为 artifact。
+投影更新仍交给专门的 manager，保持写入路径职责单一。
+"""
+
 import time
 from typing import Any, Dict, Optional
 
@@ -29,6 +35,8 @@ class MemoryWriteService:
         self.compression_service = compression_service
 
     def append_message(self, request: AppendMessageRequest) -> Message:
+        """把用户/助手消息转成 message_created 事件并持久化。"""
+
         timestamp = request.timestamp or time.time()
         message = Message(
             role=request.role,
@@ -55,6 +63,8 @@ class MemoryWriteService:
         return message
 
     def append_tool_call(self, request: AppendToolCallRequest) -> ToolCallRecord:
+        """保存工具原始输出，写入摘要化的工具成功/失败事件。"""
+
         timestamp = request.timestamp or time.time()
         tool_call_id = ToolCallRecord(
             tool_name=request.tool_name, timestamp=timestamp
@@ -110,6 +120,8 @@ class MemoryWriteService:
         created_by: Optional[str] = None,
         turn_id: Optional[str] = None,
     ) -> TaskState:
+        """代理到 TaskStateManager，保证任务状态和事件日志同步更新。"""
+
         return self.task_state_manager.patch_state(
             tenant_id=tenant_id or self.tenant_id,
             session_id=session_id,

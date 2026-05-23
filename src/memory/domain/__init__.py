@@ -1,3 +1,5 @@
+"""短期记忆领域模型导出。"""
+
 from src.memory.domain.artifacts import ToolArtifact
 from src.memory.domain.deletion import DeletionJob, DeletionScope
 from src.memory.domain.events import MemoryEvent, MemoryEventType, new_memory_id

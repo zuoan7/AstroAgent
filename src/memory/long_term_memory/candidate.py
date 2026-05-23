@@ -1,3 +1,9 @@
+"""长期记忆候选管理。
+
+抽取结果先进入候选表，低风险且高置信/重复出现的候选可自动提升；
+背景和事实类高风险候选需要人工确认，降低画像污染风险。
+"""
+
 from typing import Any, Dict, List, Optional
 
 from src.core.logger import logger
@@ -15,6 +21,8 @@ from src.memory.long_term_memory.repository import LongTermMemoryRepository
 
 
 class CandidateManager:
+    """管理候选记忆的创建、更新、提升和拒绝。"""
+
     PROMOTION_OCCURRENCE_THRESHOLD = 2
     PROMOTION_CONFIDENCE_THRESHOLD = 0.6
     PROMOTION_EXPLICIT_BYPASS = True
@@ -50,6 +58,8 @@ class CandidateManager:
         source_content_snippet: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> MemoryCandidate:
+        """新增候选或提升已有候选的出现次数和置信度。"""
+
         existing = self._repo.find_candidate_by_type_key(user_id, memory_type, key)
 
         if existing:
@@ -101,6 +111,8 @@ class CandidateManager:
         return candidate
 
     def is_high_risk_candidate(self, candidate: MemoryCandidate) -> bool:
+        """判断候选是否属于需要确认的高风险画像类型。"""
+
         return candidate.memory_type in self.HIGH_RISK_MEMORY_TYPES
 
     def _set_candidate_status(
@@ -112,6 +124,8 @@ class CandidateManager:
         return candidate
 
     def should_promote(self, candidate: MemoryCandidate) -> bool:
+        """根据风险类型、置信度、出现次数和显式表达判断能否自动提升。"""
+
         # Conservative auto-promotion:
         # 1. high-risk types stay in candidate/needs_confirm by default
         # 2. explicit items still need minimum confidence
@@ -133,6 +147,8 @@ class CandidateManager:
     def promote_candidate(
         self, candidate_id: str, force: bool = False
     ) -> Optional[MemoryItem]:
+        """把候选转为正式记忆；未达阈值时可保持候选或转待确认。"""
+
         candidate = self._repo.get_candidate(candidate_id)
         if not candidate:
             logger.warning(f"候选记忆不存在: {candidate_id}")
@@ -161,6 +177,8 @@ class CandidateManager:
         return memory_item
 
     def reject_candidate(self, candidate_id: str, reason: str = "") -> bool:
+        """拒绝候选记忆并记录事件。"""
+
         candidate = self._repo.get_candidate(candidate_id)
         if not candidate:
             return False
@@ -189,6 +207,8 @@ class CandidateManager:
         source_conversation_id: Optional[str] = None,
         source_content_snippet: Optional[str] = None,
     ) -> Optional[MemoryItem]:
+        """处理一条抽取结果，必要时创建候选、待确认或正式记忆。"""
+
         candidate = self.add_or_update_candidate(
             user_id=user_id,
             memory_type=memory_type,
@@ -227,6 +247,8 @@ class CandidateManager:
         return self._repo.get_candidate(candidate_id)
 
     def promote_all_eligible(self, user_id: str) -> List[MemoryItem]:
+        """批量提升当前用户所有达到自动提升条件的候选。"""
+
         promoted = []
         candidates = self._repo.list_candidates(user_id, limit=1000)
         for candidate in candidates:

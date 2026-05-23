@@ -1,3 +1,6 @@
+"""MCP 客户端，负责 Streamable HTTP 会话初始化、SSE 响应解析和工具调用。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -24,21 +27,20 @@ MCP_RECONNECT_DELAY = 2.0
 
 class _AsyncBridge:
     """
-    Safe bridge to run async MCP operations from synchronous context.
+    在同步上下文中安全运行异步 MCP 操作的桥接器。
 
-    Creates a dedicated background event loop in a daemon thread, avoiding the
-    dangerous pattern of calling asyncio.run() inside an already-running event loop
-    (which causes RuntimeError / deadlock in FastAPI).
-    Uses asyncio.run_coroutine_threadsafe() to submit coroutines from sync code
-    to the background loop.
+    通过后台守护线程创建专用事件循环，避免在 FastAPI 已运行事件循环中
+    调用 asyncio.run() 导致 RuntimeError 或死锁。
     """
 
     def __init__(self) -> None:
+        """初始化后台事件循环、线程和启动同步信号。"""
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._started = threading.Event()
 
     def start(self) -> None:
+        """启动后台事件循环线程。"""
         if self._loop is not None:
             return
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -46,12 +48,14 @@ class _AsyncBridge:
         self._started.wait(timeout=10)
 
     def _run_loop(self) -> None:
+        """在线程中创建并持续运行 asyncio 事件循环。"""
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._started.set()
         self._loop.run_forever()
 
     def run(self, coro: Any, timeout: float = 60.0) -> Any:
+        """把协程提交到后台事件循环并同步等待结果。"""
         self.start()
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         try:
@@ -66,6 +70,7 @@ class _AsyncBridge:
             raise e
 
     def shutdown(self) -> None:
+        """停止后台事件循环并等待线程退出。"""
         if self._loop is not None and not self._loop.is_closed():
             self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread is not None:
@@ -76,16 +81,17 @@ class _AsyncBridge:
 
 class MCPClient:
     """
-    MCP protocol client handling session lifecycle, SSE parsing, and tool invocation.
+    MCP 协议客户端，处理会话生命周期、SSE 解析和工具调用。
 
-    Responsibilities:
-    - Initialize and maintain MCP sessions (SSE handshake, protocol init, tool listing)
-    - Reconnect with exponential backoff on session failures
-    - Parse SSE responses from the MCP server
-    - Call MCP tools with proper session headers and error handling
+    职责：
+    - 初始化并维护 MCP 会话（SSE 握手、协议初始化、工具列表）
+    - 会话失败时重连
+    - 解析 MCP server 返回的 SSE 响应
+    - 携带会话头调用 MCP 工具并统一错误处理
     """
 
     def __init__(self) -> None:
+        """初始化 MCP 会话状态、HTTP 客户端、异步桥和运行时指标。"""
         self._session_id: Optional[str] = None
         self._initialized = False
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -101,6 +107,7 @@ class MCPClient:
         }
 
     def _get_init_lock(self) -> asyncio.Lock:
+        """获取用于串行化 MCP 会话初始化的异步锁。"""
         if self._init_lock is None:
             try:
                 asyncio.get_running_loop()
@@ -110,19 +117,18 @@ class MCPClient:
         return self._init_lock
 
     def call_tool(self, tool_name: str, **kwargs) -> str:
+        """从同步上下文调用单个 MCP 工具。"""
         return self._async_bridge.run(self._async_call_tool(tool_name, **kwargs))
 
     def call_tools_parallel(self, calls: list[dict]) -> list[str]:
         """
-        Batch MCP tool calls using isolated sessions for each parallel request.
+        使用独立会话批量并行调用 MCP 工具。
 
-        Args:
-            calls: list of {"tool_name": str, "kwargs": dict}
-        Returns:
-            Results list corresponding to calls order
+        calls 的元素格式为 {"tool_name": str, "kwargs": dict}，返回值顺序与输入一致。
         """
 
         async def _gather():
+            """并发派发本批 MCP 工具调用。"""
             tasks = [
                 self._dispatch_parallel_tool_call(
                     call["tool_name"],
@@ -173,18 +179,18 @@ class MCPClient:
 
     async def _dispatch_parallel_tool_call(self, tool_name: str, **kwargs) -> str:
         """
-        Dedicated entrypoint for batch tool dispatch.
+        批量工具派发的独立入口。
 
-        Keeping this indirection makes the parallel path easier to test and lets
-        future routing changes avoid coupling tests to a concrete private
-        implementation detail.
+        保留这一层便于测试并隔离后续并行路由实现调整。
         """
         return await self._async_call_tool_isolated(tool_name, **kwargs)
 
     async def async_call_tool(self, tool_name: str, **kwargs) -> str:
+        """从异步上下文调用单个 MCP 工具。"""
         return await self._async_call_tool(tool_name, **kwargs)
 
     def shutdown(self) -> None:
+        """关闭异步桥和 HTTP 客户端。"""
         self._async_bridge.shutdown()
         if self._http_client and not self._http_client.is_closed:
             try:
@@ -198,6 +204,7 @@ class MCPClient:
         logger.info("✅ MCPClient已关闭")
 
     def prewarm(self) -> bool:
+        """预先建立 MCP 会话，降低首个工具调用延迟。"""
         try:
             return bool(self._async_bridge.run(self._ensure_session(), timeout=20.0))
         except Exception as e:
@@ -205,14 +212,17 @@ class MCPClient:
             return False
 
     def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
+        """返回 MCP 会话初始化和工具调用耗时指标。"""
         with self._metrics_lock:
             return dict(self._runtime_metrics)
 
     def _add_metric(self, key: str, value: float) -> None:
+        """累加一个运行时指标。"""
         with self._metrics_lock:
             self._runtime_metrics[key] = self._runtime_metrics.get(key, 0.0) + value
 
     async def _init_session(self) -> bool:
+        """确保 MCP 主会话初始化完成并可用。"""
         if self._initialized and self._is_session_valid():
             return True
 
@@ -237,6 +247,7 @@ class MCPClient:
                 self._initializing = False
 
     async def _do_init_session(self) -> bool:
+        """执行 MCP initialize、initialized 通知和 tools/list 流程。"""
         init_started = time.perf_counter()
         try:
             if self._http_client and not self._http_client.is_closed:
@@ -350,6 +361,7 @@ class MCPClient:
             return False
 
     def _is_session_valid(self) -> bool:
+        """判断当前 MCP 主会话和 HTTP 客户端是否可继续使用。"""
         if not self._initialized or not self._session_id:
             return False
         if self._http_client is None or self._http_client.is_closed:
@@ -357,12 +369,14 @@ class MCPClient:
         return True
 
     async def _ensure_session(self) -> bool:
+        """确保当前存在可用 MCP 会话，不可用时触发重连。"""
         if self._is_session_valid():
             return True
         logger.warning("MCP会话无效或未初始化，尝试建立连接...")
         return await self._reconnect()
 
     async def _reconnect(self) -> bool:
+        """按配置次数重试 MCP 会话初始化。"""
         for attempt in range(1, MCP_RECONNECT_MAX_RETRIES + 1):
             logger.info(f"MCP连接尝试 {attempt}/{MCP_RECONNECT_MAX_RETRIES}...")
             try:
@@ -388,6 +402,7 @@ class MCPClient:
         _skip_session_check: bool = False,
         **kwargs,
     ) -> str:
+        """在主 MCP 会话上执行一次工具调用并封装错误。"""
         tool_started = time.perf_counter()
 
         if _skip_session_check:
@@ -457,8 +472,9 @@ class MCPClient:
 
     async def _async_call_tool_isolated(self, tool_name: str, **kwargs) -> str:
         """
-        Parallel-safe tool call:
-        each request uses its own AsyncClient and its own MCP session.
+        并行安全的工具调用。
+
+        每个请求使用独立 AsyncClient 和独立 MCP 会话，避免共享会话并发干扰。
         """
         tool_started = time.perf_counter()
         client: Optional[httpx.AsyncClient] = None
@@ -525,7 +541,7 @@ class MCPClient:
 
     async def _create_ephemeral_session(self) -> tuple[httpx.AsyncClient, str]:
         """
-        Create a short-lived MCP session for isolated parallel calls.
+        为独立并行工具调用创建短生命周期 MCP 会话。
         """
         client = httpx.AsyncClient(timeout=30.0)
 
@@ -613,6 +629,7 @@ class MCPClient:
         tool_name: str,
         kwargs: dict,
     ) -> str:
+        """向 MCP server 发送 tools/call 请求并解析统一工具结果。"""
         processed_kwargs = {}
         for key, value in kwargs.items():
             if key in ["year", "month", "limit"]:
@@ -752,6 +769,7 @@ class MCPClient:
 
 
 def _parse_sse_response(response_text: str) -> Optional[dict]:
+    """从 MCP Streamable HTTP 的 SSE 文本中解析 JSON payload。"""
     try:
         lines = response_text.strip().split("\n")
         for line in lines:

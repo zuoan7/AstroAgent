@@ -1,3 +1,9 @@
+"""短期记忆删除领域模型。
+
+删除采用 tombstone 语义：记录删除 job 和审计事件，而不是立即物理清理
+事件溯源数据。
+"""
+
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -7,6 +13,8 @@ from src.memory.domain.events import new_memory_id
 
 
 class DeletionScope(str, Enum):
+    """短期记忆支持的删除范围。"""
+
     """Supported memory deletion scopes."""
 
     SESSION = "session"
@@ -19,6 +27,8 @@ class DeletionScope(str, Enum):
 
 @dataclass
 class DeletionJob:
+    """一次短期记忆删除请求的执行状态和结果。"""
+
     """Deletion request and execution result."""
 
     tenant_id: str
@@ -34,6 +44,8 @@ class DeletionJob:
     result: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        """序列化删除任务，用于 API 返回和审计展示。"""
+
         return {
             "job_id": self.job_id,
             "tenant_id": self.tenant_id,

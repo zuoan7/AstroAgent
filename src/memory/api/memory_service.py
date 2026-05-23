@@ -1,3 +1,9 @@
+"""短期记忆系统对外入口。
+
+MemoryService 聚合事件写入、上下文读取、摘要快照、任务状态和删除服务。
+上层 Agent 只依赖这个 facade，不需要直接理解事件表、artifact 表和投影表。
+"""
+
 import re
 from typing import Any, Dict, Optional
 
@@ -46,6 +52,8 @@ class MemoryService:
         retrieval_planner: Optional[RetrievalPlanner] = None,
         deletion_service: Optional[DeletionService] = None,
     ):
+        """初始化短期记忆依赖，并确保 SQLite 表结构已创建。"""
+
         self.db_path = db_path
         self.tenant_id = tenant_id
         self.session_id = session_id
@@ -109,6 +117,8 @@ class MemoryService:
         )
 
     def append_message(self, request: AppendMessageRequest) -> Message:
+        """写入一条对话消息事件，助手消息写入后按阈值尝试自动摘要。"""
+
         self._remember_session(request.session_id, request.user_id)
         message = self.write_service.append_message(request)
         if request.role == "assistant":
@@ -116,6 +126,8 @@ class MemoryService:
         return message
 
     def append_tool_call(self, request: AppendToolCallRequest) -> ToolCallRecord:
+        """保存工具原始输出 artifact，并写入可用于上下文检索的工具事件。"""
+
         self._remember_session(request.session_id, request.user_id)
         return self.write_service.append_tool_call(request)
 
@@ -128,6 +140,8 @@ class MemoryService:
         created_by: Optional[str] = None,
         turn_id: Optional[str] = None,
     ) -> TaskState:
+        """用浅层 patch 更新当前会话任务状态投影。"""
+
         return self.write_service.update_task_state(
             session_id=session_id,
             patch=patch,
@@ -140,12 +154,16 @@ class MemoryService:
     def get_task_state(
         self, session_id: str, tenant_id: Optional[str] = None
     ) -> TaskState:
+        """读取指定会话的结构化任务状态；不存在时由读服务创建默认状态。"""
+
         return self.read_service.get_task_state(
             session_id=session_id,
             tenant_id=tenant_id or self.tenant_id,
         )
 
     def build_context(self, request: BuildContextRequest) -> Dict[str, Any]:
+        """按 query 和 token 预算构建 prompt 侧短期记忆上下文。"""
+
         self._remember_session(request.session_id)
         return self.read_service.build_context(request)
 
@@ -156,6 +174,8 @@ class MemoryService:
         created_by_model: str = "rule-based",
         snapshot_batch_size: int = 200,
     ) -> SummarySnapshot:
+        """把尚未覆盖的事件压缩为一条新的 summary snapshot。"""
+
         return self.maintenance_service.create_summary_snapshot(
             session_id=session_id,
             tenant_id=tenant_id,
@@ -169,6 +189,8 @@ class MemoryService:
         tenant_id: Optional[str] = None,
         snapshot_batch_size: int = 200,
     ) -> SummarySnapshot:
+        """基于已有快照和新增事件生成新的工作快照。"""
+
         return self.maintenance_service.rebase_summary_snapshot(
             session_id=session_id,
             tenant_id=tenant_id,
@@ -176,12 +198,18 @@ class MemoryService:
         )
 
     def delete_memory(self, request: DeleteMemoryRequest) -> DeletionJob:
+        """按 scope 执行短期记忆 tombstone 删除并返回删除任务。"""
+
         return self.maintenance_service.delete_memory(request)
 
     def get_raw_artifact(self, artifact_id: str) -> Optional[str]:
+        """读取工具调用的原始 artifact 内容，主要用于调试和管理接口。"""
+
         return self.maintenance_service.get_raw_artifact(artifact_id)
 
     def clear(self, session_id: Optional[str] = None) -> None:
+        """清空当前或指定会话的短期记忆数据。"""
+
         effective_session_id = session_id or self._require_session_id()
         self.delete_memory(
             DeleteMemoryRequest(
@@ -192,6 +220,8 @@ class MemoryService:
         )
 
     def get_debug_info(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """返回事件数量、投影数量和任务状态等调试信息。"""
+
         effective_session_id = session_id or self._require_session_id()
         info = self.read_service.get_debug_info(effective_session_id)
         info["task_state"] = self.get_task_state(effective_session_id).to_dict()
@@ -200,6 +230,8 @@ class MemoryService:
     def get_context_debug_info(
         self, session_id: Optional[str] = None
     ) -> Dict[str, Any]:
+        """返回当前上下文构建结果的截断预览和检索计划。"""
+
         effective_session_id = session_id or self._require_session_id()
         context = self.build_context(
             BuildContextRequest(
@@ -231,19 +263,27 @@ class MemoryService:
         return self.read_service.get_summary(session_id or self._require_session_id())
 
     def export_memory(self, session_id: str) -> Dict[str, Any]:
+        """导出会话短期记忆的原始事件、任务状态和最新摘要快照。"""
+
         return self.read_service.export_memory(session_id, self.tenant_id)
 
     def _remember_session(self, session_id: str, user_id: Optional[str] = None) -> None:
+        """记录最近一次使用的 session/user，兼容旧调用方的无参读取方法。"""
+
         self.session_id = session_id
         if user_id:
             self.user_id = user_id
 
     def _require_session_id(self) -> str:
+        """在旧式无参操作缺少 session_id 时抛出清晰错误。"""
+
         if self.session_id:
             return self.session_id
         raise ValueError("MemoryService requires a session_id for this operation")
 
     def _maybe_auto_summary_snapshot(self, session_id: str, role: str = "assistant") -> None:
+        """根据维护服务的阈值判断自动创建或 rebase summary snapshot。"""
+
         try:
             decision = self.maintenance_service.should_create_summary_snapshot(
                 session_id=session_id,
@@ -267,6 +307,8 @@ class MemoryService:
             )
 
     def _estimate_tokens(self, text: str) -> int:
+        """估算中英文混合文本 token 数，用于检索规划的预算控制。"""
+
         if not text:
             return 0
         ascii_words = re.findall(r"[A-Za-z0-9_]+", text)

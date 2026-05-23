@@ -1,3 +1,9 @@
+"""长期记忆质量控制。
+
+集中管理置信度、冲突检测、去重、过期和归档规则，供长期记忆服务在写入和
+维护阶段复用。
+"""
+
 import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +21,8 @@ from src.memory.long_term_memory.models import (
 
 
 class ConfidenceScorer:
+    """根据来源、确认、访问和时间衰减计算长期记忆置信度。"""
+
     def __init__(
         self,
         explicit_base: float = 0.85,
@@ -32,6 +40,8 @@ class ConfidenceScorer:
         self.decay_per_day = decay_per_day
 
     def initial_confidence(self, source_type: str, is_explicit: bool = False) -> float:
+        """按来源类型给新记忆分配初始置信度。"""
+
         if is_explicit or source_type == SourceType.EXPLICIT:
             return self.explicit_base
         if source_type == SourceType.CONFIRMED:
@@ -58,6 +68,8 @@ class ConfidenceScorer:
         access_count: int = 0,
         days_since_access: int = 0,
     ) -> float:
+        """综合确认、访问和时间衰减计算置信度。"""
+
         conf = self.initial_confidence(source_type, is_explicit)
         conf = self.boost_on_confirmation(conf, confirmation_count)
         conf = self.boost_on_access(conf, access_count)
@@ -67,9 +79,13 @@ class ConfidenceScorer:
 
 
 class ConflictDetector:
+    """识别同 key 记忆的新旧值冲突并给出默认解决策略。"""
+
     def detect_conflict(
         self, existing: MemoryItem, new_value: Any, new_confidence: float
     ) -> Optional[ConflictInfo]:
+        """比较已有记忆与新值，返回冲突信息或 None。"""
+
         if existing.value == new_value:
             return None
 
@@ -123,10 +139,14 @@ class ConflictDetector:
 
 
 class Deduplicator:
+    """基于简单相似度规则检测和合并重复记忆。"""
+
     def __init__(self, similarity_threshold: float = 0.85):
         self.similarity_threshold = similarity_threshold
 
     def compute_similarity(self, value_a: Any, value_b: Any) -> float:
+        """计算两个记忆值的相似度，支持 list/dict 和普通字符串。"""
+
         str_a = json.dumps(value_a, ensure_ascii=False, sort_keys=True) if isinstance(value_a, (dict, list)) else str(value_a)
         str_b = json.dumps(value_b, ensure_ascii=False, sort_keys=True) if isinstance(value_b, (dict, list)) else str(value_b)
 
@@ -178,6 +198,8 @@ class Deduplicator:
     def find_duplicates(
         self, new_value: Any, existing_items: List[MemoryItem]
     ) -> List[Tuple[MemoryItem, float]]:
+        """在已有记忆中找出与新值超过阈值的重复项。"""
+
         duplicates = []
         for item in existing_items:
             sim = self.compute_similarity(new_value, item.value)
@@ -186,6 +208,8 @@ class Deduplicator:
         return sorted(duplicates, key=lambda x: x[1], reverse=True)
 
     def merge_values(self, existing_value: Any, new_value: Any, memory_type: str) -> Any:
+        """按值类型合并重复记忆，列表去重合并，字典覆盖合并。"""
+
         if isinstance(existing_value, list) and isinstance(new_value, list):
             merged = list(existing_value)
             for item in new_value:
@@ -202,6 +226,8 @@ class Deduplicator:
 
 
 class ExpiryManager:
+    """计算长期记忆过期时间，并判断是否应过期或归档。"""
+
     def __init__(
         self,
         default_expiry_days: int = 180,
@@ -215,6 +241,8 @@ class ExpiryManager:
         self.archive_after_days_unused = archive_after_days_unused
 
     def compute_expiry_date(self, memory_type: str, source_type: str) -> Optional[str]:
+        """按记忆类型和来源计算 expires_at；已确认记忆默认不过期。"""
+
         if source_type == SourceType.CONFIRMED:
             return None
 
@@ -265,6 +293,8 @@ class ExpiryManager:
 
 
 class QualityAssurance:
+    """长期记忆质量策略聚合器。"""
+
     def __init__(
         self,
         confidence_scorer: Optional[ConfidenceScorer] = None,
@@ -281,6 +311,8 @@ class QualityAssurance:
         self.min_confidence_to_store = min_confidence_to_store
 
     def should_store(self, confidence: float, is_explicit: bool = False) -> bool:
+        """判断候选置信度是否达到存储阈值。"""
+
         if is_explicit:
             return True
         return confidence >= self.min_confidence_to_store
@@ -288,6 +320,8 @@ class QualityAssurance:
     def detect_conflicts(
         self, new_type: str, new_key: str, new_value: Any, new_confidence: float, existing_items: List[MemoryItem]
     ) -> List[ConflictInfo]:
+        """在同 type/key 的 active memories 中检测冲突。"""
+
         conflicts = []
         for item in existing_items:
             if item.memory_type == new_type and item.key == new_key and item.status == MemoryStatus.ACTIVE:
@@ -297,6 +331,8 @@ class QualityAssurance:
         return conflicts
 
     def resolve_conflict(self, conflict: ConflictInfo, strategy: Optional[str] = None) -> ConflictResolution:
+        """根据显式策略或默认策略决定冲突处理方式。"""
+
         resolution = strategy or conflict.resolution
 
         if resolution == ConflictResolution.NEEDS_CONFIRM:

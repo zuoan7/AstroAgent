@@ -1,3 +1,6 @@
+"""能力参数构建器，把高层技能或原子工具能力转换为可执行调用参数。
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
@@ -6,10 +9,10 @@ from src.tools.selector import AtomicToolParamAdapter
 
 
 class CapabilityParamBuilder:
-    """Build params for skill or atomic-tool capabilities.
+    """为高层技能或原子工具能力构建参数。
 
-    The callable interface keeps compatibility with old `param_builder(skill,
-    query)` call sites. New code should prefer `build_for_capability()`.
+    可调用接口用于兼容旧的 param_builder(skill, query) 调用点；
+    新代码优先使用 build_for_capability()。
     """
 
     def __init__(
@@ -19,11 +22,13 @@ class CapabilityParamBuilder:
         chat_history: str = "",
         user_profile: str = "",
     ) -> None:
+        """初始化技能参数构建器和上下文文本。"""
         self._skill_param_builder = skill_param_builder
         self._chat_history = chat_history
         self._user_profile = user_profile
 
     def __call__(self, skill_name: str, query: str) -> Dict[str, Any]:
+        """兼容旧接口，按高层技能名构建参数。"""
         return self.build_for_capability(
             "skill",
             skill_name,
@@ -38,6 +43,7 @@ class CapabilityParamBuilder:
         *,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """根据能力类型和名称构建技能或原子工具参数。"""
         if capability_kind == "skill":
             try:
                 return self._skill_param_builder.build(
@@ -60,6 +66,7 @@ class CapabilityParamBuilder:
         return {}
 
     def build_for_decision(self, capability: Any, query: str) -> Dict[str, Any]:
+        """根据 CapabilityDecision 构建对应调用参数。"""
         return self.build_for_capability(
             str(getattr(capability, "kind", "") or ""),
             str(getattr(capability, "name", "") or ""),
@@ -74,6 +81,7 @@ class CapabilityParamBuilder:
         *,
         explicit_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """为原子工具构建参数，并优先使用显式参数。"""
         return AtomicToolParamAdapter.build(
             tool_name,
             query,
@@ -82,4 +90,5 @@ class CapabilityParamBuilder:
 
     @staticmethod
     def _build_atomic_tool_params(tool_name: str, query: str) -> Dict[str, Any]:
+        """兼容旧调用点的原子工具参数构建方法。"""
         return CapabilityParamBuilder.build_atomic_tool_params(tool_name, query)

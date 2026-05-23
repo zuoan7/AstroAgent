@@ -1,3 +1,9 @@
+"""长期记忆抽取器。
+
+只从明确的用户画像表达中抽取长期记忆信号，避免普通天文问题被误写入
+用户画像。优先使用 LLM 抽取，失败或关闭时回退到保守规则。
+"""
+
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -45,6 +51,8 @@ EXTRACTION_KEYWORDS = [
 
 
 class MemoryExtractor:
+    """识别并抽取用户偏好、约束、背景、事实等长期记忆候选。"""
+
     def __init__(self):
         self._explicit_patterns = [re.compile(p) for p in EXPLICIT_PATTERNS]
 
@@ -155,14 +163,20 @@ class MemoryExtractor:
         return False
 
     def is_explicit_expression(self, text: str) -> bool:
+        """判断文本是否包含明确的长期偏好或约束表达。"""
+
         return any(pattern.search(text) for pattern in self._explicit_patterns)
 
     def is_temporary_request(self, text: str) -> bool:
+        """识别“这次/暂时”等一次性请求，降低写入长期记忆的置信度。"""
+
         return any(indicator in text for indicator in TEMPORARY_INDICATORS)
 
     def extract_with_llm(
         self, user_message: str, assistant_message: str, conversation_id: Optional[str] = None
     ) -> List[ExtractionResult]:
+        """调用轻量 LLM 按结构化协议抽取长期记忆候选。"""
+
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -225,6 +239,8 @@ class MemoryExtractor:
     def _fallback_keyword_extraction(
         self, user_message: str, assistant_message: str
     ) -> List[ExtractionResult]:
+        """在 LLM 不可用时，用保守关键词规则抽取明确画像信号。"""
+
         results: List[ExtractionResult] = []
         is_explicit = self.is_explicit_expression(user_message)
         is_temporary = self.is_temporary_request(user_message)
@@ -331,6 +347,8 @@ class MemoryExtractor:
     def extract_from_conversation(
         self, user_message: str, assistant_message: str, conversation_id: Optional[str] = None
     ) -> List[ExtractionResult]:
+        """从一轮对话中抽取长期记忆候选，统一处理开关、门控和 fallback。"""
+
         if not settings.LTM_EXTRACT_ENABLED:
             return []
         if not self.should_attempt_extraction(user_message):
@@ -348,6 +366,8 @@ class MemoryExtractor:
     def extract_legacy_format(
         self, user_message: str, assistant_message: str
     ) -> Dict[str, Any]:
+        """把抽取结果转换为旧版 profile 字段结构。"""
+
         results = self.extract_from_conversation(user_message, assistant_message)
         if not results:
             return {"preferences": {}, "habits": {}, "constraints": [], "background": {}, "facts": []}

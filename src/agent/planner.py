@@ -1,3 +1,6 @@
+"""Planned 路径规划器，按任务画像生成 ExecutionPlan/WorkflowGraph，并为 DAG 节点补齐技能或原子工具参数。
+"""
+
 from __future__ import annotations
 
 import json
@@ -24,6 +27,7 @@ class Planner:
     """
 
     def __init__(self, llm: Optional[Any] = None) -> None:
+        """初始化 Planner 的依赖、配置和内部状态。"""
         self._llm = llm
         self._param_builder = SkillParamBuilder(None)
         self._capabilities = CapabilityRegistry()
@@ -38,7 +42,7 @@ class Planner:
         chat_history: str = "",
         user_profile: str = "",
     ) -> ExecutionPlan:
-        """Deprecated compatibility entry returning ExecutionPlan.
+        """返回 ExecutionPlan 的旧版兼容入口。
 
         新 planned 主路径应优先使用 `plan_graph_for_profile()` 获取 WorkflowGraph；
         本方法仅为旧调用方/旧序列化输出提供兼容表示。
@@ -62,7 +66,7 @@ class Planner:
         chat_history: str = "",
         user_profile: str = "",
     ) -> WorkflowGraph:
-        """Primary planned-path entry returning WorkflowGraph.
+        """返回 WorkflowGraph 的 planned 主路径入口。
 
         初版复用现有模板/通用规划逻辑，但对外直接返回 WorkflowGraph，
         使 graph 成为 planned 路径的优先计划表达。
@@ -91,7 +95,7 @@ class Planner:
         chat_history: str = "",
         user_profile: str = "",
     ) -> WorkflowGraph:
-        """Primary planned-path entry returning a WorkflowGraph from TaskProfile."""
+        """根据 TaskProfile 返回 WorkflowGraph 的 planned 主路径入口。"""
         plan = self._resolve_plan_from_fields(
             query=query,
             task_type=getattr(profile, "task_type", "observation_recommendation"),
@@ -114,6 +118,7 @@ class Planner:
         chat_history: str = "",
         user_profile: str = "",
     ) -> ExecutionPlan:
+        """按任务字段依次尝试模板计划、通用计划和 LLM fallback 计划。"""
         plan = self._build_template_plan(
             query=query,
             task_type=task_type,
@@ -155,11 +160,13 @@ class Planner:
         chat_history: str = "",
         user_profile: str = "",
     ) -> ExecutionPlan:
+        """为已知任务类型构造确定性模板计划。"""
         skill_set = set(capability_hints)
         steps: List[PlanStep] = []
         rationale = ""
 
         def make_step(**kwargs: Any) -> PlanStep:
+            """用当前查询上下文创建模板计划步骤。"""
             return self._make_step(
                 query=query,
                 chat_history=chat_history,
@@ -404,6 +411,7 @@ class Planner:
         chat_history: str,
         user_profile: str,
     ) -> ExecutionPlan:
+        """根据能力提示或工具选择器构造通用计划。"""
         steps: List[PlanStep] = []
         capability_hints = list(dict.fromkeys(capability_hints))
         if not capability_hints:
@@ -501,6 +509,7 @@ class Planner:
         chat_history: str,
         user_profile: str,
     ) -> Optional[ExecutionPlan]:
+        """在模板和通用计划未命中时调用 LLM 生成受控 fallback 计划。"""
         if (
             not getattr(settings, "ENABLE_LLM_PLANNER_FALLBACK", False)
             or self._llm is None
@@ -584,11 +593,13 @@ class Planner:
         )
 
     def _invoke_llm(self, prompt: str) -> str:
+        """同步调用底层 LLM 并抽取文本内容。"""
         result = self._llm.invoke(prompt)
         return getattr(result, "content", None) or str(result)
 
     @staticmethod
     def _extract_json_object(raw: str) -> Optional[dict[str, Any]]:
+        """从 LLM 输出中提取 JSON 对象。"""
         text = (raw or "").strip()
         if not text:
             return None
@@ -628,6 +639,7 @@ class Planner:
         retry_policy: int = 0,
         timeout_ms: Optional[int] = None,
     ) -> PlanStep:
+        """创建高层技能计划步骤并补齐参数。"""
         step_params = (
             self._sanitize_step_params(skill, params)
             if params is not None
@@ -678,6 +690,7 @@ class Planner:
         retry_policy: int = 0,
         timeout_ms: Optional[int] = None,
     ) -> PlanStep:
+        """创建原子工具计划步骤并补齐参数。"""
         step_params = (
             dict(params)
             if isinstance(params, dict)
@@ -709,6 +722,7 @@ class Planner:
         chat_history: str = "",
         user_profile: str = "",
     ) -> dict[str, Any]:
+        """为高层技能计划步骤构建参数。"""
         try:
             builder = CapabilityParamBuilder(
                 self._param_builder,
@@ -724,6 +738,7 @@ class Planner:
         tool_name: str,
         query: str,
     ) -> dict[str, Any]:
+        """为原子工具计划步骤构建参数。"""
         try:
             return CapabilityParamBuilder.build_atomic_tool_params(tool_name, query)
         except Exception:
@@ -734,6 +749,7 @@ class Planner:
         skill_name: str,
         params: Any,
     ) -> dict[str, Any]:
+        """按技能参数白名单清洗 LLM 生成的步骤参数。"""
         if not isinstance(params, dict):
             return {}
         try:
@@ -765,6 +781,7 @@ class Planner:
         return normalized
 
     def _photography_weather_relevant(self, query: str, skill_set: set[str]) -> bool:
+        """判断摄影建议是否需要补充天气条件。"""
         if "weather-lookup" in skill_set:
             return True
 
@@ -821,6 +838,7 @@ class Planner:
         )
 
     def _observation_plan_needs_event_step(self, query: str) -> bool:
+        """判断观测计划是否需要天象事件步骤。"""
         return any(
             token in query
             for token in (
@@ -833,6 +851,7 @@ class Planner:
         )
 
     def _observation_plan_needs_deep_sky_step(self, query: str) -> bool:
+        """判断观测计划是否需要深空资料步骤。"""
         if any(token in query for token in ("看不清", "临时改看", "改看什么")):
             return False
         has_equipment_constraint = bool(
@@ -855,6 +874,7 @@ class Planner:
         )
 
     def _observation_plan_needs_position_step(self, query: str) -> bool:
+        """判断观测计划是否需要天体位置步骤。"""
         target_count = sum(
             1
             for target in ("月亮", "月球", "木星", "土星", "火星", "金星", "水星")
@@ -867,6 +887,7 @@ class Planner:
         return target_count >= 2 and has_sequence_intent
 
     def _deep_sky_needs_position_step(self, query: str) -> bool:
+        """判断深空指导是否需要可见性计算步骤。"""
         has_time = any(
             token in query
             for token in ("今晚", "明晚", "这周末", "周末", "今天", "明天")
@@ -877,6 +898,7 @@ class Planner:
         return has_time and has_visibility
 
     def _photography_needs_deep_sky_context(self, query: str) -> bool:
+        """判断摄影建议是否需要深空目标背景资料。"""
         return bool(
             re.search(
                 r"\b(M\s?\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b", query, re.IGNORECASE

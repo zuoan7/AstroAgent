@@ -1,3 +1,9 @@
+"""长期记忆 SQLite 仓储。
+
+该仓储封装正式记忆、候选记忆、版本、事件日志、确认、画像投影、删除审计
+和兼容 memory_events 表的所有持久化操作。
+"""
+
 import json
 import os
 import sqlite3
@@ -18,12 +24,16 @@ from src.memory.long_term_memory.models import (
 
 
 def _ensure_parent_dir(path: str):
+    """确保长期记忆数据库所在目录存在。"""
+
     parent = os.path.dirname(path)
     if parent and not os.path.exists(parent):
         os.makedirs(parent, exist_ok=True)
 
 
 class LongTermMemoryRepository:
+    """长期记忆数据库访问层。"""
+
     SCHEMA_VERSION = 3
 
     def __init__(self, db_path: str):
@@ -31,6 +41,8 @@ class LongTermMemoryRepository:
         _ensure_parent_dir(db_path)
 
     def _connect(self) -> sqlite3.Connection:
+        """创建启用 WAL、外键和 Row 访问模式的 SQLite 连接。"""
+
         conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -39,6 +51,8 @@ class LongTermMemoryRepository:
         return conn
 
     def initialize(self):
+        """创建长期记忆全量目标 schema，并运行兼容性迁移守卫。"""
+
         with self._connect() as conn:
             conn.executescript(
                 """
@@ -204,6 +218,8 @@ class LongTermMemoryRepository:
             self._ensure_legacy_migration(conn)
 
     def _ensure_legacy_migration(self, conn: sqlite3.Connection):
+        """为旧数据库补齐新增列，保持运行时初始化幂等。"""
+
         if self._table_exists(conn, "user_profiles"):
             cols = {row["name"] for row in conn.execute("PRAGMA table_info(user_profiles)").fetchall()}
             if "background" not in cols:
@@ -242,12 +258,16 @@ class LongTermMemoryRepository:
             )
 
     def _ensure_columns(self, conn: sqlite3.Connection, table_name: str, columns: Dict[str, str]):
+        """为指定表补齐缺失列。"""
+
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
         for name, ddl in columns.items():
             if name not in existing:
                 conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {name} {ddl}")
 
     def _table_exists(self, conn: sqlite3.Connection, table_name: str) -> bool:
+        """判断 SQLite 表是否存在。"""
+
         row = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
             (table_name,),
@@ -255,6 +275,8 @@ class LongTermMemoryRepository:
         return row is not None
 
     def add_memory(self, item: MemoryItem) -> MemoryItem:
+        """插入一条正式长期记忆。"""
+
         with self._connect() as conn:
             conn.execute(
                 """
@@ -280,6 +302,8 @@ class LongTermMemoryRepository:
         return item
 
     def get_memory(self, memory_id: str) -> Optional[MemoryItem]:
+        """读取未删除的正式记忆。"""
+
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM memories WHERE id = ? AND status != 'deleted'", (memory_id,)
@@ -289,6 +313,8 @@ class LongTermMemoryRepository:
         return MemoryItem.from_db_row(row)
 
     def update_memory(self, item: MemoryItem) -> bool:
+        """更新正式记忆的值、状态、元数据和访问字段。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -317,6 +343,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def delete_memory(self, memory_id: str, user_id: str) -> bool:
+        """软删除正式记忆。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 "UPDATE memories SET status='deleted', deleted_at=?, updated_at=? WHERE id=? AND user_id=? AND status!='deleted'",
@@ -325,6 +353,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def query_memories(self, query: MemoryQuery) -> List[MemoryItem]:
+        """按 MemoryQuery 动态条件查询正式记忆。"""
+
         where_sql, params, order_clause = query.to_where_clause()
         if not query.status:
             where_sql = f"{where_sql} AND status != 'deleted'"
@@ -335,6 +365,8 @@ class LongTermMemoryRepository:
         return [MemoryItem.from_db_row(row) for row in rows]
 
     def count_memories(self, query: MemoryQuery) -> int:
+        """按 MemoryQuery 动态条件统计正式记忆。"""
+
         where_sql, params, _ = query.to_where_clause()
         sql = f"SELECT COUNT(*) as cnt FROM memories WHERE {where_sql}"
         if not query.status:
@@ -346,6 +378,8 @@ class LongTermMemoryRepository:
     def find_memory_by_type_key(
         self, user_id: str, memory_type: str, key: str, status: str = "active"
     ) -> Optional[MemoryItem]:
+        """查找同一用户下 type/key 唯一语义的 active 记忆。"""
+
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM memories WHERE user_id=? AND memory_type=? AND key=? AND status=? AND status!='deleted' LIMIT 1",
@@ -358,6 +392,8 @@ class LongTermMemoryRepository:
     def find_similar_memories(
         self, user_id: str, memory_type: str, category: str, value: str, status: str = "active"
     ) -> List[MemoryItem]:
+        """用 LIKE 查询相同类型/分类下的近似值记忆。"""
+
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM memories WHERE user_id=? AND memory_type=? AND category=? AND status=? AND status!='deleted' AND value LIKE ?",
@@ -366,6 +402,8 @@ class LongTermMemoryRepository:
         return [MemoryItem.from_db_row(row) for row in rows]
 
     def increment_access_count(self, memory_id: str):
+        """增加记忆访问次数并刷新 accessed_at。"""
+
         with self._connect() as conn:
             conn.execute(
                 "UPDATE memories SET access_count=access_count+1, accessed_at=? WHERE id=?",
@@ -373,6 +411,8 @@ class LongTermMemoryRepository:
             )
 
     def add_version(self, memory_id: str, version: int, value: Any, confidence: float, change_reason: str):
+        """保存记忆值的历史版本。"""
+
         value_str = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
         with self._connect() as conn:
             conn.execute(
@@ -381,6 +421,8 @@ class LongTermMemoryRepository:
             )
 
     def get_versions(self, memory_id: str, limit: int = 20) -> List[MemoryVersion]:
+        """按版本倒序读取记忆历史。"""
+
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM memory_versions WHERE memory_id=? ORDER BY version DESC LIMIT ?",
@@ -400,6 +442,8 @@ class LongTermMemoryRepository:
         ]
 
     def add_candidate(self, candidate: MemoryCandidate) -> MemoryCandidate:
+        """插入一条候选记忆。"""
+
         with self._connect() as conn:
             conn.execute(
                 """
@@ -425,6 +469,8 @@ class LongTermMemoryRepository:
         return candidate
 
     def get_candidate(self, candidate_id: str) -> Optional[MemoryCandidate]:
+        """读取未删除的候选记忆。"""
+
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM memory_candidates WHERE id=? AND status != 'deleted'", (candidate_id,)
@@ -440,6 +486,8 @@ class LongTermMemoryRepository:
         key: str,
         statuses: Optional[List[str]] = None,
     ) -> Optional[MemoryCandidate]:
+        """查找同一用户 type/key 下仍在候选流程中的候选记忆。"""
+
         active_statuses = statuses or ["candidate", "needs_confirm"]
         placeholders = ", ".join("?" for _ in active_statuses)
         with self._connect() as conn:
@@ -457,6 +505,8 @@ class LongTermMemoryRepository:
         return MemoryCandidate.from_db_row(row)
 
     def update_candidate(self, candidate: MemoryCandidate) -> bool:
+        """更新候选记忆的置信度、出现次数、状态和元数据。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -481,6 +531,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def delete_candidate(self, candidate_id: str) -> bool:
+        """软删除候选记忆。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 "UPDATE memory_candidates SET status='deleted', updated_at=? WHERE id=? AND status!='deleted'",
@@ -489,6 +541,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def mark_candidate_promoted(self, candidate_id: str, memory_id: str) -> bool:
+        """标记候选已提升并记录对应正式记忆 id。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -507,6 +561,8 @@ class LongTermMemoryRepository:
         offset: int = 0,
         status: Optional[str] = None,
     ) -> List[MemoryCandidate]:
+        """列出用户候选记忆，默认仅返回 candidate 和 needs_confirm。"""
+
         if status:
             sql = """
                 SELECT * FROM memory_candidates
@@ -526,6 +582,8 @@ class LongTermMemoryRepository:
         return [MemoryCandidate.from_db_row(row) for row in rows]
 
     def add_event_log(self, entry: EventLogEntry) -> int:
+        """追加长期记忆生命周期事件日志。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -543,6 +601,8 @@ class LongTermMemoryRepository:
             return cursor.lastrowid
 
     def add_event(self, event: MemoryEvent) -> MemoryEvent:
+        """写入兼容旧链路的 memory_events 记录。"""
+
         with self._connect() as conn:
             conn.execute(
                 """
@@ -569,6 +629,8 @@ class LongTermMemoryRepository:
         return event
 
     def add_events(self, events: List[MemoryEvent]) -> List[MemoryEvent]:
+        """批量写入兼容旧链路的 memory_events 记录。"""
+
         if not events:
             return []
         with self._connect() as conn:
@@ -600,6 +662,8 @@ class LongTermMemoryRepository:
         return events
 
     def get_recent_events(self, user_id: str, limit: int = 10) -> List[MemoryEvent]:
+        """读取用户最近的兼容 memory_events。"""
+
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -611,6 +675,8 @@ class LongTermMemoryRepository:
         return [MemoryEvent.from_db_row(row) for row in rows]
 
     def get_candidate_events(self, user_id: str) -> List[MemoryEvent]:
+        """读取用户处于 candidate 状态的兼容 memory_events。"""
+
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -623,6 +689,8 @@ class LongTermMemoryRepository:
         return [MemoryEvent.from_db_row(row) for row in rows]
 
     def count_similar_events(self, user_id: str, key: str, value: Any) -> int:
+        """统计兼容事件表中相同 key/value 的候选或 active 记录。"""
+
         value_str = json.dumps(value, ensure_ascii=False)
         with self._connect() as conn:
             row = conn.execute(
@@ -635,6 +703,8 @@ class LongTermMemoryRepository:
         return row["cnt"] if row else 0
 
     def update_event_status(self, event_id: str, status: str) -> bool:
+        """更新兼容 memory_events 的状态。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 "UPDATE memory_events SET status=?, updated_at=? WHERE event_id=?",
@@ -643,6 +713,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def update_event_confidence(self, event_id: str, confidence: float) -> bool:
+        """更新兼容 memory_events 的置信度。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 "UPDATE memory_events SET confidence=?, updated_at=? WHERE event_id=?",
@@ -651,6 +723,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def confirm_event(self, event_id: str) -> bool:
+        """把兼容 memory_events 记录标记为 active 并记录确认时间。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -664,6 +738,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount > 0
 
     def get_active_events(self, user_id: str, limit: int = 100) -> List[MemoryEvent]:
+        """读取兼容 memory_events 中已激活的高置信记录。"""
+
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -679,6 +755,8 @@ class LongTermMemoryRepository:
     def get_event_logs(
         self, user_id: str, memory_id: Optional[str] = None, limit: int = 50, offset: int = 0
     ) -> List[EventLogEntry]:
+        """读取长期记忆生命周期事件日志。"""
+
         if memory_id:
             sql = "SELECT * FROM memory_event_log WHERE user_id=? AND memory_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?"
             params: list = [user_id, memory_id, limit, offset]
@@ -703,6 +781,8 @@ class LongTermMemoryRepository:
         ]
 
     def add_confirmation(self, confirmation: MemoryConfirmation) -> MemoryConfirmation:
+        """创建一条人工确认请求记录。"""
+
         with self._connect() as conn:
             conn.execute(
                 """
@@ -720,6 +800,8 @@ class LongTermMemoryRepository:
         return confirmation
 
     def get_confirmation(self, confirmation_id: str) -> Optional[MemoryConfirmation]:
+        """按 confirmation_id 读取确认请求。"""
+
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM memory_confirmations WHERE id=?", (confirmation_id,)
@@ -731,6 +813,8 @@ class LongTermMemoryRepository:
     def update_confirmation_status(
         self, confirmation_id: str, status: str, resolved_at: Optional[str] = None
     ) -> bool:
+        """更新确认请求状态和解决时间。"""
+
         resolved = resolved_at or _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -742,6 +826,8 @@ class LongTermMemoryRepository:
     def list_pending_confirmations(
         self, user_id: str, limit: int = 20
     ) -> List[MemoryConfirmation]:
+        """列出用户待处理确认请求。"""
+
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM memory_confirmations WHERE user_id=? AND status='pending' ORDER BY created_at DESC LIMIT ?",
@@ -750,6 +836,8 @@ class LongTermMemoryRepository:
         return [MemoryConfirmation.from_db_row(row) for row in rows]
 
     def load_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """读取用户画像投影。"""
+
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM user_profiles WHERE user_id=?", (user_id,)
@@ -768,6 +856,8 @@ class LongTermMemoryRepository:
         }
 
     def save_profile(self, user_id: str, preferences: Dict, habits: Dict, constraints: list, background: Dict, facts: list):
+        """插入或更新用户画像投影。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             conn.execute(
@@ -795,11 +885,15 @@ class LongTermMemoryRepository:
             )
 
     def delete_profile(self, user_id: str) -> bool:
+        """删除用户画像投影记录。"""
+
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM user_profiles WHERE user_id=?", (user_id,))
             return cursor.rowcount > 0
 
     def tombstone_user_memories(self, user_id: str, reason: str = "") -> int:
+        """软删除用户所有正式记忆。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -814,6 +908,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount
 
     def tombstone_memory(self, user_id: str, memory_id: str, reason: str = "") -> int:
+        """软删除用户指定正式记忆。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -828,6 +924,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount
 
     def tombstone_candidate(self, user_id: str, candidate_id: str, reason: str = "") -> int:
+        """软删除用户指定候选记忆。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -842,6 +940,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount
 
     def tombstone_user_candidates(self, user_id: str, reason: str = "") -> int:
+        """软删除用户全部候选记忆。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -856,6 +956,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount
 
     def mark_legacy_events_deleted(self, user_id: str, reason: str = "") -> int:
+        """把兼容 memory_events 中该用户的记录标记为 deleted。"""
+
         now = _utcnow_iso()
         with self._connect() as conn:
             cursor = conn.execute(
@@ -881,6 +983,8 @@ class LongTermMemoryRepository:
         deleted_profiles: int,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> int:
+        """追加长期记忆删除审计记录。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -906,6 +1010,8 @@ class LongTermMemoryRepository:
             return cursor.lastrowid
 
     def list_deletion_audit(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """读取用户长期记忆删除审计记录。"""
+
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -932,6 +1038,8 @@ class LongTermMemoryRepository:
         ]
 
     def expire_old_memories(self, user_id: str, before_iso: str) -> int:
+        """把 expires_at 早于指定时间的 active memories 标记为 expired。"""
+
         with self._connect() as conn:
             cursor = conn.execute(
                 "UPDATE memories SET status='expired', updated_at=? WHERE user_id=? AND expires_at IS NOT NULL AND expires_at < ? AND status='active'",
@@ -940,6 +1048,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount
 
     def archive_unused_memories(self, user_id: str, max_access_count: int = 0, days_unused: int = 90) -> int:
+        """把长期未访问且访问次数低的 active memories 标记为 archived。"""
+
         from datetime import timedelta
         cutoff = (_utcnow_iso()[:10] if len(_utcnow_iso()) >= 10 else _utcnow_iso())
         try:
@@ -956,6 +1066,8 @@ class LongTermMemoryRepository:
             return cursor.rowcount
 
     def get_memory_stats(self, user_id: str) -> Dict[str, Any]:
+        """统计用户记忆类型、候选数、待确认数和平均置信度。"""
+
         with self._connect() as conn:
             type_counts = {}
             for row in conn.execute(
@@ -985,6 +1097,8 @@ class LongTermMemoryRepository:
         }
 
     def backup_database(self, backup_path: str) -> bool:
+        """把当前长期记忆 SQLite 数据库复制到备份路径。"""
+
         _ensure_parent_dir(backup_path)
         try:
             import shutil
@@ -998,6 +1112,8 @@ class LongTermMemoryRepository:
             return False
 
     def restore_from_backup(self, backup_path: str) -> bool:
+        """用备份文件覆盖当前长期记忆数据库。"""
+
         try:
             import shutil
             if not os.path.exists(backup_path):

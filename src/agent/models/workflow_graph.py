@@ -1,10 +1,7 @@
-"""WorkflowGraph — DAG 化执行图模型（Phase 5 引入）。
+"""WorkflowGraph DAG 模型，显式表示 planned 路径节点、边、依赖和拓扑层级。
 
-将 ExecutionPlan 的线性步骤列表升级为显式 DAG 结构，
-支持 depends_on 依赖声明、并行组推导与拓扑排序。
-
-当前状态：Planner.plan_graph() 与 PlannedExecutor 已优先使用 WorkflowGraph；
-          ExecutionPlan 保留为兼容表示与旧序列化格式。
+该模型将 ExecutionPlan 的线性步骤升级为显式 DAG，支持 depends_on、
+并行组推导与拓扑排序；ExecutionPlan 仍作为兼容序列化视图保留。
 """
 from __future__ import annotations
 
@@ -31,6 +28,7 @@ class WorkflowNode:
     output_key: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "id": self.id,
             "title": self.title,
@@ -57,6 +55,7 @@ class WorkflowEdge:
     label: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {"source": self.source, "target": self.target, "label": self.label}
 
 
@@ -78,12 +77,14 @@ class WorkflowGraph:
     # ── 查询 ──────────────────────────────────────────────────────────
 
     def node(self, node_id: str) -> Optional[WorkflowNode]:
+        """按节点 ID 查找 WorkflowNode。"""
         for n in self.nodes:
             if n.id == node_id:
                 return n
         return None
 
     def node_ids(self) -> List[str]:
+        """返回 DAG 中所有节点 ID。"""
         return [n.id for n in self.nodes]
 
     def roots(self) -> List[WorkflowNode]:
@@ -92,10 +93,12 @@ class WorkflowGraph:
         return [n for n in self.nodes if n.id not in has_incoming]
 
     def successors(self, node_id: str) -> List[WorkflowNode]:
+        """返回指定节点的直接后继节点 ID。"""
         target_ids = {e.target for e in self.edges if e.source == node_id}
         return [n for n in self.nodes if n.id in target_ids]
 
     def predecessors(self, node_id: str) -> List[WorkflowNode]:
+        """返回指定节点的直接前驱节点 ID。"""
         source_ids = {e.source for e in self.edges if e.target == node_id}
         return [n for n in self.nodes if n.id in source_ids]
 
@@ -203,6 +206,7 @@ class WorkflowGraph:
     # ── 序列化 ────────────────────────────────────────────────────────
 
     def to_dict(self) -> Dict[str, Any]:
+        """将当前模型转换为可序列化字典。"""
         return {
             "output_schema": self.output_schema,
             "metadata": dict(self.metadata),

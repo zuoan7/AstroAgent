@@ -1,3 +1,9 @@
+"""短期记忆删除任务和审计仓储。
+
+删除服务把每次 scoped deletion 记录为 deletion_job，并把操作结果写入
+audit_log，方便接口追踪和合规排查。
+"""
+
 import time
 from typing import Optional
 
@@ -10,6 +16,8 @@ class DeletionRepository(SQLiteRepository):
     """Repository for deletion jobs and audit records."""
 
     def initialize(self) -> None:
+        """创建删除任务表和审计表。"""
+
         with self._connect() as conn:
             conn.executescript(
                 """
@@ -46,6 +54,8 @@ class DeletionRepository(SQLiteRepository):
             )
 
     def create_job(self, job: DeletionJob) -> DeletionJob:
+        """创建删除任务初始记录。"""
+
         self.initialize()
         with self._connect() as conn:
             conn.execute(
@@ -73,6 +83,8 @@ class DeletionRepository(SQLiteRepository):
         return job
 
     def update_job(self, job: DeletionJob) -> DeletionJob:
+        """更新删除任务状态、时间和结果。"""
+
         self.initialize()
         with self._connect() as conn:
             conn.execute(
@@ -87,6 +99,8 @@ class DeletionRepository(SQLiteRepository):
         return job
 
     def get_job(self, job_id: str) -> Optional[DeletionJob]:
+        """按 job_id 读取删除任务。"""
+
         self.initialize()
         with self._connect() as conn:
             row = conn.execute(
@@ -123,6 +137,8 @@ class DeletionRepository(SQLiteRepository):
         actor_id: Optional[str],
         metadata: dict,
     ) -> None:
+        """追加删除审计记录。"""
+
         self.initialize()
         with self._connect() as conn:
             conn.execute(

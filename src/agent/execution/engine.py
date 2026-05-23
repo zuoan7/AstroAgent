@@ -1,8 +1,4 @@
-"""ExecutionEngine — 统一执行引擎（Phase 4 引入，Phase 8/9 为主路径）。
-
-根据 ExecutionDecision.mode 分发到 DirectExecutor / PlannedExecutor / ReactExecutor。
-Phase 10 起：本引擎为在线唯一主路径；ENABLE_WORKFLOW_GRAPH flag 已移除，
-             PlannedExecutor 直接使用 WorkflowExecutor。
+"""统一执行引擎，根据 ExecutionDecision 分发 direct、planned、react 路径，并处理 planned 恢复策略。
 """
 
 from __future__ import annotations
@@ -41,6 +37,7 @@ class ExecutionEngine:
         agent_executor: Optional[Any] = None,
         agent_executor_factory: Optional[Any] = None,
     ) -> None:
+        """初始化 ExecutionEngine 的依赖、配置和内部状态。"""
         _synthesizer = synthesizer or ResponseSynthesizer(llm=llm)
 
         self._direct = DirectExecutor(
@@ -63,14 +60,17 @@ class ExecutionEngine:
 
     @property
     def direct(self) -> DirectExecutor:
+        """执行 direct 对应的主链路辅助逻辑。"""
         return self._direct
 
     @property
     def planned(self) -> PlannedExecutor:
+        """执行 planned 对应的主链路辅助逻辑。"""
         return self._planned
 
     @property
     def react(self) -> ReactExecutor:
+        """执行 react 对应的主链路辅助逻辑。"""
         return self._react
 
     async def run(
@@ -86,7 +86,7 @@ class ExecutionEngine:
         budget_tracker: Optional[RequestBudgetTracker] = None,
         context: Optional["ExecutionContext"] = None,
     ) -> FinalResponse:
-        """Legacy route adapter. New code should call run_context()."""
+        """兼容旧路由参数的执行入口，新主链路优先调用 run_context()。"""
         from src.agent.models.execution_context import ExecutionContext
 
         return await self.run_context(
@@ -112,7 +112,7 @@ class ExecutionEngine:
         event_callback: Optional[EventCallback] = None,
         budget_tracker: Optional[RequestBudgetTracker] = None,
     ) -> FinalResponse:
-        """Context-first unified execution entry."""
+        """基于 ExecutionContext 的统一执行入口。"""
         mode = decision.mode
 
         if mode == "direct":
@@ -157,6 +157,7 @@ class ExecutionEngine:
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> FinalResponse:
+        """执行 planned 路径并在异常或 fallback 时进入恢复流程。"""
         try:
             response = await self._run_planned_executor(
                 context,
@@ -187,6 +188,7 @@ class ExecutionEngine:
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> FinalResponse:
+        """处理 planned 执行异常并尝试计划修复或 ReAct fallback。"""
         fallback = {
             "strategy": "plan_repair",
             "reason": "planned_execution_exception",
@@ -264,6 +266,7 @@ class ExecutionEngine:
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> FinalResponse:
+        """根据 planned 响应中的 fallback_path 执行 partial、repair 或 react 恢复。"""
         fallback = self._primary_fallback(response)
         if fallback is None:
             return response
@@ -320,6 +323,7 @@ class ExecutionEngine:
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> Optional[FinalResponse]:
+        """尝试生成修复计划并重新执行 planned 路径。"""
         repaired_plan = self._build_repair_plan(
             context,
             failed_response=response,
@@ -360,6 +364,7 @@ class ExecutionEngine:
         repaired_response: FinalResponse,
         context: "ExecutionContext",
     ) -> FinalResponse:
+        """处理修复后响应中的二次 fallback。"""
         next_fallback = (
             repaired_response.fallback_path[1]
             if len(repaired_response.fallback_path) > 1
@@ -401,6 +406,7 @@ class ExecutionEngine:
         failed_response: Optional[FinalResponse],
         error: str,
     ) -> Optional["ExecutionPlan"]:
+        """委托 PlannedExecutor 生成受控修复计划。"""
         repair_plan = getattr(self._planned, "repair_plan_context", None)
         if not callable(repair_plan):
             return None
@@ -414,6 +420,7 @@ class ExecutionEngine:
         event_callback: Optional[EventCallback],
         budget_tracker: Optional[RequestBudgetTracker],
     ) -> FinalResponse:
+        """调用 PlannedExecutor 执行 planned 路径。"""
         return await self._planned.run_context(
             context,
             execution_plan=execution_plan,
@@ -428,6 +435,7 @@ class ExecutionEngine:
         planned_response: Optional[FinalResponse],
         fallback_entry: Dict[str, Any],
     ) -> FinalResponse:
+        """执行 ReAct fallback，并合并 planned 上下文、trace 与审计信息。"""
         react_response = await self._react.run_context(context)
         source_step_ids = (
             self._trace_step_ids(planned_response) if planned_response else []
@@ -488,6 +496,7 @@ class ExecutionEngine:
 
     @staticmethod
     def _primary_fallback(response: FinalResponse) -> Optional[Dict[str, Any]]:
+        """读取响应中的首个 fallback 决策。"""
         if not response.fallback_path:
             return None
         first = response.fallback_path[0]
@@ -495,6 +504,7 @@ class ExecutionEngine:
 
     @staticmethod
     def _trace_step_ids(response: Optional[FinalResponse]) -> list[str]:
+        """从 FinalResponse trace 中提取步骤 ID 列表。"""
         if response is None:
             return []
         return [
@@ -511,6 +521,7 @@ class ExecutionEngine:
         executed: bool,
         source_plan_step_ids: list[str],
     ) -> Dict[str, Any]:
+        """给 fallback 记录补充恢复模式、执行状态和来源步骤。"""
         payload = dict(fallback or {})
         metadata = dict(payload.get("metadata") or {})
         metadata["recovery_mode"] = mode
@@ -524,6 +535,7 @@ class ExecutionEngine:
         response: FinalResponse,
         fallback_entry: Dict[str, Any],
     ) -> list[dict[str, Any]]:
+        """保留 planned 上下文事件并追加 fallback 触发事件。"""
         events = [
             event
             for event in list(response.execution_events or [])
@@ -544,6 +556,7 @@ class ExecutionEngine:
         events: list[dict[str, Any]],
         fallback_entry: Dict[str, Any],
     ) -> list[dict[str, Any]]:
+        """用带恢复元信息的 fallback 事件替换旧事件。"""
         updated: list[dict[str, Any]] = []
         inserted = False
         for event in list(events or []):
@@ -574,6 +587,7 @@ class ExecutionEngine:
         repaired_plan: "ExecutionPlan",
         fallback_entry: Dict[str, Any],
     ) -> dict[str, Any]:
+        """构造计划修复完成事件。"""
         return ExecutionEvent(
             type="plan_repaired",
             payload={
@@ -593,6 +607,7 @@ class ExecutionEngine:
         fallback_entry: Dict[str, Any],
         react_audit_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """把 planned 和 react 的审计信息合并到恢复审计 payload。"""
         payload = dict(audit_metadata or {})
         planned_expected = set(payload.get("expected_mcp_tools") or [])
         react_payload = dict(react_audit_metadata or {})
@@ -620,6 +635,7 @@ class ExecutionEngine:
         first: list[dict[str, Any]],
         second: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        """按 source_id、title、snippet 去重合并来源字典。"""
         merged: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str]] = set()
         for item in [*first, *second]:
@@ -647,6 +663,7 @@ class ExecutionEngine:
         version: str = "v1",
         context: Optional["ExecutionContext"] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        """兼容旧参数入口，流式透传 ReAct 执行事件。"""
         if context is None:
             from src.agent.models.execution_context import ExecutionContext
 
@@ -697,7 +714,7 @@ class ExecutionEngine:
         user_profile: str = "",
         execution_plan: Optional["ExecutionPlan"] = None,
     ) -> Optional["ExecutionPlan"]:
-        """Legacy preview adapter. New code should call preview_plan_context()."""
+        """兼容旧路由参数的计划预览入口，新主链路优先调用 preview_plan_context()。"""
         from src.agent.models.execution_context import ExecutionContext
 
         return self.preview_plan_context(
@@ -734,6 +751,7 @@ class ExecutionEngine:
         context: Optional["ExecutionContext"],
         legacy_decision: Optional[Any] = None,
     ) -> None:
+        """把路由、策略、能力选择和执行事件统一挂到 FinalResponse。"""
         events = []
         if context is not None and getattr(context, "profile", None) is not None:
             events.append(

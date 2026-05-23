@@ -1,3 +1,6 @@
+"""受防护的原子工具运行时门面，统一校验参数并转发到 MCPClient 或兼容后端。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,10 +13,9 @@ from src.tools.guard import ToolGuard, ToolGuardContext, ToolGuardViolation
 
 
 class ToolRuntime:
-    """Guarded runtime facade for MCP atomic tools.
+    """带防护的 MCP 原子工具运行时门面。
 
-    The backend is intentionally duck-typed so existing MCPClient-like fakes keep
-    working in tests and handlers can migrate without changing their call shape.
+    backend 采用鸭子类型，方便测试替身和 MCPClient 共用同一调用形状。
     """
 
     def __init__(
@@ -23,16 +25,19 @@ class ToolRuntime:
         guard: Optional[ToolGuard] = None,
         context: Optional[ToolGuardContext] = None,
     ) -> None:
+        """初始化运行时后端、防护器和当前策略上下文。"""
         self._backend = backend
         self._guard = guard or ToolGuard()
         self._context = context or ToolGuardContext()
 
     @property
     def guard(self) -> ToolGuard:
+        """返回当前使用的工具防护器。"""
         return self._guard
 
     @property
     def context(self) -> ToolGuardContext:
+        """返回当前工具调用策略上下文。"""
         return self._context
 
     def with_context(
@@ -45,6 +50,7 @@ class ToolRuntime:
         required_params: Optional[List[str]] = None,
         enforce_allowed_tools: Optional[bool] = None,
     ) -> "ToolRuntime":
+        """派生一个带新策略上下文的 ToolRuntime。"""
         return ToolRuntime(
             self._backend,
             guard=self._guard,
@@ -59,12 +65,14 @@ class ToolRuntime:
         )
 
     def call_tool(self, tool_name: str, **kwargs: Any) -> str:
+        """同步校验并调用单个原子工具。"""
         violation = self._validate(tool_name, kwargs)
         if violation is not None:
             return self._guard_error(tool_name, violation)
         return self._backend.call_tool(tool_name, **kwargs)
 
     async def async_call_tool(self, tool_name: str, **kwargs: Any) -> str:
+        """异步校验并调用单个原子工具。"""
         violation = self._validate(tool_name, kwargs)
         if violation is not None:
             return self._guard_error(tool_name, violation)
@@ -73,6 +81,7 @@ class ToolRuntime:
         return await asyncio.to_thread(self._backend.call_tool, tool_name, **kwargs)
 
     def call_tools_parallel(self, calls: List[Dict[str, Any]]) -> List[str]:
+        """批量校验并并行调用多个原子工具，失败项返回标准错误 envelope。"""
         if not calls:
             return []
 
@@ -111,16 +120,19 @@ class ToolRuntime:
         return [result or "" for result in results]
 
     def prewarm(self) -> bool:
+        """预热底层后端连接。"""
         if hasattr(self._backend, "prewarm"):
             return bool(self._backend.prewarm())
         return True
 
     def get_runtime_metrics_snapshot(self) -> Dict[str, float]:
+        """读取底层后端运行时指标快照。"""
         if hasattr(self._backend, "get_runtime_metrics_snapshot"):
             return self._backend.get_runtime_metrics_snapshot()
         return {}
 
     def shutdown(self) -> None:
+        """关闭底层后端连接。"""
         if hasattr(self._backend, "shutdown"):
             self._backend.shutdown()
 
@@ -129,6 +141,7 @@ class ToolRuntime:
         tool_name: str,
         kwargs: Dict[str, Any],
     ) -> Optional[ToolGuardViolation]:
+        """执行工具目录、防护策略和 pydantic 输入模型校验。"""
         try:
             self._guard.validate_tool_call(
                 tool_name,
@@ -152,6 +165,7 @@ class ToolRuntime:
         return None
 
     def _guard_error(self, tool_name: str, violation: ToolGuardViolation) -> str:
+        """把防护拒绝转换为统一 MCP 错误 envelope。"""
         details = {
             "logical_skill": self._context.logical_skill,
             "operation": self._context.operation,

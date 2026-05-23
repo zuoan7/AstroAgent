@@ -113,11 +113,11 @@ flags 的权威状态以 [Agent Compatibility Matrix](agent_compatibility_matrix
 
 | 测试文件 | 覆盖内容 |
 |---------|---------|
-| `test_dag_agent_phase8.py` | removed flags、ExecutionEngine 新路径、engine 缺失失败、legacy 边界 |
-| `test_execution_trace_phase7.py` | ExecutionTraceEntry、ExecutionEvent、FrontendExecutionEventAdapter |
+| `tests/regression/compat/test_dag_agent_compatibility.py` | removed flags、ExecutionEngine 新路径、engine 缺失失败、legacy 边界 |
+| `tests/regression/compat/test_execution_trace_compat.py` | ExecutionTraceEntry、ExecutionEvent、FrontendExecutionEventAdapter |
 | `test_workflow_executor_dag.py` | WorkflowExecutor DAG 依赖、并发、retry、失败策略、证据聚合 |
-| `test_workflow_graph_phase5.py` | WorkflowGraph DAG 构建、拓扑排序 |
-| `test_execution_decision_phase3.py` | ExecutionDecision 模型 |
-| `test_execution_context_phase2.py` | ExecutionContext 统一上下文 |
-| `test_task_profile_phase1.py` | TaskProfile 任务画像 |
-| `test_refactor_baseline.py` | 各阶段基准回归 |
+| `tests/regression/compat/test_workflow_graph_compat.py` | WorkflowGraph DAG 构建、拓扑排序 |
+| `tests/regression/compat/test_execution_decision_compat.py` | ExecutionDecision 模型 |
+| `tests/regression/compat/test_execution_context_compat.py` | ExecutionContext 统一上下文 |
+| `tests/regression/compat/test_task_profile_compat.py` | TaskProfile 任务画像 |
+| `tests/regression/compat/test_agent_compatibility_baseline.py` | 各阶段兼容基准回归 |
