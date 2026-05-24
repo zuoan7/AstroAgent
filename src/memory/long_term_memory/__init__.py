@@ -27,6 +27,8 @@ from src.memory.long_term_memory.models import (
 )
 from src.memory.long_term_memory.embedding import MemoryEmbeddingService
 from src.memory.long_term_memory.service import LongTermMemoryService
+from src.memory.feedback import MemoryFeedbackRecord
+from src.memory.task_context import TaskContextProfile
 
 __all__ = [
     "CandidateMemory",
@@ -40,6 +42,7 @@ __all__ = [
     "MemoryEmbeddingService",
     "LongTermMemoryDeletionRequest",
     "LongTermMemoryDeletionResult",
+    "MemoryFeedbackRecord",
     "MemoryEvent",
     "MemoryCandidate",
     "MemoryConfirmation",
@@ -49,5 +52,6 @@ __all__ = [
     "MemoryType",
     "MemoryVersion",
     "SourceType",
+    "TaskContextProfile",
     "UserProfile",
 ]

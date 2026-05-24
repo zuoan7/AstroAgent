@@ -27,6 +27,7 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 
 - [Memory Directory Structure](docs/MEMORY_DIRECTORY_STRUCTURE.md)：记忆模块目录拆分、分层职责与迁移结构
 - [Memory Module Documentation](docs/MEMORY_MODULE_DOCUMENTATION.md)：短期记忆、长期记忆、兼容层与仓储实现说明
+- [Memory Selection Strategy Status](docs/refactor/select_strategy.md)：记忆系统选择策略 v1 收口状态、已落地能力和 vNext backlog
 - [Memory Context Evaluation](docs/memory_context_evaluation.md)：短期记忆上下文构建的 V1/V2 评估目标、指标口径、最终结果与回归命令
 - [Agent Evaluation Dataset Design](docs/agent_evaluation_dataset_design.md)：Agent 工具选择、工具调用、端到端成功率和延迟评测的数据集字段与天文问题类型设计
 - [AstroAgent Evaluation Runner](docs/astro_agent_evaluation_runner.md)：200 条 Agent benchmark 的静态校验、live SSE 评测脚本、指标口径与运行命令
@@ -71,9 +72,11 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 AstroAgent 的记忆系统采用**事件化短期记忆 + 长期用户画像**分层设计，不是简单的最近 N 轮对话缓存：
 
 - **短期记忆（事件溯源）**：消息和工具调用以 append-only 事件写入 EventStore（SQLite），工具结果原文落盘到 ArtifactStore，prompt 侧仅使用 output_digest 摘要。
-- **上下文构建（检索式组装）**：`build_context` 由 `RetrievalPlanner` 按 token budget 从 task state、summary snapshot、messages、salient facts、tool calls 中检索和排序，组装成结构化上下文文本。
+- **上下文构建（检索式组装）**：`build_context` 由 `RetrievalPlanner` 按 token budget 从 task state、summary snapshot、messages、salient facts、tool calls 中检索和排序，组装成结构化上下文文本。选择过程会输出 `decision_trace`，包含任务画像、入选项、省略原因和候选明细。
 - **摘要快照自动触发**：assistant 消息写入后自动检查是否满足阈值，自动执行 create/rebase summary snapshot，长历史自动压缩为摘要，`build_context` 自动读取最新 snapshot。
-- **长期记忆精细化提取**：用户偏好、习惯、约束、背景、事实等由 `LongTermMemoryService` 管理。提取触发条件已收敛为仅针对明确用户画像表达（偏好/设备/地点/技能），普通天文问题不再触发抽取。支持 LLM 提取和规则 fallback 双路径。
+- **统一任务画像**：Agent `TaskProfile` 会适配为 memory 层 `TaskContextProfile`，贯穿短期上下文、长期记忆检索、prompt 注入和反馈记录，避免各子系统重复推断 task type / scene / focus。
+- **长期记忆精细化提取与注入**：用户偏好、习惯、约束、背景、事实等由 `LongTermMemoryService` 管理。提取触发条件已收敛为仅针对明确用户画像表达（偏好/设备/地点/技能），普通天文问题不再触发抽取。长期记忆注入采用归一化评分、语义缓存召回、rerank、预算耦合、类型配额和 constraint 优先策略。
+- **长期记忆反馈闭环**：长期记忆真正注入 prompt 时记录 `shown`，回答结束后记录 `hit` / `miss`，并预留 `denied` 入口。统一反馈事件写入 `memory_event_log`，同时保留 `metadata.injection_stats` 供权重自学习使用。
 - **PromptBudgetManager 全局预算治理**：对 `DirectExecutor._run_simple_qa()` 和 `ResponseSynthesizer.synthesize()` 的关键 LLM 调用做统一的 prompt section 级预算裁剪。高优先级 section（query、instruction）优先保留，低优先级 section（chat_history、user_profile）超预算时被裁剪或丢弃。
 - **ToolEvidenceCompactor 工具结果预算**：多工具调用场景下，工具结果摘要先在 `ResponseSynthesizer` 中经过 `ToolEvidenceCompactor` 做预算压缩（单工具 cap、总预算 cap、成功工具优先、失败工具缩简），再进入 PromptBudgetManager，避免工具输出撑爆 prompt。
 

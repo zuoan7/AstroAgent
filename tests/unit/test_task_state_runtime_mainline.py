@@ -417,8 +417,9 @@ def test_follow_up_query_is_augmented_for_router(tmp_path, monkeypatch):
     asyncio.run(_collect_events(service.generate_events("下一步")))
 
     assert captured_queries
-    assert "判断北京 M42 是否适合观测" in captured_queries[0]
-    assert "查询 M42 高度" in captured_queries[0]
+    assert captured_queries[0] == "下一步"
+    assert "判断北京 M42 是否适合观测" in captured_queries[-1]
+    assert "查询 M42 高度" in captured_queries[-1]
 
 
 async def _collect_events(generator):

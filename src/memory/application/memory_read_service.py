@@ -57,6 +57,8 @@ class MemoryReadService:
             tool_calls=tool_calls,
             task_type=request.task_type,
             capability_hints=request.capability_hints or {},
+            task_profile=request.task_profile,
+            task_context_profile=request.task_context_profile,
         )
 
     def get_debug_info(self, session_id: str) -> Dict[str, Any]:

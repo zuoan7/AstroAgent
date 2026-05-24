@@ -18,6 +18,11 @@ from typing import Any, Dict, Sequence
 from src.memory.core.models import Message, SalientFact, ToolCallRecord
 from src.memory.domain.summary_snapshot import SummarySnapshot
 from src.memory.domain.task_state import TaskState
+from src.memory.task_context import (
+    TaskContextProfile,
+    coerce_task_context_profile,
+    normalize_context_scene,
+)
 
 ROLE_LABELS = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 
@@ -115,6 +120,10 @@ class RetrievalPlan:
     focus_stack: list[Dict[str, Any]] = field(default_factory=list)
     context_pressure: float = 0.0
     summary_needed: bool = False
+    trace_version: str = "memory_selection_v1"
+    task_context_profile: Dict[str, Any] = field(default_factory=dict)
+    decision_trace: Dict[str, Any] = field(default_factory=dict)
+    trace_candidates: Dict[str, list[Dict[str, Any]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -212,24 +221,33 @@ class RetrievalPlanner:
         tool_calls: Sequence[ToolCallRecord],
         task_type: str | None = None,
         capability_hints: Dict[str, Any] | None = None,
+        task_profile: Any | None = None,
+        task_context_profile: Any | None = None,
     ) -> Dict[str, Any]:
         """按候选召回、场景配额和 token 预算组装短期记忆上下文。"""
 
         query_type = self._classify_query(query)
-        context_scene = self._classify_scene(
+        focus, focus_stack = self._derive_focus_stack(query, task_state, messages)
+        profile = self._build_task_context_profile(
             query=query,
+            query_type=query_type,
             task_state=task_state,
             task_type=task_type,
             capability_hints=capability_hints or {},
+            focus=focus,
+            focus_stack=focus_stack,
+            task_profile=task_profile,
+            task_context_profile=task_context_profile,
         )
+        context_scene = profile.context_scene
         policy = self._policy_for_scene(context_scene)
-        focus, focus_stack = self._derive_focus_stack(query, task_state, messages)
         plan = RetrievalPlan(
             query=query,
             query_type=query_type,
             token_budget=token_budget,
             context_scene=context_scene,
             focus_stack=focus_stack,
+            task_context_profile=profile.to_dict(),
         )
 
         rendered_sections: list[str] = []
@@ -329,6 +347,11 @@ class RetrievalPlanner:
             selected_snapshot.snapshot_id if selected_snapshot else ""
         )
         plan.summary_needed = self._summary_needed(plan)
+        plan.trace_candidates = self._build_candidate_trace(
+            candidates_by_section,
+            plan,
+        )
+        plan.decision_trace = self._build_decision_trace(plan)
 
         return {
             "context_text": context_text,
@@ -342,6 +365,8 @@ class RetrievalPlanner:
                 selected_snapshot.to_dict() if selected_snapshot else None
             ),
             "selected_task_state": task_state.to_dict(),
+            "task_context_profile": profile.to_dict(),
+            "decision_trace": dict(plan.decision_trace),
             "context_scene": context_scene,
             "section_budgets": dict(plan.section_budgets),
             "omitted_counts": dict(plan.omitted_counts),
@@ -362,6 +387,76 @@ class RetrievalPlanner:
             return "reasoning"
         return "general"
 
+    def _build_task_context_profile(
+        self,
+        query: str,
+        query_type: str,
+        task_state: TaskState,
+        task_type: str | None,
+        capability_hints: Dict[str, Any],
+        focus: RetrievalFocus,
+        focus_stack: list[Dict[str, Any]],
+        task_profile: Any | None,
+        task_context_profile: Any | None,
+    ) -> TaskContextProfile:
+        """把外部画像、兼容入参和短期 focus 合成统一任务画像。"""
+
+        context_scene = self._classify_scene(
+            query=query,
+            task_state=task_state,
+            task_type=task_type,
+            capability_hints=capability_hints or {},
+        )
+        profile = coerce_task_context_profile(
+            task_context_profile,
+            query=query,
+            task_type=task_type,
+            context_scene=context_scene,
+        )
+        if profile is None and task_profile is not None:
+            profile = TaskContextProfile.from_task_profile(
+                task_profile,
+                query=query,
+                context_scene=context_scene,
+                intent=query_type,
+                locations=focus.locations,
+                targets=focus.targets,
+                tool_types=focus.preferred_tool_types,
+                freshness_intent=focus.freshness_intent,
+                focus_drifted=focus.drifted,
+            )
+        if profile is None:
+            profile = TaskContextProfile.from_memory_inputs(
+                query=query,
+                task_type=task_type,
+                context_scene=context_scene,
+                intent=query_type,
+                locations=focus.locations,
+                targets=focus.targets,
+                tool_types=focus.preferred_tool_types,
+                freshness_intent=focus.freshness_intent,
+                capability_hints=capability_hints,
+                focus_drifted=focus.drifted,
+            )
+        else:
+            profile = profile.with_focus(
+                locations=focus.locations,
+                targets=focus.targets,
+                tool_types=focus.preferred_tool_types,
+                freshness_intent=focus.freshness_intent,
+                focus_drifted=focus.drifted,
+            )
+        if focus_stack:
+            metadata = dict(profile.metadata or {})
+            metadata.setdefault("focus_stack_depth", len(focus_stack))
+            profile = TaskContextProfile.from_mapping(
+                {**profile.to_dict(), "metadata": metadata},
+                query=query,
+                task_type=profile.task_type,
+                context_scene=profile.context_scene,
+            )
+        return profile
+
     def _classify_scene(
         self,
         query: str,
@@ -371,13 +466,17 @@ class RetrievalPlanner:
     ) -> str:
         """根据 query、任务状态和能力提示推断上下文装配场景。"""
 
-        if task_type in {scene.value for scene in ContextScene}:
-            return str(task_type)
         hint_scene = capability_hints.get("context_scene") or capability_hints.get(
             "task_type"
         )
-        if hint_scene in {scene.value for scene in ContextScene}:
-            return str(hint_scene)
+        normalized = normalize_context_scene(
+            hint_scene,
+            task_type=task_type,
+            query=query,
+            capability_hints=capability_hints,
+        )
+        if normalized != ContextScene.GENERAL.value:
+            return normalized
 
         text = "\n".join(
             [
@@ -1192,6 +1291,100 @@ class RetrievalPlanner:
 
         omitted_total = sum(plan.omitted_counts.values())
         return plan.context_pressure >= 1.2 or omitted_total >= 8
+
+    def _build_decision_trace(self, plan: RetrievalPlan) -> Dict[str, Any]:
+        """生成短期上下文选择的统一 decision trace。"""
+
+        return {
+            "trace_version": plan.trace_version,
+            "profile": dict(plan.task_context_profile or {}),
+            "selected": {
+                "messages": list(plan.selected_message_ids),
+                "facts": list(plan.selected_fact_ids),
+                "tools": list(plan.selected_tool_call_ids),
+                "summary_snapshot": plan.selected_snapshot_id,
+                "task_state_version": plan.selected_task_state_version,
+            },
+            "omitted": dict(plan.omitted_counts),
+            "fallbacks": list(plan.downgrade_steps),
+            "candidates": dict(plan.trace_candidates),
+            "scores": {
+                "section_budgets": dict(plan.section_budgets),
+                "context_pressure": plan.context_pressure,
+                "summary_needed": plan.summary_needed,
+            },
+        }
+
+    def _build_candidate_trace(
+        self,
+        candidates_by_section: Dict[str, Sequence[ContextCandidate]],
+        plan: RetrievalPlan,
+    ) -> Dict[str, list[Dict[str, Any]]]:
+        """按 section 输出候选召回和最终选择状态。"""
+
+        selected_by_section = {
+            "summary": {plan.selected_snapshot_id} if plan.selected_snapshot_id else set(),
+            "facts": set(plan.selected_fact_ids),
+            "tools": set(plan.selected_tool_call_ids),
+            "messages": set(plan.selected_message_ids),
+        }
+        traced: Dict[str, list[Dict[str, Any]]] = {}
+        for section, candidates in candidates_by_section.items():
+            section_selected = selected_by_section.get(section, set())
+            section_omitted = plan.omitted_counts.get(section, 0)
+            traced[section] = [
+                self._candidate_trace_entry(
+                    candidate,
+                    selected=candidate.candidate_id in section_selected,
+                    fallback_used=section_omitted > 0
+                    and candidate.candidate_id not in section_selected,
+                    fallback_reason=self._candidate_fallback_reason(
+                        section,
+                        plan,
+                    ),
+                )
+                for candidate in candidates
+            ]
+        return traced
+
+    def _candidate_trace_entry(
+        self,
+        candidate: ContextCandidate,
+        *,
+        selected: bool,
+        fallback_used: bool,
+        fallback_reason: str,
+    ) -> Dict[str, Any]:
+        """把内部候选对象转换为稳定 trace 结构。"""
+
+        recall_sources = candidate.metadata.get("recall_sources")
+        if not recall_sources:
+            recall_sources = ["summary"] if candidate.source_type == "summary" else []
+        return {
+            "id": candidate.candidate_id,
+            "source_type": candidate.source_type,
+            "text": candidate.text,
+            "score": round(float(candidate.score), 6),
+            "selected": selected,
+            "recall_sources": list(recall_sources),
+            "fallback": {
+                "used": bool(fallback_used),
+                "reason": fallback_reason if fallback_used else "",
+            },
+        }
+
+    def _candidate_fallback_reason(
+        self,
+        section: str,
+        plan: RetrievalPlan,
+    ) -> str:
+        """为未选候选生成兼容的降级原因。"""
+
+        if section == "summary" and "compact_summary" in plan.downgrade_steps:
+            return "compact_summary"
+        if plan.omitted_counts.get(section, 0):
+            return "omitted_by_budget_or_rank"
+        return ""
 
     def _record_downgrade(
         self, plan: RetrievalPlan, section: str, omitted_count: int

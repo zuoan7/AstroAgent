@@ -8,6 +8,7 @@ import json
 import math
 import time
 
+from src.agent.models.task_profile import TaskProfile
 from src.memory.core.models import Message, SalientFact, ToolCallRecord
 from src.memory.domain.summary_snapshot import SummarySnapshot
 from src.memory.domain.task_state import TaskState
@@ -936,12 +937,68 @@ def test_build_context_records_scene_budgets_and_rendered_selected_ids_only():
     assert plan["selected_tool_call_ids"] == [
         call["tool_call_id"] for call in context["selected_tool_calls"]
     ]
+    trace = context["decision_trace"]
+    assert "candidates" in trace
+    tool_candidates = trace["candidates"]["tools"]
+    assert any(candidate["id"] == "tool_beijing" for candidate in tool_candidates)
+    selected_tool_ids = {
+        candidate["id"] for candidate in tool_candidates if candidate["selected"]
+    }
+    assert selected_tool_ids == set(plan["selected_tool_call_ids"])
+    beijing_candidate = next(
+        candidate for candidate in tool_candidates if candidate["id"] == "tool_beijing"
+    )
+    assert beijing_candidate["source_type"] == "tool"
+    assert beijing_candidate["text"]
+    assert isinstance(beijing_candidate["score"], float)
+    assert beijing_candidate["recall_sources"]
+    assert set(beijing_candidate["fallback"]) == {"used", "reason"}
     for message in context["selected_recent_messages"]:
         assert message["content"] in context["context_text"]
     for fact in context["selected_salient_facts"]:
         assert fact["content"] in context["context_text"]
     for call in context["selected_tool_calls"]:
         assert call["output_summary"] in context["context_text"]
+
+
+def test_build_context_maps_agent_task_profile_into_unified_trace():
+    """测试 build context maps agent task profile into unified trace 场景。"""
+
+    planner = _planner()
+    profile = TaskProfile.from_legacy_route(
+        route="planned_task",
+        task_type="observation_recommendation",
+        confidence=0.82,
+        capability_hints=["weather-lookup", "observation-planner"],
+    )
+    state = TaskState(
+        tenant_id="tenant",
+        session_id="session",
+        current_goal="判断北京今晚观测条件",
+        version=2,
+    )
+
+    context = planner.build_context(
+        query="北京今晚还能观测 M42 吗？",
+        token_budget=260,
+        task_state=state,
+        summary_snapshot=None,
+        messages=[],
+        facts=[],
+        tool_calls=[],
+        task_profile=profile,
+    )
+    trace = context["decision_trace"]
+
+    assert context["task_context_profile"]["task_type"] == "observation"
+    assert context["task_context_profile"]["source"] == "agent_task_profile"
+    assert context["task_context_profile"]["confidence"] == 0.82
+    assert context["task_context_profile"]["locations"] == ["北京"]
+    assert context["task_context_profile"]["targets"] == ["M42"]
+    assert "weather-lookup" in context["task_context_profile"]["capability_hints"]
+    assert context["retrieval_plan"]["trace_version"] == "memory_selection_v1"
+    assert trace["profile"] == context["task_context_profile"]
+    assert trace["selected"]["task_state_version"] == 2
 
 
 def test_build_context_selected_tool_calls_include_selection_debug_metadata():

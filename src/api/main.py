@@ -1072,6 +1072,7 @@ async def list_events_endpoint(
     request: Request,
     user_id: Optional[str] = None,
     memory_id: Optional[str] = None,
+    event_type: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ):
@@ -1079,7 +1080,11 @@ async def list_events_endpoint(
     ltm = _get_ltm()
     effective_user_id = normalize_user_id(user_id)
     events = ltm.get_event_logs(
-        effective_user_id, memory_id=memory_id, limit=limit, offset=offset
+        effective_user_id,
+        memory_id=memory_id,
+        event_type=event_type,
+        limit=limit,
+        offset=offset,
     )
     return {
         "status": "success",

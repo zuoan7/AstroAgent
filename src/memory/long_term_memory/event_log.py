@@ -141,11 +141,22 @@ class EventLogger:
         )
 
     def get_event_logs(
-        self, user_id: str, memory_id: Optional[str] = None, limit: int = 50, offset: int = 0
+        self,
+        user_id: str,
+        memory_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        event_type: Optional[str] = None,
     ) -> List[EventLogEntry]:
         """读取用户事件日志，可限定到单条记忆。"""
 
-        return self._repo.get_event_logs(user_id, memory_id=memory_id, limit=limit, offset=offset)
+        return self._repo.get_event_logs(
+            user_id,
+            memory_id=memory_id,
+            limit=limit,
+            offset=offset,
+            event_type=event_type,
+        )
 
     def get_memory_trace(self, user_id: str, memory_id: str) -> List[EventLogEntry]:
         return self._repo.get_event_logs(user_id, memory_id=memory_id, limit=100)

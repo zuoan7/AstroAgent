@@ -19,6 +19,7 @@ from src.memory.long_term_memory.models import (
 )
 from src.memory.long_term_memory.embedding import MemoryEmbeddingService
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
+from src.memory.task_context import TaskContextProfile, coerce_task_context_profile
 
 
 # Legacy export kept for callers/tests that import the old task map. The new
@@ -280,10 +281,20 @@ class LongTermMemoryRetriever:
         task_type: Optional[str] = None,
         limit: Optional[int] = None,
         include_below_threshold: bool = False,
+        task_context_profile: Optional[TaskContextProfile] = None,
     ) -> List[RetrievalHit]:
         """查询 active memories，过滤低分结果并按相关性返回。"""
 
-        resolved_task_type = task_type or self.classify_task_type(query)
+        profile = coerce_task_context_profile(
+            task_context_profile,
+            query=query,
+            task_type=task_type,
+        )
+        resolved_task_type = (
+            task_type
+            or (profile.task_type if profile is not None else "")
+            or self.classify_task_type(query)
+        )
         items = self._repo.list_active_memories(user_id=user_id, limit=1000)
         if not items:
             return []

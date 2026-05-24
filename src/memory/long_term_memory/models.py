@@ -87,6 +87,7 @@ class EventType(str, Enum):
     PROFILE_SYNCED = "profile_synced"
     DELETION_REQUESTED = "deletion_requested"
     DELETION_APPLIED = "deletion_applied"
+    FEEDBACK_RECORDED = "feedback_recorded"
 
 
 PREFERENCE_CATEGORIES = {

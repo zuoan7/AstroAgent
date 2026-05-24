@@ -19,6 +19,7 @@ from src.memory.long_term_memory.retrieval import (
     LongTermMemoryRetriever,
     RetrievalHit,
 )
+from src.memory.task_context import TaskContextProfile, coerce_task_context_profile
 from src.rag.reranker import DashScopeReranker
 
 
@@ -91,12 +92,36 @@ class PromptInjector:
 
         return dict(self._last_selection_trace or {})
 
+    def _resolve_task_context_profile(
+        self,
+        query: str,
+        task_type: Optional[str] = None,
+        task_context_profile: Optional[Any] = None,
+    ) -> TaskContextProfile:
+        """把可选统一画像和旧 task_type 入参合并为长期记忆可用画像。"""
+
+        profile = coerce_task_context_profile(
+            task_context_profile,
+            query=query,
+            task_type=task_type,
+        )
+        if profile is not None:
+            return profile
+        return TaskContextProfile.from_memory_inputs(
+            query=query,
+            task_type=task_type or self.classify_task_type(query),
+            context_scene=task_type,
+            intent="long_term_injection",
+            source="long_term_injection_rule",
+        )
+
     def select_memories(
         self,
         user_id: str,
         query: str,
         task_type: Optional[str] = None,
         total_context_budget: Optional[int] = None,
+        task_context_profile: Optional[Any] = None,
     ) -> List[MemoryItem]:
         """在数量和 token 预算内选择最相关的长期记忆。"""
 
@@ -105,6 +130,7 @@ class PromptInjector:
             query,
             task_type=task_type,
             total_context_budget=total_context_budget,
+            task_context_profile=task_context_profile,
             include_omitted=False,
             record_access=True,
         )
@@ -118,16 +144,23 @@ class PromptInjector:
         total_context_budget: Optional[int] = None,
         include_omitted: bool = False,
         record_access: bool = False,
+        task_context_profile: Optional[Any] = None,
     ) -> List[RetrievalHit]:
         """返回带 trace 信息的长期记忆选择结果。"""
 
-        resolved_task_type = task_type or self.classify_task_type(query)
+        profile = self._resolve_task_context_profile(
+            query=query,
+            task_type=task_type,
+            task_context_profile=task_context_profile,
+        )
+        resolved_task_type = profile.task_type
         memory_budget = self._effective_memory_budget(total_context_budget)
         selected, omitted = self._build_selection(
             user_id=user_id,
             query=query,
             task_type=resolved_task_type,
             memory_budget=memory_budget,
+            task_context_profile=profile,
         )
 
         if record_access:
@@ -136,11 +169,24 @@ class PromptInjector:
 
         all_hits = selected + omitted
         self._last_selection_trace = {
+            "trace_version": "memory_selection_v1",
             "task_type": resolved_task_type,
+            "task_context_profile": profile.to_dict(),
+            "profile": profile.to_dict(),
             "memory_budget": memory_budget,
             "selected_memory_ids": [hit.item.id for hit in selected],
             "selected_count": len(selected),
             "selected_tokens": sum(hit.token_estimate for hit in selected),
+            "selected": {
+                "memories": [hit.item.id for hit in selected],
+            },
+            "omitted": self._omitted_reason_counts(omitted),
+            "fallbacks": self._trace_fallbacks(all_hits),
+            "scores": {
+                "selected_tokens": sum(hit.token_estimate for hit in selected),
+                "relevance_threshold": self.relevance_threshold,
+                "max_memories": self.max_memories,
+            },
             "hits": [hit.to_trace_dict() for hit in all_hits],
         }
         return all_hits if include_omitted else selected
@@ -151,6 +197,7 @@ class PromptInjector:
         query: str,
         task_type: str,
         memory_budget: int,
+        task_context_profile: Optional[TaskContextProfile] = None,
     ) -> tuple[List[RetrievalHit], List[RetrievalHit]]:
         """完成召回、rerank、阈值过滤、去重、配额和预算裁剪。"""
 
@@ -160,6 +207,7 @@ class PromptInjector:
             task_type,
             limit=100,
             include_below_threshold=True,
+            task_context_profile=task_context_profile,
         )
         if not hits or memory_budget <= 0:
             for hit in hits:
@@ -327,11 +375,16 @@ class PromptInjector:
         query: str,
         task_type: Optional[str] = None,
         total_context_budget: Optional[int] = None,
+        task_context_profile: Optional[Any] = None,
     ) -> str:
         """按类型分组渲染 query-aware 长期记忆上下文。"""
 
         memories = self.select_memories(
-            user_id, query, task_type, total_context_budget=total_context_budget
+            user_id,
+            query,
+            task_type,
+            total_context_budget=total_context_budget,
+            task_context_profile=task_context_profile,
         )
         if not memories:
             return "暂无用户偏好信息"
@@ -400,6 +453,27 @@ class PromptInjector:
 
         hit.selected = False
         hit.omitted_reason = reason
+
+    def _omitted_reason_counts(self, hits: List[RetrievalHit]) -> Dict[str, int]:
+        """统计长期记忆候选未入选原因，供统一 trace 展示。"""
+
+        counts: Dict[str, int] = {}
+        for hit in hits:
+            reason = hit.omitted_reason or "unknown"
+            counts[reason] = counts.get(reason, 0) + 1
+        return counts
+
+    def _trace_fallbacks(self, hits: List[RetrievalHit]) -> List[str]:
+        """从命中原因中抽取语义召回和 rerank 降级说明。"""
+
+        fallbacks: List[str] = []
+        for hit in hits:
+            for reason in hit.reasons:
+                if "降级" not in reason and "fallback" not in reason:
+                    continue
+                if reason not in fallbacks:
+                    fallbacks.append(reason)
+        return fallbacks
 
     def _clamp(self, value: float) -> float:
         """把 rerank 分数限制在 0 到 1 区间。"""

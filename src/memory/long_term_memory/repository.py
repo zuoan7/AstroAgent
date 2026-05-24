@@ -797,16 +797,29 @@ class LongTermMemoryRepository:
         return [MemoryEvent.from_db_row(row) for row in rows]
 
     def get_event_logs(
-        self, user_id: str, memory_id: Optional[str] = None, limit: int = 50, offset: int = 0
+        self,
+        user_id: str,
+        memory_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        event_type: Optional[str] = None,
     ) -> List[EventLogEntry]:
         """读取长期记忆生命周期事件日志。"""
 
+        filters = ["user_id=?"]
+        params: list = [user_id]
         if memory_id:
-            sql = "SELECT * FROM memory_event_log WHERE user_id=? AND memory_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            params: list = [user_id, memory_id, limit, offset]
-        else:
-            sql = "SELECT * FROM memory_event_log WHERE user_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            params = [user_id, limit, offset]
+            filters.append("memory_id=?")
+            params.append(memory_id)
+        if event_type:
+            filters.append("event_type=?")
+            params.append(str(getattr(event_type, "value", event_type)))
+        sql = (
+            "SELECT * FROM memory_event_log WHERE "
+            + " AND ".join(filters)
+            + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        )
+        params.extend([limit, offset])
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [

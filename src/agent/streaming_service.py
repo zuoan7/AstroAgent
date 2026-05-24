@@ -116,13 +116,29 @@ class BaseStreamingGenerator:
             f"操作历史内存状态: {total_entries} 个请求, 共 {total_actions} 条动作记录"
         )
 
-    def _build_short_term_memory_context(self, query: str) -> Dict[str, Any]:
+    def _profile_query(self, query: str) -> Optional[Any]:
+        """只通过 router.profile() 获取 Agent TaskProfile。"""
+
+        router = getattr(self, "_request_router", None)
+        if router and hasattr(router, "profile"):
+            return router.profile(query)
+        return None
+
+    def _build_short_term_memory_context(
+        self,
+        query: str,
+        *,
+        task_profile: Optional[Any] = None,
+        task_context_profile: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """调用短期记忆服务构建当前查询上下文。"""
         try:
             context = self._memory.build_context(
                 BuildContextRequest(
                     session_id=self._memory_session_id(),
                     query=query or self._current_query or "",
+                    task_profile=task_profile,
+                    task_context_profile=task_context_profile,
                 )
             )
             return context if isinstance(context, dict) else {}
@@ -344,7 +360,10 @@ class BaseStreamingGenerator:
             fallback_path=fallback_path,
         )
 
-    def _format_user_profile(self) -> str:
+    def _format_user_profile(
+        self,
+        task_context_profile: Optional[Any] = None,
+    ) -> str:
         """把长期记忆画像格式化为提示词上下文。"""
         if not self._long_term_memory:
             return "暂无用户偏好信息"
@@ -354,6 +373,7 @@ class BaseStreamingGenerator:
                     self._user_id,
                     self._current_query or "",
                     total_context_budget=settings.MEMORY_CONTEXT_MAX_TOKENS,
+                    task_context_profile=task_context_profile,
                 )
             except TypeError:
                 rendered = self._long_term_memory.build_prompt_context(
@@ -383,7 +403,12 @@ class BaseStreamingGenerator:
             memory_id for memory_id in selected_ids if isinstance(memory_id, str)
         ]
 
-    def _record_long_term_injection_feedback(self, query: str, response: str) -> None:
+    def _record_long_term_injection_feedback(
+        self,
+        query: str,
+        response: str,
+        task_context_profile: Optional[Any] = None,
+    ) -> None:
         """把本轮注入记忆是否被回复引用回流到长期记忆 metadata。"""
 
         if not self._last_long_term_memory_ids:
@@ -391,12 +416,21 @@ class BaseStreamingGenerator:
         if not hasattr(self._long_term_memory, "record_injection_feedback"):
             return
         try:
-            self._long_term_memory.record_injection_feedback(
-                user_id=self._user_id,
-                query=query,
-                assistant_message=response,
-                selected_memory_ids=list(self._last_long_term_memory_ids),
-            )
+            try:
+                self._long_term_memory.record_injection_feedback(
+                    user_id=self._user_id,
+                    query=query,
+                    assistant_message=response,
+                    selected_memory_ids=list(self._last_long_term_memory_ids),
+                    task_context_profile=task_context_profile,
+                )
+            except TypeError:
+                self._long_term_memory.record_injection_feedback(
+                    user_id=self._user_id,
+                    query=query,
+                    assistant_message=response,
+                    selected_memory_ids=list(self._last_long_term_memory_ids),
+                )
         except Exception as e:
             logger.debug("长期记忆注入反馈记录失败: %s", e)
 
@@ -580,12 +614,13 @@ class BaseStreamingGenerator:
         query: str,
         use_long_term_memory: bool = True,
         memory_context: Optional[Dict[str, Any]] = None,
+        task_context_profile: Optional[Any] = None,
     ) -> Dict[str, str]:
         """准备 legacy ReAct 调用输入，包括问题、历史和用户画像。"""
         self._current_query = query
         chat_history = self._format_chat_history(memory_context)
         user_profile = (
-            self._format_user_profile()
+            self._format_user_profile(task_context_profile=task_context_profile)
             if use_long_term_memory
             else "本轮对话已禁用长期记忆"
         )
@@ -647,16 +682,26 @@ class BaseStreamingGenerator:
         return updated
 
     def _explain_long_term_retrieval(
-        self, query: str, use_long_term_memory: bool
+        self,
+        query: str,
+        use_long_term_memory: bool,
+        task_context_profile: Optional[Any] = None,
     ) -> List[Dict[str, Any]]:
         """获取长期记忆命中的解释信息。"""
         if not use_long_term_memory or not self._long_term_memory:
             return []
         if hasattr(self._long_term_memory, "explain_retrieval_hits"):
             try:
-                hits = self._long_term_memory.explain_retrieval_hits(
-                    self._user_id, query
-                )
+                try:
+                    hits = self._long_term_memory.explain_retrieval_hits(
+                        self._user_id,
+                        query,
+                        task_context_profile=task_context_profile,
+                    )
+                except TypeError:
+                    hits = self._long_term_memory.explain_retrieval_hits(
+                        self._user_id, query
+                    )
                 if isinstance(hits, list):
                     return [hit for hit in hits if isinstance(hit, dict)]
             except Exception as e:
@@ -973,6 +1018,8 @@ class BaseStreamingGenerator:
         *,
         use_long_term_memory: bool = True,
         latency: Optional[LatencyTracker] = None,
+        task_context_profile: Optional[Any] = None,
+        feedback_query: Optional[str] = None,
     ):
         """写入用户和助手消息，并按需触发长期记忆更新。"""
         try:
@@ -1001,7 +1048,11 @@ class BaseStreamingGenerator:
             logger.error(f"❌ memory message append failed: {type(e).__name__}: {e}")
 
         if use_long_term_memory:
-            self._record_long_term_injection_feedback(query, response)
+            self._record_long_term_injection_feedback(
+                feedback_query or query,
+                response,
+                task_context_profile=task_context_profile,
+            )
             conversation_window = self._build_ltm_conversation_window(query, response)
             try:
                 self._schedule_long_term_memory_update(
@@ -1079,6 +1130,7 @@ class BaseStreamingGenerator:
         use_long_term_memory: bool,
         request_id: Optional[str] = None,
         memory_context: Optional[Dict[str, Any]] = None,
+        task_context_profile: Optional[Any] = None,
     ) -> Any:
         """构造统一 RequestContext 并写入当前查询。"""
         from src.agent.models.request_context import RequestContext
@@ -1088,7 +1140,7 @@ class BaseStreamingGenerator:
             query=query,
             chat_history=self._format_chat_history(memory_context),
             user_profile=(
-                self._format_user_profile()
+                self._format_user_profile(task_context_profile=task_context_profile)
                 if use_long_term_memory
                 else "本轮对话已禁用长期记忆"
             ),
@@ -1403,6 +1455,7 @@ class BaseStreamingGenerator:
         user_profile: Optional[str] = None,
         execution_decision: Optional[Any] = None,
         exec_context: Optional[Any] = None,
+        task_context_profile: Optional[Any] = None,
     ) -> FinalResponse:
         """调用统一执行引擎完成 direct/planned/react 编排路径。"""
         with latency.measure("agent_prepare_ms"):
@@ -1411,7 +1464,7 @@ class BaseStreamingGenerator:
             self._current_query = query
             if user_profile is None:
                 user_profile = (
-                    self._format_user_profile()
+                    self._format_user_profile(task_context_profile=task_context_profile)
                     if use_long_term_memory
                     else "本轮对话已禁用长期记忆"
                 )
@@ -1497,7 +1550,7 @@ class BaseStreamingGenerator:
         thinking_logged = False
         response_saved = False
         plan_steps = self._infer_plan_steps(query, use_long_term_memory)
-        memory_hits = self._explain_long_term_retrieval(query, use_long_term_memory)
+        memory_hits: List[Dict[str, Any]] = []
         tool_timeline: List[Dict[str, Any]] = []
         evidence_items: List[Dict[str, Any]] = []
         reasoning_fragments: List[str] = []
@@ -1542,18 +1595,31 @@ class BaseStreamingGenerator:
                 yield processed
 
         try:
-            memory_context = self._build_short_term_memory_context(query)
+            original_profile = self._profile_query(query)
+            memory_context = self._build_short_term_memory_context(
+                query,
+                task_profile=original_profile,
+            )
             selected_task_state = self._selected_task_state_from_context(memory_context)
             effective_query = self._build_effective_query(query, memory_context)
             if effective_query != query:
                 latency.set_meta("effective_query_used", True)
                 latency.set_meta("effective_query_preview", self._preview_text(effective_query, 240))
+                effective_profile = self._profile_query(effective_query)
+            else:
+                effective_profile = original_profile
+            memory_hits = self._explain_long_term_retrieval(
+                effective_query,
+                use_long_term_memory,
+                task_context_profile=effective_profile,
+            )
 
             request_context = self._build_request_context(
                 effective_query,
                 use_long_term_memory=use_long_term_memory,
                 request_id=request_id,
                 memory_context=memory_context,
+                task_context_profile=effective_profile,
             )
 
             async for processed in emit(
@@ -1616,11 +1682,9 @@ class BaseStreamingGenerator:
                 ):
                     yield processed
 
-            precomputed_profile = None
-            router = getattr(self, "_request_router", None)
-            if router and hasattr(router, "profile"):
+            precomputed_profile = effective_profile
+            if precomputed_profile is not None:
                 with latency.measure("route_decision_ms"):
-                    precomputed_profile = router.profile(effective_query)
                     decision = self._resolve_legacy_route_decision(
                         effective_query,
                         precomputed_profile=precomputed_profile,
@@ -1729,6 +1793,7 @@ class BaseStreamingGenerator:
                     user_profile=request_context.user_profile,
                     execution_decision=execution_decision,
                     exec_context=_exec_context,
+                    task_context_profile=effective_profile,
                 )
                 final_resp_obj = final_resp
                 output_schema_parse_success = True
@@ -1781,13 +1846,7 @@ class BaseStreamingGenerator:
                 if execution_path == "react" and decision:
                     if not self._use_unified_execution_engine():
                         raise ValueError("execution engine is not configured")
-                    _, _, exec_context = self._resolve_execution_decision(
-                        effective_query,
-                        decision,
-                        use_long_term_memory=use_long_term_memory,
-                        chat_history=agent_input.get("chat_history", ""),
-                        user_profile=agent_input.get("user_profile", ""),
-                    )
+                    exec_context = _exec_context
                     if hasattr(self._execution_engine, "astream_events_context"):
                         raw_events = self._execution_engine.astream_events_context(
                             execution_decision,
@@ -2067,6 +2126,8 @@ class BaseStreamingGenerator:
                 fallback,
                 use_long_term_memory=use_long_term_memory,
                 latency=latency,
+                task_context_profile=locals().get("effective_profile"),
+                feedback_query=locals().get("effective_query", query),
             )
             response_saved = True
         except Exception as e:
@@ -2098,6 +2159,8 @@ class BaseStreamingGenerator:
                 fallback,
                 use_long_term_memory=use_long_term_memory,
                 latency=latency,
+                task_context_profile=locals().get("effective_profile"),
+                feedback_query=locals().get("effective_query", query),
             )
             response_saved = True
         else:
@@ -2148,6 +2211,8 @@ class BaseStreamingGenerator:
                 final_response,
                 use_long_term_memory=use_long_term_memory,
                 latency=latency,
+                task_context_profile=effective_profile,
+                feedback_query=effective_query,
             )
             response_saved = True
             if completion_state_written:
@@ -2367,6 +2432,8 @@ class BaseStreamingGenerator:
                     final_text,
                     use_long_term_memory=use_long_term_memory,
                     latency=latency,
+                    task_context_profile=locals().get("effective_profile"),
+                    feedback_query=locals().get("effective_query", query),
                 )
                 if completion_state_written:
                     self._schedule_task_state_enrichment(
@@ -2402,25 +2469,37 @@ class StreamingService(BaseStreamingGenerator):
         try:
             request_id = uuid.uuid4().hex[:8]
             self._current_request_id = request_id
-            memory_context = self._build_short_term_memory_context(query)
+            original_profile = self._profile_query(query)
+            memory_context = self._build_short_term_memory_context(
+                query,
+                task_profile=original_profile,
+            )
             selected_task_state = self._selected_task_state_from_context(memory_context)
             effective_query = self._build_effective_query(query, memory_context)
-            precomputed_profile = None
+            effective_profile = (
+                self._profile_query(effective_query)
+                if effective_query != query
+                else original_profile
+            )
+            precomputed_profile = effective_profile
             decision = None
-            router = getattr(self, "_request_router", None)
-            if router and hasattr(router, "profile"):
-                precomputed_profile = router.profile(effective_query)
+            if precomputed_profile is not None:
                 decision = self._resolve_legacy_route_decision(
                     effective_query,
                     precomputed_profile=precomputed_profile,
                 )
+            chat_history = self._format_chat_history(memory_context)
+            self._current_query = effective_query
+            user_profile = self._format_user_profile(
+                task_context_profile=effective_profile,
+            )
 
             execution_decision, profile, exec_context = self._resolve_execution_decision(
                 effective_query,
                 decision,
                 use_long_term_memory=True,
-                chat_history=self._format_chat_history(memory_context),
-                user_profile=self._format_user_profile(),
+                chat_history=chat_history,
+                user_profile=user_profile,
                 precomputed_profile=precomputed_profile,
             )
             if decision is None:
@@ -2449,17 +2528,22 @@ class StreamingService(BaseStreamingGenerator):
                         decision,
                         use_long_term_memory=True,
                         latency=LatencyTracker(),
-                        chat_history=self._format_chat_history(memory_context),
-                        user_profile=self._format_user_profile(),
+                        chat_history=chat_history,
+                        user_profile=user_profile,
                         execution_decision=execution_decision,
                         exec_context=exec_context,
+                        task_context_profile=effective_profile,
                     )
                 )
                 output = final_resp.answer
                 intermediate_steps = []
             else:
                 final_resp = None
-                agent_input = self._prepare_input(effective_query, memory_context=memory_context)
+                agent_input = {
+                    "input": effective_query,
+                    "chat_history": chat_history,
+                    "user_profile": user_profile,
+                }
                 agent_executor = self._ensure_agent_executor()
                 response = agent_executor.invoke(agent_input)
                 output = response.get("output", "")
@@ -2516,7 +2600,12 @@ class StreamingService(BaseStreamingGenerator):
                 execution_decision=execution_decision,
                 expected_version=getattr(task_state_started, "version", None),
             )
-            self._save_to_memory(query, final_response)
+            self._save_to_memory(
+                query,
+                final_response,
+                task_context_profile=effective_profile,
+                feedback_query=effective_query,
+            )
             if task_state_completed is not None:
                 self._schedule_task_state_enrichment(
                     session_id=self._memory_session_id(),
@@ -2564,7 +2653,12 @@ class StreamingService(BaseStreamingGenerator):
                         fallback_message=fallback_response,
                         expected_version=getattr(locals().get("task_state_started"), "version", None),
                     )
-                    self._save_to_memory(query, fallback_response)
+                    self._save_to_memory(
+                        query,
+                        fallback_response,
+                        task_context_profile=locals().get("effective_profile"),
+                        feedback_query=locals().get("effective_query", query),
+                    )
                     if task_state_completed is not None:
                         self._schedule_task_state_enrichment(
                             session_id=self._memory_session_id(),
@@ -2593,7 +2687,12 @@ class StreamingService(BaseStreamingGenerator):
                 fallback_message=default_response,
                 expected_version=getattr(locals().get("task_state_started"), "version", None),
             )
-            self._save_to_memory(query, default_response)
+            self._save_to_memory(
+                query,
+                default_response,
+                task_context_profile=locals().get("effective_profile"),
+                feedback_query=locals().get("effective_query", query),
+            )
 
     async def generate_response_stream(self, query: str) -> AsyncGenerator[str, None]:
         """返回清洗后的纯文本答案流。"""

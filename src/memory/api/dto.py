@@ -52,6 +52,8 @@ class BuildContextRequest:
     max_tokens: Optional[int] = None
     task_type: Optional[str] = None
     capability_hints: Dict[str, Any] = field(default_factory=dict)
+    task_profile: Optional[Any] = None
+    task_context_profile: Optional[Any] = None
 
 
 @dataclass

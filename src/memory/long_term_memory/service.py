@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from src.core.logger import logger
 from src.memory.config import get_long_term_memory_config
+from src.memory.feedback import MemoryFeedbackRecord
 from src.memory.long_term_memory.backup import BackupManager
 from src.memory.long_term_memory.candidate import CandidateManager
 from src.memory.long_term_memory.deletion import LongTermMemoryDeletionService
@@ -41,6 +42,7 @@ from src.memory.long_term_memory.profile_projection import ProfileProjection
 from src.memory.long_term_memory.prompt_injector import PromptInjector
 from src.memory.long_term_memory.quality import QualityAssurance
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
+from src.memory.task_context import coerce_task_context_profile
 
 
 class LongTermMemoryService:
@@ -827,15 +829,56 @@ class LongTermMemoryService:
         query: str,
         task_type: Optional[str] = None,
         total_context_budget: Optional[int] = None,
+        task_context_profile: Optional[Any] = None,
     ) -> str:
         """按 query 选择相关长期记忆并渲染为 prompt 上下文。"""
 
-        return self.prompt_injector.format_for_prompt(
+        profile = coerce_task_context_profile(
+            task_context_profile,
+            query=query,
+            task_type=task_type,
+        )
+        rendered = self.prompt_injector.format_for_prompt(
             user_id,
             query,
             task_type=task_type,
             total_context_budget=total_context_budget,
+            task_context_profile=profile,
         )
+        self._record_prompt_shown_feedback(
+            user_id=user_id,
+            query=query,
+            task_type=task_type,
+            task_context_profile=profile,
+        )
+        return rendered
+
+    def _record_prompt_shown_feedback(
+        self,
+        *,
+        user_id: str,
+        query: str,
+        task_type: Optional[str],
+        task_context_profile: Optional[Any],
+    ) -> None:
+        """对实际注入 prompt 的长期记忆记录 shown 事件。"""
+
+        trace = self.get_last_injection_trace()
+        selected_ids = trace.get("selected_memory_ids") if isinstance(trace, dict) else []
+        if not selected_ids:
+            return
+        for memory_id in selected_ids:
+            if not isinstance(memory_id, str):
+                continue
+            self.record_memory_feedback(
+                user_id=user_id,
+                memory_id=memory_id,
+                query=query,
+                outcome="shown",
+                task_type=task_type,
+                task_context_profile=task_context_profile,
+                metadata={"trace_version": trace.get("trace_version")},
+            )
 
     def explain_retrieval_hits(
         self,
@@ -844,10 +887,20 @@ class LongTermMemoryService:
         task_type: Optional[str] = None,
         total_context_budget: Optional[int] = None,
         include_omitted: bool = False,
+        task_context_profile: Optional[Any] = None,
     ) -> List[Dict[str, Any]]:
         """返回长期记忆命中及打分原因，供前端和调试面板展示。"""
 
-        resolved_task_type = task_type or self.prompt_injector.classify_task_type(query)
+        profile = coerce_task_context_profile(
+            task_context_profile,
+            query=query,
+            task_type=task_type,
+        )
+        resolved_task_type = (
+            task_type
+            or (profile.task_type if profile is not None else "")
+            or self.prompt_injector.classify_task_type(query)
+        )
         hits = []
         for hit in self.prompt_injector.select_memory_hits(
             user_id,
@@ -856,6 +909,7 @@ class LongTermMemoryService:
             total_context_budget=total_context_budget,
             include_omitted=include_omitted,
             record_access=False,
+            task_context_profile=profile,
         ):
             item = hit.item
             hits.append(
@@ -898,11 +952,22 @@ class LongTermMemoryService:
         assistant_message: str,
         selected_memory_ids: List[str],
         task_type: Optional[str] = None,
+        task_context_profile: Optional[Any] = None,
     ) -> Dict[str, int]:
         """记录长期记忆注入后是否被回答引用，用于后续降权。"""
 
         result = {"updated": 0, "hit": 0, "miss": 0}
         now = _utcnow_iso()
+        profile = coerce_task_context_profile(
+            task_context_profile,
+            query=query,
+            task_type=task_type,
+        )
+        resolved_task_type = (
+            task_type
+            or (profile.task_type if profile is not None else "")
+            or self.prompt_injector.classify_task_type(query)
+        )
         for memory_id in selected_memory_ids or []:
             item = self.repository.get_memory(memory_id)
             if not item or item.user_id != user_id or item.status != MemoryStatus.ACTIVE:
@@ -923,10 +988,33 @@ class LongTermMemoryService:
                 consecutive_miss_count = 0
                 stats["last_hit_at"] = now
                 result["hit"] += 1
+                outcome = "hit"
             else:
                 miss_count += 1
                 consecutive_miss_count += 1
                 result["miss"] += 1
+                outcome = "miss"
+
+            feedback = MemoryFeedbackRecord(
+                user_id=user_id,
+                memory_id=item.id,
+                memory_type=item.memory_type,
+                task_type=resolved_task_type,
+                query=query,
+                outcome=outcome,
+                timestamp=now,
+                metadata={"referenced": was_hit},
+            )
+            self.record_memory_feedback(
+                user_id=user_id,
+                memory_id=item.id,
+                query=query,
+                outcome=outcome,
+                task_type=resolved_task_type,
+                task_context_profile=profile,
+                metadata={"referenced": was_hit},
+                timestamp=now,
+            )
 
             stats.update(
                 {
@@ -935,12 +1023,11 @@ class LongTermMemoryService:
                     "miss_count": miss_count,
                     "consecutive_miss_count": consecutive_miss_count,
                     "last_shown_at": now,
-                    "last_task_type": task_type
-                    or self.prompt_injector.classify_task_type(query),
+                    "last_task_type": resolved_task_type,
                     "last_query": query,
+                    "last_feedback": feedback.to_dict(),
                 }
             )
-            resolved_task_type = task_type or self.prompt_injector.classify_task_type(query)
             by_task_type = dict(stats.get("by_task_type") or {})
             task_bucket = dict(by_task_type.get(resolved_task_type) or {})
             task_shown = int(task_bucket.get("shown_count", 0) or 0) + 1
@@ -966,6 +1053,92 @@ class LongTermMemoryService:
             self.repository.update_memory(item)
             result["updated"] += 1
         return result
+
+    def record_memory_feedback(
+        self,
+        user_id: str,
+        memory_id: str,
+        query: str,
+        outcome: str,
+        task_type: Optional[str] = None,
+        task_context_profile: Optional[Any] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """把单条长期记忆反馈写入统一事件日志。"""
+
+        normalized_outcome = str(outcome or "").strip().lower()
+        if normalized_outcome not in {"shown", "hit", "miss", "denied"}:
+            raise ValueError(f"unsupported memory feedback outcome: {outcome!r}")
+
+        item = self.repository.get_memory(memory_id)
+        if not item or item.user_id != user_id:
+            return None
+        profile = coerce_task_context_profile(
+            task_context_profile,
+            query=query,
+            task_type=task_type,
+        )
+        resolved_task_type = (
+            task_type
+            or (profile.task_type if profile is not None else "")
+            or self.prompt_injector.classify_task_type(query)
+        )
+        record = MemoryFeedbackRecord(
+            user_id=user_id,
+            memory_id=item.id,
+            memory_type=item.memory_type,
+            task_type=resolved_task_type,
+            query=query,
+            outcome=normalized_outcome,
+            timestamp=timestamp or _utcnow_iso(),
+            metadata={
+                **(metadata or {}),
+                **(
+                    {"task_context_profile": profile.to_dict()}
+                    if profile is not None
+                    else {}
+                ),
+            },
+        )
+        self.repository.add_event_log(
+            EventLogEntry(
+                user_id=user_id,
+                memory_id=item.id,
+                event_type=EventType.FEEDBACK_RECORDED,
+                event_detail=f"长期记忆反馈: {normalized_outcome}",
+                metadata={"feedback": record.to_dict()},
+                created_at=record.timestamp,
+            )
+        )
+        return record.to_dict()
+
+    def get_feedback_records(
+        self,
+        user_id: str,
+        memory_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """从 memory_event_log 查询统一长期记忆反馈记录。"""
+
+        logs = self.get_event_logs(
+            user_id,
+            memory_id=memory_id,
+            limit=limit,
+            offset=offset,
+            event_type=EventType.FEEDBACK_RECORDED,
+        )
+        records: List[Dict[str, Any]] = []
+        for log in logs:
+            payload = (log.metadata or {}).get("feedback")
+            if not isinstance(payload, dict):
+                continue
+            record = MemoryFeedbackRecord.from_mapping(payload).to_dict()
+            record["event_log_id"] = log.id
+            record["created_at"] = log.created_at
+            records.append(record)
+        return records
 
     def _memory_referenced_in_text(self, item: MemoryItem, text: str) -> bool:
         """判断回答文本是否引用了某条已注入记忆的 key 或 value。"""
@@ -1082,11 +1255,16 @@ class LongTermMemoryService:
         memory_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
+        event_type: Optional[str] = None,
     ) -> List[EventLogEntry]:
         """读取用户长期记忆事件日志，可按 memory_id 过滤。"""
 
         return self.event_logger.get_event_logs(
-            user_id, memory_id=memory_id, limit=limit, offset=offset
+            user_id,
+            memory_id=memory_id,
+            limit=limit,
+            offset=offset,
+            event_type=event_type,
         )
 
     def get_memory_trace(self, user_id: str, memory_id: str) -> List[EventLogEntry]:

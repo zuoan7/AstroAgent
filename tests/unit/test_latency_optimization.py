@@ -23,8 +23,10 @@ class _MemoryStub:
     def __init__(self):
         self.messages = []
         self.session_id = "test_session"
+        self.build_context_requests = []
 
     def build_context(self, request):
+        self.build_context_requests.append(request)
         formatted = [
             f"{'用户' if msg['role'] == 'user' else '助手'}: {msg['content']}"
             for msg in self.messages
@@ -151,6 +153,155 @@ def test_streaming_service_prefers_profile_over_route_for_compat_decision():
 
     assert decision.route == "direct_task"
     assert decision.task_type == "smalltalk"
+
+
+@pytest.mark.asyncio
+async def test_streaming_generate_events_passes_router_profile_to_short_term_context():
+    memory = _MemoryStub()
+    profile = TaskProfile.from_legacy_route(
+        route="planned_task",
+        task_type="observation_recommendation",
+        confidence=0.82,
+        capability_hints=["weather-lookup"],
+    )
+    router = SimpleNamespace(
+        profile=lambda query: profile,
+        route=lambda query: (_ for _ in ()).throw(
+            AssertionError("streaming should not call route()")
+        ),
+    )
+    service = StreamingService(
+        agent_executor=None,
+        memory=memory,
+        user_id="test_user",
+        request_router=router,
+    )
+
+    def decide(p, context=None):
+        return SimpleNamespace(
+            mode="direct",
+            reason="test_decide",
+            fallback_modes=[],
+            legacy_execution_path="direct",
+            to_dict=lambda: {
+                "mode": "direct",
+                "reason": "test_decide",
+                "fallback_modes": [],
+                "legacy_execution_path": "direct",
+            },
+        )
+
+    async def fake_run_context(decision, context, **kwargs):
+        assert context.profile is profile
+        return FinalResponse(
+            answer="今晚适合观测。",
+            summary="今晚适合观测。",
+            confidence=0.82,
+            route="planned_task",
+            task_type="observation_recommendation",
+        )
+
+    service._execution_policy = SimpleNamespace(
+        mode="hybrid",
+        decide=decide,
+        choose_path=lambda route: "direct",
+        to_dict=lambda: {"mode": "hybrid"},
+    )
+    service._execution_engine = SimpleNamespace(run_context=fake_run_context)
+
+    async for _event in service.generate_events("今晚北京适合观测吗"):
+        pass
+
+    assert memory.build_context_requests
+    request = memory.build_context_requests[0]
+    assert request.query == "今晚北京适合观测吗"
+    assert request.task_profile is profile
+
+
+@pytest.mark.asyncio
+async def test_streaming_long_term_prompt_and_feedback_receive_effective_profile():
+    memory = _MemoryStub()
+    profile = TaskProfile.from_legacy_route(
+        route="direct_task",
+        task_type="direct_answer_no_tool",
+        confidence=0.9,
+        capability_hints=["astronomy-qa"],
+    )
+
+    class LongTermStub:
+        def __init__(self):
+            self.prompt_profile = None
+            self.feedback_profile = None
+            self.feedback_ids = []
+
+        def build_prompt_context(self, user_id, query, **kwargs):
+            self.prompt_profile = kwargs.get("task_context_profile")
+            return "用户偏好：回答简洁"
+
+        def get_last_injection_trace(self):
+            return {"selected_memory_ids": ["memory-1"]}
+
+        def explain_retrieval_hits(self, user_id, query, **kwargs):
+            return []
+
+        def record_injection_feedback(self, **kwargs):
+            self.feedback_profile = kwargs.get("task_context_profile")
+            self.feedback_ids = list(kwargs.get("selected_memory_ids") or [])
+
+        def extract_and_store_async(self, **kwargs):
+            return None
+
+    ltm = LongTermStub()
+    service = StreamingService(
+        agent_executor=None,
+        memory=memory,
+        long_term_memory=ltm,
+        user_id="test_user",
+        request_router=SimpleNamespace(
+            profile=lambda query: profile,
+            route=lambda query: (_ for _ in ()).throw(
+                AssertionError("streaming should not call route()")
+            ),
+        ),
+    )
+
+    def decide(p, context=None):
+        return SimpleNamespace(
+            mode="direct",
+            reason="test_decide",
+            fallback_modes=[],
+            legacy_execution_path="direct",
+            to_dict=lambda: {
+                "mode": "direct",
+                "reason": "test_decide",
+                "fallback_modes": [],
+                "legacy_execution_path": "direct",
+            },
+        )
+
+    async def fake_run_context(decision, context, **kwargs):
+        return FinalResponse(
+            answer="赤经是天球坐标。",
+            summary="赤经是天球坐标。",
+            confidence=0.9,
+            route="direct_task",
+            task_type="direct_answer_no_tool",
+        )
+
+    service._execution_policy = SimpleNamespace(
+        mode="hybrid",
+        decide=decide,
+        choose_path=lambda route: "direct",
+        to_dict=lambda: {"mode": "hybrid"},
+    )
+    service._execution_engine = SimpleNamespace(run_context=fake_run_context)
+
+    async for _event in service.generate_events("赤经是什么"):
+        pass
+
+    assert ltm.prompt_profile is profile
+    assert ltm.feedback_profile is profile
+    assert ltm.feedback_ids == ["memory-1"]
 
 
 @pytest.mark.asyncio

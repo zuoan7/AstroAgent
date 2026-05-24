@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.agent.models.task_profile import TaskProfile
 from src.memory.long_term_memory.backup import BackupManager
 from src.memory.long_term_memory.candidate import CandidateManager
 from src.memory.long_term_memory.event_log import ConfirmationManager, EventLogger
@@ -52,6 +53,7 @@ from src.memory.long_term_memory.quality import (
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
 from src.memory.long_term_memory.retrieval import LongTermMemoryRetriever
 from src.memory.long_term_memory.service import LongTermMemoryService
+from src.memory.task_context import TaskContextProfile
 
 
 @pytest.fixture
@@ -1234,6 +1236,42 @@ class TestPromptInjector:
         assert first.id in {hit["memory_id"] for hit in trace_hits}
         assert trace_hits[0]["components"]["rerank_score"] == 0.95
 
+    def test_task_context_profile_flows_into_injection_trace(self, repo):
+        """测试 task context profile flows into injection trace 场景。"""
+
+        item = self._add_memory(
+            repo,
+            MemoryType.BACKGROUND,
+            "location",
+            "home_city",
+            "北京",
+            confidence=0.9,
+        )
+        profile = TaskContextProfile.from_memory_inputs(
+            query="今晚还能观测吗？",
+            task_type="observation",
+            context_scene="observation",
+            locations=["北京"],
+            targets=["M42"],
+            freshness_intent="latest",
+            source="test_profile",
+        )
+        injector = PromptInjector(repo, rerank_enabled=False)
+
+        hits = injector.select_memory_hits(
+            "u1",
+            "今晚还能观测吗？",
+            task_context_profile=profile,
+        )
+        trace = injector.get_last_selection_trace()
+
+        assert [hit.item.id for hit in hits] == [item.id]
+        assert trace["trace_version"] == "memory_selection_v1"
+        assert trace["profile"]["task_type"] == "observation"
+        assert trace["profile"]["locations"] == ["北京"]
+        assert trace["selected"]["memories"] == [item.id]
+        assert trace["hits"][0]["memory_id"] == item.id
+
     def test_rerank_zero_score_falls_back_to_policy_score(self, repo):
         """测试 rerank zero score falls back to policy score 场景。"""
 
@@ -2042,6 +2080,36 @@ class TestLongTermMemoryServiceRefactor:
         assert after_explain.access_count == 0
         assert after_prompt.access_count == 1
 
+    def test_build_prompt_context_accepts_agent_task_profile_for_trace(self, tmp_db):
+        """测试 build prompt context accepts agent task profile for trace 场景。"""
+
+        service = LongTermMemoryService(db_path=tmp_db)
+        service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="device_info",
+            key="device_info",
+            value="80mm 折射望远镜",
+            confidence=0.9,
+        )
+        profile = TaskProfile.from_legacy_route(
+            route="planned_task",
+            task_type="observation_recommendation",
+            confidence=0.81,
+            capability_hints=["weather-lookup"],
+        )
+
+        service.build_prompt_context(
+            "u1",
+            "今晚用望远镜观测什么",
+            task_context_profile=profile,
+        )
+        trace = service.get_last_injection_trace()
+
+        assert trace["profile"]["source"] == "agent_task_profile"
+        assert trace["profile"]["task_type"] == "observation"
+        assert trace["profile"]["confidence"] == 0.81
+
     def test_retrieval_explain_can_include_omitted_reasons(self, tmp_db):
         """测试 retrieval explain can include omitted reasons 场景。"""
 
@@ -2106,7 +2174,70 @@ class TestLongTermMemoryServiceRefactor:
         assert stats["shown_count"] == 6
         assert stats["hit_count"] == 1
         assert stats["consecutive_miss_count"] == 5
+        assert stats["last_feedback"]["outcome"] == "miss"
+        assert stats["last_feedback"]["task_type"] == "observation"
+        assert stats["by_task_type"]["observation"]["shown_count"] == 6
+        assert stats["by_task_type"]["observation"]["hit_count"] == 1
+        assert stats["by_task_type"]["observation"]["miss_count"] == 5
         assert target["components"]["stale_penalty"] == 1.0
+
+    def test_feedback_records_include_prompt_shown_and_hit(self, tmp_db):
+        """测试 feedback records include prompt shown and hit 场景。"""
+
+        service = LongTermMemoryService(
+            db_path=tmp_db,
+            config={"semantic_retrieval_enabled": False, "injection_rerank_enabled": False},
+        )
+        item = service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="device_info",
+            key="device_info",
+            value="80mm 折射望远镜",
+            confidence=0.9,
+        )
+
+        service.build_prompt_context("u1", "今晚用望远镜观测什么")
+        service.record_injection_feedback(
+            "u1",
+            "今晚用望远镜观测什么",
+            "建议使用 80mm 折射望远镜。",
+            [item.id],
+        )
+
+        records = service.get_feedback_records("u1", memory_id=item.id)
+        outcomes = {record["outcome"] for record in records}
+
+        assert {"shown", "hit"} <= outcomes
+        assert all(record["memory_id"] == item.id for record in records)
+        assert all(record["event_log_id"] for record in records)
+
+    def test_record_memory_feedback_can_write_denied_record(self, tmp_db):
+        """测试 record memory feedback can write denied record 场景。"""
+
+        service = LongTermMemoryService(db_path=tmp_db)
+        item = service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.FACT,
+            category="basic_info",
+            key="nickname",
+            value="星友",
+            confidence=0.9,
+        )
+
+        record = service.record_memory_feedback(
+            user_id="u1",
+            memory_id=item.id,
+            query="我不是星友",
+            outcome="denied",
+            task_type="general",
+            metadata={"reason": "user_denied"},
+        )
+        records = service.get_feedback_records("u1", memory_id=item.id)
+
+        assert record["outcome"] == "denied"
+        assert records[0]["outcome"] == "denied"
+        assert records[0]["metadata"]["reason"] == "user_denied"
 
     def test_rebuild_semantic_index_counts_created_updated_skipped(self, tmp_db, monkeypatch):
         """测试 rebuild semantic index counts created updated skipped 场景。"""
