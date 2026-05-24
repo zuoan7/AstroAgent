@@ -9,39 +9,42 @@ All MCP tools must return a JSON string in a fixed envelope:
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Literal, Optional, Type
+from typing import Any, Dict, Optional, Type
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
+from pydantic import BaseModel, ConfigDict, RootModel, ValidationError
 
+from src.transport.mcp.envelope import (
+    SCHEMA_VERSION,
+    MCPToolError,
+    MCPToolErrorEnvelope,
+    MCPToolMeta,
+    MCPToolSuccessEnvelope,
+    build_meta,
+    error_envelope,
+    extract_tool_data,
+    is_tool_error,
+    parse_tool_response,
+    serialize_envelope,
+)
 
-SCHEMA_VERSION = "1.0"
-
-
-class MCPToolMeta(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    tool_name: str
-    schema_version: str = SCHEMA_VERSION
-
-
-class MCPToolError(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    code: str
-    message: str
-    details: Dict[str, Any] = Field(default_factory=dict)
-
-
-class MCPToolSuccessEnvelope(BaseModel):
-    ok: Literal[True]
-    data: Any
-    meta: MCPToolMeta
-
-
-class MCPToolErrorEnvelope(BaseModel):
-    ok: Literal[False]
-    error: MCPToolError
-    meta: MCPToolMeta
+__all__ = [
+    "SCHEMA_VERSION",
+    "MCPToolMeta",
+    "MCPToolError",
+    "MCPToolSuccessEnvelope",
+    "MCPToolErrorEnvelope",
+    "TOOL_INPUT_MODELS",
+    "TOOL_OUTPUT_MODELS",
+    "build_meta",
+    "validate_tool_input",
+    "success_envelope",
+    "error_envelope",
+    "serialize_envelope",
+    "wrap_tool_result",
+    "parse_tool_response",
+    "is_tool_error",
+    "extract_tool_data",
+]
 
 
 class PlanetPositionInput(BaseModel):
@@ -193,10 +196,6 @@ TOOL_OUTPUT_MODELS: Dict[str, Any] = {
 }
 
 
-def build_meta(tool_name: str, **extra: Any) -> MCPToolMeta:
-    return MCPToolMeta(tool_name=tool_name, **extra)
-
-
 def validate_tool_input(tool_name: str, payload: Dict[str, Any]) -> BaseModel:
     model_cls = TOOL_INPUT_MODELS.get(tool_name)
     if model_cls is None:
@@ -222,26 +221,6 @@ def success_envelope(tool_name: str, data: Any, **meta: Any) -> MCPToolSuccessEn
         data=_validate_tool_output(tool_name, data),
         meta=build_meta(tool_name, **meta),
     )
-
-
-def error_envelope(
-    tool_name: str,
-    code: str,
-    message: str,
-    details: Optional[Dict[str, Any]] = None,
-    **meta: Any,
-) -> MCPToolErrorEnvelope:
-    return MCPToolErrorEnvelope(
-        ok=False,
-        error=MCPToolError(code=code, message=message, details=details or {}),
-        meta=build_meta(tool_name, **meta),
-    )
-
-
-def serialize_envelope(envelope: MCPToolSuccessEnvelope | MCPToolErrorEnvelope) -> str:
-    if isinstance(envelope, dict):
-        return json.dumps(envelope, ensure_ascii=False)
-    return json.dumps(envelope.model_dump(mode="json"), ensure_ascii=False)
 
 
 def _legacy_error_to_envelope(data: Dict[str, Any], tool_name: str) -> MCPToolErrorEnvelope:
@@ -300,32 +279,3 @@ def wrap_tool_result(result: Any, tool_name: str) -> str:
         return serialize_envelope(_legacy_error_to_envelope(result, tool_name))
 
     return serialize_envelope(success_envelope(tool_name, result))
-
-
-def parse_tool_response(payload: Any) -> Optional[MCPToolSuccessEnvelope | MCPToolErrorEnvelope]:
-    try:
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        if not isinstance(payload, dict):
-            return None
-        if payload.get("ok") is True:
-            return MCPToolSuccessEnvelope.model_validate(payload)
-        if payload.get("ok") is False:
-            return MCPToolErrorEnvelope.model_validate(payload)
-        return None
-    except (json.JSONDecodeError, TypeError, ValidationError):
-        return None
-
-
-def is_tool_error(payload: Any) -> bool:
-    envelope = parse_tool_response(payload)
-    return isinstance(envelope, MCPToolErrorEnvelope)
-
-
-def extract_tool_data(payload: Any) -> Any:
-    envelope = parse_tool_response(payload)
-    if isinstance(envelope, MCPToolSuccessEnvelope):
-        return envelope.data
-    if isinstance(envelope, MCPToolErrorEnvelope):
-        return None
-    return payload

@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 from src.core.logger import logger
 from src.agent.models.skill_result import SkillResult
 from src.skills.executor import SkillExecutor
-from src.skills.mcp_client import MCPClient
+from src.transport.mcp.client import MCPClient
 from src.skills import registry
 from src.skills.skill_handlers import SKILL_HANDLERS
 from src.tools.runtime import ToolRuntime

@@ -16,7 +16,7 @@ from src.core.logger import logger
 from src.agent.param_parser import ParamParser
 from src.agent.models.skill_result import SkillResult
 from src.skills import registry
-from src.skills.mcp_client import MCPClient
+from src.transport.mcp.client import MCPClient
 
 
 def _summarize_weather(raw: str) -> str:
