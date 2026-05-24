@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.tools.catalog import ToolCatalog, get_default_tool_catalog
+from src.tools.registry import ToolRegistry, get_default_tool_registry
 
 
 class ToolGuardViolation(ValueError):
@@ -76,14 +76,24 @@ class ToolGuardContext:
 class ToolGuard:
     """在原子 MCP 工具调用离开 Agent 进程前执行校验。"""
 
-    def __init__(self, catalog: Optional[ToolCatalog] = None) -> None:
-        """初始化工具防护器和可用工具目录。"""
-        self._catalog = catalog or get_default_tool_catalog()
+    def __init__(
+        self,
+        registry: Optional[ToolRegistry] = None,
+        *,
+        catalog: Optional[Any] = None,
+    ) -> None:
+        """初始化工具防护器和可用工具注册表。"""
+        self._registry = registry or catalog or get_default_tool_registry()
 
     @property
-    def catalog(self) -> ToolCatalog:
-        """返回当前工具防护器使用的工具目录。"""
-        return self._catalog
+    def registry(self) -> ToolRegistry:
+        """返回当前工具防护器使用的工具注册表。"""
+        return self._registry
+
+    @property
+    def catalog(self) -> ToolRegistry:
+        """兼容旧属性名，返回当前工具注册表。"""
+        return self._registry
 
     def validate_tool_call(
         self,
@@ -93,7 +103,7 @@ class ToolGuard:
         context: Optional[ToolGuardContext] = None,
     ) -> None:
         """校验工具名、允许/禁用策略和必填参数。"""
-        if not self._catalog.has_tool(tool_name):
+        if not self._registry.has_tool(tool_name):
             raise ToolGuardViolation(
                 f"Unknown MCP atomic tool: {tool_name}",
                 details={"tool_name": tool_name},

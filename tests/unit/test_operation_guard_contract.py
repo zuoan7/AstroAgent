@@ -8,7 +8,7 @@ from src.core.mcp_protocol import (
     parse_tool_response,
 )
 from src.skills.executor import SkillExecutor
-from src.tools.operation_policy import OperationPolicyResolver
+from src.skills.policies.operation_policy import OperationPolicyResolver
 from src.tools.runtime import ToolRuntime
 
 

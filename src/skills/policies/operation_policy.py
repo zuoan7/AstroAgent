@@ -1,5 +1,4 @@
-"""高层技能 operation 到原子工具约束的策略解析模块。
-"""
+"""高层技能 operation 到原子工具约束的策略解析模块。"""
 
 from __future__ import annotations
 
@@ -102,3 +101,4 @@ class OperationPolicyResolver:
                 return datetime.strptime(text[:10], "%Y-%m-%d")
             except ValueError:
                 return None
+

@@ -11,7 +11,10 @@ from src.agent.models.skill_result import SkillResult
 from src.capabilities.registry import CapabilityRegistry, get_default_capability_registry
 from src.core.mcp_protocol import is_tool_error, parse_tool_response
 from src.skills import registry
-from src.tools.operation_policy import OperationPolicyResolver, OperationToolPolicy
+from src.skills.policies.operation_policy import (
+    OperationPolicyResolver,
+    OperationToolPolicy,
+)
 from src.tools.runtime import ToolRuntime
 
 
