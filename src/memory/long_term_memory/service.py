@@ -42,7 +42,19 @@ from src.memory.long_term_memory.profile_projection import ProfileProjection
 from src.memory.long_term_memory.prompt_injector import PromptInjector
 from src.memory.long_term_memory.quality import QualityAssurance
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
+from src.memory.selection_strategy_config import get_memory_selection_strategy_config
 from src.memory.task_context import coerce_task_context_profile
+
+
+def _deep_update(target: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively update a nested strategy override dictionary."""
+
+    for key, value in source.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value
+    return target
 
 
 class LongTermMemoryService:
@@ -61,14 +73,18 @@ class LongTermMemoryService:
             db_path=db_path,
             overrides=config,
         ).__dict__
+        self.strategy_config = get_memory_selection_strategy_config(
+            overrides=self._strategy_overrides_from_config(config)
+        )
 
         self.repository = LongTermMemoryRepository(self.config["db_path"])
         self.repository.initialize()
         self.quality = QualityAssurance(
             dedup_similarity_threshold=self.config["dedup_similarity_threshold"],
             min_confidence_to_store=self.config["min_confidence_to_store"],
+            strategy_config=self.strategy_config,
         )
-        self.extractor = MemoryExtractor()
+        self.extractor = MemoryExtractor(strategy_config=self.strategy_config)
         self.event_logger = EventLogger(self.repository)
         self.confirmations = ConfirmationManager(self.repository, self.event_logger)
         self.candidates = CandidateManager(
@@ -76,6 +92,7 @@ class LongTermMemoryService:
             occurrence_threshold=self.config["candidate_occurrence_threshold"],
             confidence_threshold=self.config["candidate_confidence_threshold"],
             explicit_bypass=self.config["candidate_explicit_bypass"],
+            strategy_config=self.strategy_config,
         )
         self.projection = ProfileProjection(self.repository)
         self.embedding_service = MemoryEmbeddingService(
@@ -84,13 +101,24 @@ class LongTermMemoryService:
             timeout_seconds=self.config["embed_timeout_seconds"],
             backfill_limit=self.config["embed_backfill_limit"],
         )
+        prompt_injector_kwargs: Dict[str, Any] = {
+            "embedding_service": self.embedding_service,
+            "rerank_enabled": self.config["injection_rerank_enabled"],
+            "rerank_timeout_seconds": self.config["rerank_timeout_seconds"],
+            "strategy_config": self.strategy_config,
+        }
+        if isinstance(config, dict):
+            if "max_prompt_tokens" in config:
+                prompt_injector_kwargs["max_prompt_tokens"] = config[
+                    "max_prompt_tokens"
+                ]
+            if "max_memories_in_prompt" in config:
+                prompt_injector_kwargs["max_memories"] = config[
+                    "max_memories_in_prompt"
+                ]
         self.prompt_injector = PromptInjector(
             self.repository,
-            max_prompt_tokens=self.config["max_prompt_tokens"],
-            max_memories=self.config["max_memories_in_prompt"],
-            embedding_service=self.embedding_service,
-            rerank_enabled=self.config["injection_rerank_enabled"],
-            rerank_timeout_seconds=self.config["rerank_timeout_seconds"],
+            **prompt_injector_kwargs,
         )
         self.deletion = LongTermMemoryDeletionService(self.repository, self.projection)
         self.backups = BackupManager(
@@ -104,6 +132,35 @@ class LongTermMemoryService:
         self._pending_extract_futures: Set[Future] = set()
         self._futures_lock = Lock()
         self._shutdown = False
+
+    def _strategy_overrides_from_config(
+        self,
+        config: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Map constructor config into strategy overrides, preserving old keys."""
+
+        overrides: Dict[str, Any] = {}
+        if not isinstance(config, dict):
+            return overrides
+        injection_overrides = {}
+        if "max_prompt_tokens" in config:
+            injection_overrides["max_prompt_tokens"] = config["max_prompt_tokens"]
+        if "max_memories_in_prompt" in config:
+            injection_overrides["max_memories"] = config["max_memories_in_prompt"]
+        if injection_overrides:
+            overrides.setdefault("long_term", {})["injection"] = injection_overrides
+        nested = config.get("selection_strategy")
+        if isinstance(nested, dict):
+            _deep_update(overrides, nested)
+        direct = {}
+        for key in ["short_term", "long_term"]:
+            if isinstance(config.get(key), dict):
+                direct[key] = config[key]
+        if isinstance(config.get("version"), str):
+            direct["version"] = config["version"]
+        if direct:
+            _deep_update(overrides, direct)
+        return overrides
 
     def add_memory(
         self,
@@ -527,9 +584,7 @@ class LongTermMemoryService:
             if not memory_type or not key:
                 continue
 
-            memory = self.repository.find_memory_by_type_key(
-                user_id, memory_type, key
-            )
+            memory = self.repository.find_memory_by_type_key(user_id, memory_type, key)
             if memory:
                 self._save_version(memory, "revoked")
                 memory.status = MemoryStatus.ARCHIVED
@@ -657,9 +712,7 @@ class LongTermMemoryService:
                 source_type=SourceType.AUTO,
             )
         for index, constraint in enumerate(profile_data.get("constraints") or []):
-            digest = hashlib.sha1(
-                str(constraint).encode("utf-8")
-            ).hexdigest()[:12]
+            digest = hashlib.sha1(str(constraint).encode("utf-8")).hexdigest()[:12]
             constraint_key = f"constraint_{index}_{digest}"
             self.add_memory(
                 user_id=user_id,
@@ -864,7 +917,9 @@ class LongTermMemoryService:
         """对实际注入 prompt 的长期记忆记录 shown 事件。"""
 
         trace = self.get_last_injection_trace()
-        selected_ids = trace.get("selected_memory_ids") if isinstance(trace, dict) else []
+        selected_ids = (
+            trace.get("selected_memory_ids") if isinstance(trace, dict) else []
+        )
         if not selected_ids:
             return
         for memory_id in selected_ids:
@@ -970,7 +1025,11 @@ class LongTermMemoryService:
         )
         for memory_id in selected_memory_ids or []:
             item = self.repository.get_memory(memory_id)
-            if not item or item.user_id != user_id or item.status != MemoryStatus.ACTIVE:
+            if (
+                not item
+                or item.user_id != user_id
+                or item.status != MemoryStatus.ACTIVE
+            ):
                 continue
 
             metadata = dict(item.metadata or {})
@@ -980,9 +1039,7 @@ class LongTermMemoryService:
             shown_count = int(stats.get("shown_count", 0) or 0) + 1
             hit_count = int(stats.get("hit_count", 0) or 0)
             miss_count = int(stats.get("miss_count", 0) or 0)
-            consecutive_miss_count = int(
-                stats.get("consecutive_miss_count", 0) or 0
-            )
+            consecutive_miss_count = int(stats.get("consecutive_miss_count", 0) or 0)
             if was_hit:
                 hit_count += 1
                 consecutive_miss_count = 0
@@ -1364,14 +1421,17 @@ class LongTermMemoryService:
             timeout: Maximum total wait time in seconds.
         """
         import time
+
         deadline = time.monotonic() + timeout
         with self._futures_lock:
             pending = list(self._pending_extract_futures)
         for fut in pending:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                logger.warning("flush_extractions timeout: %d futures still pending",
-                               len([f for f in pending if not f.done()]))
+                logger.warning(
+                    "flush_extractions timeout: %d futures still pending",
+                    len([f for f in pending if not f.done()]),
+                )
                 break
             try:
                 fut.result(timeout=max(0.1, remaining))

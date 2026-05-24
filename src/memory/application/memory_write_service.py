@@ -17,6 +17,11 @@ from src.memory.domain.events import MemoryEvent, MemoryEventType
 from src.memory.domain.task_state import TaskState
 from src.memory.infrastructure.repositories.artifact_store import ArtifactStore
 from src.memory.infrastructure.repositories.event_store import EventStore
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
+from src.memory.tool_evidence import infer_tool_evidence_type
 
 
 class MemoryWriteService:
@@ -29,6 +34,7 @@ class MemoryWriteService:
         artifact_store: ArtifactStore,
         task_state_manager: TaskStateManager,
         compression_service: CompressionService,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
     ):
         """保存写路径依赖，负责事件、artifact 和任务状态投影写入。"""
 
@@ -37,6 +43,7 @@ class MemoryWriteService:
         self.artifact_store = artifact_store
         self.task_state_manager = task_state_manager
         self.compression_service = compression_service
+        self._strategy_config = strategy_config or get_memory_selection_strategy_config()
 
     def append_message(self, request: AppendMessageRequest) -> Message:
         """把用户/助手消息转成 message_created 事件并持久化。"""
@@ -166,36 +173,13 @@ class MemoryWriteService:
     def _infer_tool_type(self, tool_name: str) -> str:
         """按工具名推断写入 metadata 使用的工具类型。"""
 
-        name = (tool_name or "").lower()
-        if any(token in name for token in ["visibility", "seeing", "透明度", "能见度"]):
-            return "visibility"
-        if any(token in name for token in ["weather", "天气"]):
-            return "weather"
-        if any(token in name for token in ["position", "位置"]):
-            return "position"
-        if any(token in name for token in ["ephemeris", "星历"]):
-            return "ephemeris"
-        if any(token in name for token in ["neo", "asteroid", "小行星", "近地"]):
-            return "neo"
-        if any(token in name for token in ["event", "forecast", "calendar", "meteor"]):
-            return "event"
-        if any(token in name for token in ["catalog", "simbad", "messier", "ngc", "gaia"]):
-            return "catalog"
-        return "generic"
+        return infer_tool_evidence_type(tool_name)
 
     def _infer_effective_until(self, tool_type: str, produced_at: float) -> float:
         """按工具类型推断证据默认有效期截止时间。"""
 
-        ttl_seconds = {
-            "visibility": 1 * 60 * 60,
-            "weather": 6 * 60 * 60,
-            "position": 24 * 60 * 60,
-            "ephemeris": 24 * 60 * 60,
-            "neo": 12 * 60 * 60,
-            "event": 24 * 60 * 60,
-            "catalog": 0,
-            "generic": 24 * 60 * 60,
-        }.get(tool_type, 24 * 60 * 60)
+        ttl_by_type = self._strategy_config.short_term.tool_evidence.ttl_seconds
+        ttl_seconds = ttl_by_type.get(tool_type, ttl_by_type["generic"])
         return 0 if ttl_seconds <= 0 else produced_at + ttl_seconds
 
     def update_task_state(

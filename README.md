@@ -76,6 +76,7 @@ AstroAgent 的记忆系统采用**事件化短期记忆 + 长期用户画像**�
 - **摘要快照自动触发**：assistant 消息写入后自动检查是否满足阈值，自动执行 create/rebase summary snapshot，长历史自动压缩为摘要，`build_context` 自动读取最新 snapshot。
 - **统一任务画像**：Agent `TaskProfile` 会适配为 memory 层 `TaskContextProfile`，贯穿短期上下文、长期记忆检索、prompt 注入和反馈记录，避免各子系统重复推断 task type / scene / focus。
 - **长期记忆精细化提取与注入**：用户偏好、习惯、约束、背景、事实等由 `LongTermMemoryService` 管理。提取触发条件已收敛为仅针对明确用户画像表达（偏好/设备/地点/技能），普通天文问题不再触发抽取。长期记忆注入采用归一化评分、语义缓存召回、rerank、预算耦合、类型配额和 constraint 优先策略。
+- **记忆选择策略配置**：短期上下文配额、工具证据 TTL/权重、摘要触发阈值、长期记忆检索/注入/转正/抽取 gating 参数可通过 `config/memory/selection_strategy.yaml` 覆盖；代码默认值兜底，构造参数和测试 overrides 优先级最高。
 - **长期记忆反馈闭环**：长期记忆真正注入 prompt 时记录 `shown`，回答结束后记录 `hit` / `miss`，并预留 `denied` 入口。统一反馈事件写入 `memory_event_log`，同时保留 `metadata.injection_stats` 供权重自学习使用。
 - **PromptBudgetManager 全局预算治理**：对 `DirectExecutor._run_simple_qa()` 和 `ResponseSynthesizer.synthesize()` 的关键 LLM 调用做统一的 prompt section 级预算裁剪。高优先级 section（query、instruction）优先保留，低优先级 section（chat_history、user_profile）超预算时被裁剪或丢弃。
 - **ToolEvidenceCompactor 工具结果预算**：多工具调用场景下，工具结果摘要先在 `ResponseSynthesizer` 中经过 `ToolEvidenceCompactor` 做预算压缩（单工具 cap、总预算 cap、成功工具优先、失败工具缩简），再进入 PromptBudgetManager，避免工具输出撑爆 prompt。

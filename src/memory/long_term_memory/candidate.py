@@ -20,6 +20,10 @@ from src.memory.long_term_memory.models import (
 )
 from src.memory.long_term_memory.quality import CandidatePromotionEvaluator
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
 
 
 class CandidateManager:
@@ -41,14 +45,20 @@ class CandidateManager:
         occurrence_threshold: int = 2,
         confidence_threshold: float = 0.6,
         explicit_bypass: bool = True,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
     ):
         """初始化候选仓储、旧阈值配置和新转正评分器。"""
 
         self._repo = repository
+        self._strategy_config = (
+            strategy_config or get_memory_selection_strategy_config()
+        )
         self.occurrence_threshold = occurrence_threshold
         self.confidence_threshold = confidence_threshold
         self.explicit_bypass = explicit_bypass
-        self.promotion_evaluator = CandidatePromotionEvaluator()
+        self.promotion_evaluator = CandidatePromotionEvaluator(
+            strategy_config=self._strategy_config
+        )
 
     def add_or_update_candidate(
         self,
@@ -94,15 +104,22 @@ class CandidateManager:
                 occurrence,
             )
             self._repo.update_candidate(existing)
-            self._repo.add_event_log(EventLogEntry(
-                user_id=user_id,
-                memory_id=None,
-                event_type=EventType.CANDIDATE_CREATED,
-                event_detail=f"候选记忆更新: {memory_type}.{key}",
-                new_value=str(value),
-                metadata={"candidate_id": existing.id, "occurrence_count": existing.occurrence_count},
-            ))
-            logger.debug(f"候选记忆更新: {memory_type}.{key} (出现{existing.occurrence_count}次)")
+            self._repo.add_event_log(
+                EventLogEntry(
+                    user_id=user_id,
+                    memory_id=None,
+                    event_type=EventType.CANDIDATE_CREATED,
+                    event_detail=f"候选记忆更新: {memory_type}.{key}",
+                    new_value=str(value),
+                    metadata={
+                        "candidate_id": existing.id,
+                        "occurrence_count": existing.occurrence_count,
+                    },
+                )
+            )
+            logger.debug(
+                f"候选记忆更新: {memory_type}.{key} (出现{existing.occurrence_count}次)"
+            )
             return existing
 
         candidate_metadata = dict(metadata or {})
@@ -123,14 +140,19 @@ class CandidateManager:
             metadata=candidate_metadata,
         )
         self._repo.add_candidate(candidate)
-        self._repo.add_event_log(EventLogEntry(
-            user_id=user_id,
-            memory_id=None,
-            event_type=EventType.CANDIDATE_CREATED,
-            event_detail=f"候选记忆创建: {memory_type}.{key}",
-            new_value=str(value),
-            metadata={"candidate_id": candidate.id, "confidence": candidate.confidence},
-        ))
+        self._repo.add_event_log(
+            EventLogEntry(
+                user_id=user_id,
+                memory_id=None,
+                event_type=EventType.CANDIDATE_CREATED,
+                event_detail=f"候选记忆创建: {memory_type}.{key}",
+                new_value=str(value),
+                metadata={
+                    "candidate_id": candidate.id,
+                    "confidence": candidate.confidence,
+                },
+            )
+        )
         logger.debug(f"新候选记忆: {memory_type}.{key}")
         return candidate
 
@@ -182,20 +204,24 @@ class CandidateManager:
         self._repo.add_memory(memory_item)
         self._repo.mark_candidate_promoted(candidate_id, memory_item.id)
 
-        self._repo.add_event_log(EventLogEntry(
-            user_id=candidate.user_id,
-            memory_id=memory_item.id,
-            event_type=EventType.CANDIDATE_PROMOTED,
-            event_detail=f"候选记忆提升为正式记忆: {candidate.memory_type}.{candidate.key}",
-            new_value=str(candidate.value),
-            metadata={
-                "candidate_id": candidate_id,
-                "occurrence_count": candidate.occurrence_count,
-                "promotion_decision": candidate.metadata.get("promotion_decision"),
-            },
-        ))
+        self._repo.add_event_log(
+            EventLogEntry(
+                user_id=candidate.user_id,
+                memory_id=memory_item.id,
+                event_type=EventType.CANDIDATE_PROMOTED,
+                event_detail=f"候选记忆提升为正式记忆: {candidate.memory_type}.{candidate.key}",
+                new_value=str(candidate.value),
+                metadata={
+                    "candidate_id": candidate_id,
+                    "occurrence_count": candidate.occurrence_count,
+                    "promotion_decision": candidate.metadata.get("promotion_decision"),
+                },
+            )
+        )
 
-        logger.info(f"候选记忆提升: {candidate.memory_type}.{candidate.key} (出现{candidate.occurrence_count}次)")
+        logger.info(
+            f"候选记忆提升: {candidate.memory_type}.{candidate.key} (出现{candidate.occurrence_count}次)"
+        )
         return memory_item
 
     def reject_candidate(self, candidate_id: str, reason: str = "") -> bool:
@@ -206,13 +232,15 @@ class CandidateManager:
             return False
 
         self._set_candidate_status(candidate, MemoryStatus.REJECTED)
-        self._repo.add_event_log(EventLogEntry(
-            user_id=candidate.user_id,
-            memory_id=None,
-            event_type=EventType.CANDIDATE_REJECTED,
-            event_detail=f"候选记忆被拒绝: {candidate.memory_type}.{candidate.key}",
-            metadata={"candidate_id": candidate_id, "reason": reason},
-        ))
+        self._repo.add_event_log(
+            EventLogEntry(
+                user_id=candidate.user_id,
+                memory_id=None,
+                event_type=EventType.CANDIDATE_REJECTED,
+                event_detail=f"候选记忆被拒绝: {candidate.memory_type}.{candidate.key}",
+                metadata={"candidate_id": candidate_id, "reason": reason},
+            )
+        )
         logger.info(f"候选记忆拒绝: {candidate_id}, 原因: {reason}")
         return True
 
@@ -327,11 +355,13 @@ class CandidateManager:
     def _merge_candidate_value(self, candidate: MemoryCandidate, value: Any) -> Any:
         """根据候选新旧值关系合并、记录冲突或替换候选值。"""
 
-        relation_type = self.promotion_evaluator.conflict_detector.classify_value_relation(
-            candidate.value,
-            value,
-            candidate.memory_type,
-            candidate.key,
+        relation_type = (
+            self.promotion_evaluator.conflict_detector.classify_value_relation(
+                candidate.value,
+                value,
+                candidate.memory_type,
+                candidate.key,
+            )
         )
         if relation_type in ("extension", "refinement"):
             candidate.metadata["candidate_value_relation"] = relation_type

@@ -163,6 +163,7 @@ EXPLICIT_EQUIPMENT_LOCATION_MESSAGES = [
     "我是有经验的天文爱好者",
     "我刚入门天文摄影",
     "我主要观测行星",
+    "我用双筒和三脚架，今晚北京看什么",
 ]
 
 
@@ -381,9 +382,37 @@ def test_fallback_extracts_device_with_ownership(extractor):
 def test_fallback_extracts_location_with_context(extractor):
     """Fallback 应在用户声明观测地点时提取."""
     result = extractor._fallback_keyword_extraction("我在北京观测", "")
-    assert any(r.key == "location_info" for r in result), (
+    assert any(
+        r.memory_type == MemoryType.BACKGROUND
+        and r.category == "location"
+        and r.key == "location"
+        for r in result
+    ), (
         "fallback 应提取明确声明的观测位置"
     )
+
+
+def test_fallback_extracts_binocular_equipment_and_location_as_background(extractor):
+    result = extractor._fallback_keyword_extraction(
+        "我用双筒和三脚架，今晚北京看什么", ""
+    )
+
+    assert any(
+        r.memory_type == MemoryType.BACKGROUND and r.key == "device_info"
+        for r in result
+    )
+    assert any(
+        r.memory_type == MemoryType.BACKGROUND
+        and r.category == "location"
+        and r.value == "北京"
+        for r in result
+    )
+
+
+def test_bare_change_plan_does_not_trigger_revoke(extractor):
+    assert extractor.is_revocation_request("把今晚计划改成明天") is False
+    assert extractor.should_attempt_extraction("把今晚计划改成明天") is False
+    assert extractor.is_revocation_request("以后默认观测地点改成北京") is True
 
 
 # ---------------------------------------------------------------------------

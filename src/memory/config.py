@@ -4,7 +4,7 @@
 供服务初始化和测试覆盖使用，避免业务代码直接散落读取环境配置。
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from typing import Any, Dict, Optional
 
 from src.core.config import settings
@@ -95,7 +95,8 @@ def get_long_term_memory_config(
     if not overrides:
         return config
     data = asdict(config)
-    data.update(overrides)
+    known_fields = {field.name for field in fields(LongTermMemoryConfig)}
+    data.update({key: value for key, value in overrides.items() if key in known_fields})
     return LongTermMemoryConfig(**data)
 
 

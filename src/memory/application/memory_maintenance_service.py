@@ -19,6 +19,10 @@ from src.memory.domain.deletion import DeletionJob
 from src.memory.domain.summary_snapshot import SummarySnapshot
 from src.memory.infrastructure.repositories.artifact_store import ArtifactStore
 from src.memory.infrastructure.repositories.event_store import EventStore
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
 
 DEFAULT_SNAPSHOT_BATCH_SIZE = 200
 FIXED_SUMMARY_EVENT_TRIGGER = 30
@@ -32,6 +36,31 @@ SNAPSHOTTABLE_EVENT_TYPES = [
     MemoryEventType.TASK_STATE_UPDATED.value,
     MemoryEventType.MEMORY_DELETED.value,
 ]
+
+
+def summary_trigger_strategy_overrides_from_settings() -> dict:
+    """Treat env/test-patched summary settings as explicit strategy overrides."""
+
+    if (
+        settings.__class__.__name__ == "Settings"
+        and settings.__class__.__module__ == "src.core.config"
+    ):
+        return {}
+    return {
+        "short_term": {
+            "summary_trigger": {
+                "initial_uncovered_event_threshold": int(
+                    getattr(settings, "MEMORY_SUMMARY_TRIGGER_MESSAGES", 10)
+                ),
+                "rebase_uncovered_event_threshold": int(
+                    getattr(settings, "MEMORY_SUMMARY_MIN_NEW_EVENTS", 6)
+                ),
+                "uncovered_token_threshold": int(
+                    getattr(settings, "MEMORY_SUMMARY_TRIGGER_TOKENS", 3000)
+                ),
+            }
+        }
+    }
 
 
 @dataclass
@@ -57,6 +86,7 @@ class MemoryMaintenanceService:
         compression_service: CompressionService,
         deletion_service: DeletionService,
         read_service: MemoryReadService,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
     ):
         """保存维护服务依赖，所有持久化读写由注入仓储完成。"""
 
@@ -67,13 +97,16 @@ class MemoryMaintenanceService:
         self.compression_service = compression_service
         self.deletion_service = deletion_service
         self.read_service = read_service
+        self._strategy_config = strategy_config or get_memory_selection_strategy_config(
+            overrides=summary_trigger_strategy_overrides_from_settings()
+        )
 
     def create_summary_snapshot(
         self,
         session_id: str,
         tenant_id: Optional[str] = None,
         created_by_model: str = "rule-based",
-        snapshot_batch_size: int = DEFAULT_SNAPSHOT_BATCH_SIZE,
+        snapshot_batch_size: Optional[int] = None,
     ) -> SummarySnapshot:
         """从最新快照之后的事件批次创建一条新的摘要快照。"""
 
@@ -94,7 +127,7 @@ class MemoryMaintenanceService:
         self,
         session_id: str,
         tenant_id: Optional[str] = None,
-        snapshot_batch_size: int = DEFAULT_SNAPSHOT_BATCH_SIZE,
+        snapshot_batch_size: Optional[int] = None,
     ) -> SummarySnapshot:
         """把已有快照作为种子，与新增事件合并成新的工作快照。"""
 
@@ -115,22 +148,28 @@ class MemoryMaintenanceService:
         self,
         session_id: str,
         after_event_id: Optional[str],
-        snapshot_batch_size: int,
+        snapshot_batch_size: Optional[int],
     ):
         """按快照覆盖点选择下一批可摘要事件。"""
 
-        batch_size = max(1, int(snapshot_batch_size or DEFAULT_SNAPSHOT_BATCH_SIZE))
+        configured = (
+            self._strategy_config.short_term.summary_trigger.snapshot_batch_size
+        )
+        batch_size = max(1, int(snapshot_batch_size or configured))
+        event_types = (
+            self._strategy_config.short_term.summary_trigger.snapshottable_event_types
+        )
         if after_event_id:
             events = self.event_store.list_by_session(
                 session_id,
-                event_types=SNAPSHOTTABLE_EVENT_TYPES,
+                event_types=event_types,
                 after_event_id=after_event_id,
                 limit=batch_size,
             )
         else:
             events = self.event_store.list_by_session(
                 session_id,
-                event_types=SNAPSHOTTABLE_EVENT_TYPES,
+                event_types=event_types,
                 limit=batch_size,
                 descending=True,
             )
@@ -172,14 +211,14 @@ class MemoryMaintenanceService:
             # Only count events after the last covered event
             uncovered_events = self.event_store.list_by_session(
                 session_id,
-                event_types=SNAPSHOTTABLE_EVENT_TYPES,
+                event_types=self._strategy_config.short_term.summary_trigger.snapshottable_event_types,
                 after_event_id=latest.covered_to_event_id,
                 limit=500,
             )
         else:
             uncovered_events = self.event_store.list_by_session(
                 session_id,
-                event_types=SNAPSHOTTABLE_EVENT_TYPES,
+                event_types=self._strategy_config.short_term.summary_trigger.snapshottable_event_types,
                 limit=500,
             )
 
@@ -195,21 +234,20 @@ class MemoryMaintenanceService:
             )
 
         mode = "create" if latest is None else "rebase"
+        trigger_config = self._strategy_config.short_term.summary_trigger
         configured_event_threshold = (
-            int(getattr(settings, "MEMORY_SUMMARY_TRIGGER_MESSAGES", 10))
+            trigger_config.initial_uncovered_event_threshold
             if latest is None
-            else int(getattr(settings, "MEMORY_SUMMARY_MIN_NEW_EVENTS", 6))
+            else trigger_config.rebase_uncovered_event_threshold
         )
         event_threshold = _effective_summary_threshold(
             configured_event_threshold,
-            FIXED_SUMMARY_EVENT_TRIGGER,
+            trigger_config.fixed_uncovered_event_threshold,
         )
-        configured_token_threshold = int(
-            getattr(settings, "MEMORY_SUMMARY_TRIGGER_TOKENS", 3000)
-        )
+        configured_token_threshold = trigger_config.uncovered_token_threshold
         token_threshold = _effective_summary_threshold(
             configured_token_threshold,
-            FIXED_SUMMARY_TOKEN_TRIGGER,
+            trigger_config.fixed_uncovered_token_threshold,
         )
 
         if uncovered_count >= event_threshold:
@@ -237,7 +275,10 @@ class MemoryMaintenanceService:
             )
 
         omitted_total = sum((omitted_counts or {}).values())
-        if (context_pressure is not None and context_pressure >= 1.2) or omitted_total >= 8:
+        if (
+            context_pressure is not None
+            and context_pressure >= trigger_config.context_pressure_threshold
+        ) or omitted_total >= trigger_config.omitted_total_threshold:
             return SummaryTriggerDecision(
                 should_create=True,
                 mode=mode,
@@ -246,11 +287,18 @@ class MemoryMaintenanceService:
                 estimated_tokens=estimated_tokens,
             )
 
-        if _has_topic_drift(latest, uncovered_events):
+        if _has_topic_drift(
+            latest,
+            uncovered_events,
+            distance_threshold=trigger_config.topic_drift_distance_threshold,
+        ):
             return SummaryTriggerDecision(
                 should_create=True,
                 mode=mode,
-                reason="topic_drift(distance>0.6)",
+                reason=(
+                    "topic_drift(distance>"
+                    f"{trigger_config.topic_drift_distance_threshold})"
+                ),
                 uncovered_event_count=uncovered_count,
                 estimated_tokens=estimated_tokens,
             )
@@ -299,6 +347,7 @@ def _effective_summary_threshold(configured: int, fixed: int) -> int:
 def _has_topic_drift(
     latest: SummarySnapshot | None,
     uncovered_events: list[MemoryEvent],
+    distance_threshold: float = TOPIC_DRIFT_DISTANCE_TRIGGER,
 ) -> bool:
     """比较上一快照实体与新事件实体，判断是否发生明显话题漂移。"""
 
@@ -312,7 +361,7 @@ def _has_topic_drift(
         return False
     union = previous_entities | current_entities
     distance = 1 - (len(previous_entities & current_entities) / len(union))
-    return distance > TOPIC_DRIFT_DISTANCE_TRIGGER
+    return distance > distance_threshold
 
 
 def _has_completed_tool_chain(uncovered_events: list[MemoryEvent]) -> bool:

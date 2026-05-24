@@ -1015,7 +1015,7 @@ class TestPromptInjector:
                 "response_style",
                 f"style_{index}",
                 f"偏好 {index}",
-                confidence=0.9 - index * 0.01,
+                confidence=0.99 - index * 0.01,
             )
 
         injector = PromptInjector(repo, max_prompt_tokens=800, max_memories=10)
@@ -2056,6 +2056,52 @@ class TestLongTermMemoryServiceRefactor:
         assert "80mm" in prompt
         assert "避免术语" in prompt
         assert any(hit["memory_type"] == MemoryType.BACKGROUND for hit in hits)
+
+    def test_prompt_injection_filters_unmatched_background_but_keeps_observation_keys(
+        self, tmp_db
+    ):
+        service = LongTermMemoryService(
+            db_path=tmp_db,
+            config={
+                "semantic_retrieval_enabled": False,
+                "injection_rerank_enabled": False,
+            },
+        )
+        service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="education",
+            key="education",
+            value="物理本科",
+            confidence=0.99,
+        )
+        device = service.add_memory(
+            user_id="u1",
+            memory_type=MemoryType.BACKGROUND,
+            category="device_info",
+            key="device_info",
+            value="80mm 折射望远镜",
+            confidence=0.99,
+        )
+
+        prompt = service.build_prompt_context(
+            "u1", "今晚北京适合看什么", task_type="observation"
+        )
+        hits = service.explain_retrieval_hits(
+            "u1",
+            "今晚北京适合看什么",
+            task_type="observation",
+            include_omitted=True,
+        )
+
+        assert "80mm 折射望远镜" in prompt
+        assert "物理本科" not in prompt
+        assert any(hit["memory_id"] == device.id and hit["selected"] for hit in hits)
+        assert any(
+            hit["key"] == "education"
+            and hit["omitted_reason"] == "background_without_query_match"
+            for hit in hits
+        )
 
     def test_explain_retrieval_hits_has_no_access_side_effect(self, tmp_db):
         """测试 explain retrieval hits has no access side effect 场景。"""

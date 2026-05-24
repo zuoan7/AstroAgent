@@ -328,6 +328,10 @@ class MemoryConfig(BaseSettings):
         3.0,
         description="task_state LLM 补充抽取超时时间",
     )
+    MEMORY_SELECTION_STRATEGY_CONFIG_PATH: str = Field(
+        "config/memory/selection_strategy.yaml",
+        description="记忆选择策略 YAML 配置路径（相对于项目根目录）",
+    )
 
     LTM_MIN_CONFIDENCE_TO_STORE: float = Field(
         0.3, description="长期记忆最低存储置信度"
@@ -354,9 +358,7 @@ class MemoryConfig(BaseSettings):
     LTM_EXTRACT_TIMEOUT_SECONDS: float = Field(
         6.0, description="长期记忆 LLM 抽取超时时间"
     )
-    LTM_EXTRACT_MAX_RETRIES: int = Field(
-        0, description="长期记忆 LLM 抽取最大重试次数"
-    )
+    LTM_EXTRACT_MAX_RETRIES: int = Field(0, description="长期记忆 LLM 抽取最大重试次数")
     LTM_EXTRACT_MODEL_NAME: str = Field(
         "qwen-plus", description="长期记忆抽取使用的轻量模型名称"
     )
@@ -493,12 +495,8 @@ class AgentGovernanceConfig(BaseSettings):
     SYNTH_PROMPT_VERSION: str = Field(
         "synth_prompt_v3", description="答案合成 Prompt 版本"
     )
-    FALLBACK_POLICY_VERSION: str = Field(
-        "fallback_v2", description="Fallback 策略版本"
-    )
-    BUDGET_POLICY_VERSION: str = Field(
-        "budget_v1", description="预算策略版本"
-    )
+    FALLBACK_POLICY_VERSION: str = Field("fallback_v2", description="Fallback 策略版本")
+    BUDGET_POLICY_VERSION: str = Field("budget_v1", description="预算策略版本")
     MODEL_POLICY_VERSION: str = Field("model_policy_v1", description="模型策略版本")
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}

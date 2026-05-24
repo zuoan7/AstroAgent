@@ -13,6 +13,7 @@ v1 的目标是把短期上下文、工具证据、长期记忆注入、候选�
 - 多阶段筛选：短期上下文已具备 recent/lexical/focus 召回、MMR 去重和预算降级；长期记忆已具备策略召回、语义缓存召回、Top30 rerank、去重、类型配额和预算裁剪。
 - 反馈闭环：长期记忆注入记录 `shown`，回答结束记录 `hit` / `miss`，并预留 `denied` 入口；反馈事件复用 `memory_event_log`。
 - 可观测性：短期和长期选择过程均有 trace，短期 `decision_trace.candidates` 已输出候选明细。
+- 策略配置外置：权重、阈值、配额、TTL 和词表已可通过 `config/memory/selection_strategy.yaml` 覆盖，代码默认值仍作为兜底。
 
 v1 收口后，除 bugfix、测试补强和小范围稳定化外，不再继续扩大本轮选择策略改造范围。
 
@@ -176,6 +177,31 @@ v1 收口后，除 bugfix、测试补强和小范围稳定化外，不再继续�
 - `src/memory/long_term_memory/service.py`
 - `src/api/main.py`
 
+### 9. 策略配置外置
+
+状态：**Done**
+
+落地内容：
+
+- 新增 `config/memory/selection_strategy.yaml` 作为默认策略配置文件。
+- 新增 `MemorySelectionStrategyConfig` 和 `get_memory_selection_strategy_config(overrides=None)`。
+- 加载顺序为代码默认值兜底、YAML 覆盖、构造/test overrides 最后覆盖。
+- YAML 缺失或局部非法不会阻断启动；非法字段回退对应默认值并记录 warning。
+- 短期上下文 section ratios、top_k、MMR、工具 TTL/权重、多样性配额和 summary trigger 阈值已接入配置。
+- 长期 retrieval 权重/先验/关键词、injection 预算/配额/rerank 融合、候选转正阈值/来源权重、抽取 gating 词表和阈值已接入配置。
+- 短期和长期选择 trace 增加 `strategy_config_version`，默认 `memory_selection_strategy_v1`。
+
+主要文件：
+
+- `config/memory/selection_strategy.yaml`
+- `src/memory/selection_strategy_config.py`
+- `src/memory/retrieval/planner.py`
+- `src/memory/application/memory_maintenance_service.py`
+- `src/memory/long_term_memory/retrieval.py`
+- `src/memory/long_term_memory/prompt_injector.py`
+- `src/memory/long_term_memory/extractor.py`
+- `src/memory/long_term_memory/quality.py`
+
 ## vNext Backlog
 
 以下内容不属于 v1 收口范围，保留为后续迭代。
@@ -189,19 +215,7 @@ v1 收口后，除 bugfix、测试补强和小范围稳定化外，不再继续�
 - 否定/蕴含关系语义判别。
 - 针对中文同义词和天文简称的召回增强。
 
-### 2. 策略配置外置
-
-当前多数权重、阈值和配额仍在 Python 代码中维护。vNext 可将以下内容外置：
-
-- `task_type x context_scene` section ratios。
-- 工具证据 scene weights。
-- 长期记忆 injection weights。
-- 候选转正阈值。
-- probation、stale penalty、type quota 等策略参数。
-
-目标格式可使用 YAML 或 TOML，并保留代码默认值作为兜底。
-
-### 3. A/B 灰度框架
+### 2. A/B 灰度框架
 
 v1 没有实现新旧策略并行评估。vNext 可增加：
 
@@ -210,7 +224,7 @@ v1 没有实现新旧策略并行评估。vNext 可增加：
 - hit rate、denied rate、latency、token cost 指标。
 - 按用户或会话灰度切换。
 
-### 4. Dashboard / UI
+### 3. Dashboard / UI
 
 v1 只提供服务层和 `/events` 事件查询能力。vNext 可增加：
 
@@ -219,7 +233,7 @@ v1 只提供服务层和 `/events` 事件查询能力。vNext 可增加：
 - decision_trace 可视化。
 - 候选转正和 probation 状态面板。
 
-### 5. 自动 denied 推断
+### 4. 自动 denied 推断
 
 v1 只提供 `record_memory_feedback(... outcome="denied")` 入口，不自动判断用户否定。vNext 可增加：
 
@@ -227,7 +241,7 @@ v1 只提供 `record_memory_feedback(... outcome="denied")` 入口，不自动�
 - 否定目标 memory 对齐。
 - denied 到候选撤回/归档的自动联动。
 
-### 6. 工具写入端元数据审计
+### 5. 工具写入端元数据审计
 
 planner 已支持结构化 freshness 元数据，但仍需逐个审计工具写入端：
 
@@ -236,7 +250,7 @@ planner 已支持结构化 freshness 元数据，但仍需逐个审计工具写�
 - 为外部天气、星历、可见性、目录查询分别定义 TTL。
 - 减少依赖 output 文本推导元数据的 fallback。
 
-### 7. 更强的隐式信号挖掘
+### 6. 更强的隐式信号挖掘
 
 v1 已有窗口 gating 和候选等级，但隐式信号仍可增强：
 

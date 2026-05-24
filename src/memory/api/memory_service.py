@@ -16,7 +16,10 @@ from src.memory.api.dto import (
 )
 from src.memory.application.compression_service import CompressionService
 from src.memory.application.deletion_service import DeletionService
-from src.memory.application.memory_maintenance_service import MemoryMaintenanceService
+from src.memory.application.memory_maintenance_service import (
+    MemoryMaintenanceService,
+    summary_trigger_strategy_overrides_from_settings,
+)
 from src.memory.application.memory_read_service import MemoryReadService
 from src.memory.application.memory_write_service import MemoryWriteService
 from src.memory.application.summary_snapshot_manager import SummarySnapshotManager
@@ -33,6 +36,7 @@ from src.memory.infrastructure.repositories.summary_snapshot_repo import (
 )
 from src.memory.infrastructure.repositories.task_state_repo import TaskStateRepository
 from src.memory.retrieval import RetrievalPlanner
+from src.memory.selection_strategy_config import get_memory_selection_strategy_config
 
 
 class MemoryService:
@@ -63,6 +67,9 @@ class MemoryService:
         self.task_state_repository = TaskStateRepository(db_path)
         self.summary_snapshot_repository = SummarySnapshotRepository(db_path)
         self.deletion_repository = DeletionRepository(db_path)
+        self.strategy_config = get_memory_selection_strategy_config(
+            overrides=summary_trigger_strategy_overrides_from_settings()
+        )
         self.task_state_manager = task_state_manager or TaskStateManager(
             self.task_state_repository,
             self.event_store,
@@ -78,7 +85,8 @@ class MemoryService:
             self.summary_snapshot_manager
         )
         self.retrieval_planner = retrieval_planner or RetrievalPlanner(
-            self._estimate_tokens
+            self._estimate_tokens,
+            strategy_config=self.strategy_config,
         )
         self.deletion_service = deletion_service or DeletionService(
             event_store=self.event_store,
@@ -105,6 +113,7 @@ class MemoryService:
             artifact_store=self.artifact_store,
             task_state_manager=self.task_state_manager,
             compression_service=self.compression_service,
+            strategy_config=self.strategy_config,
         )
         self.maintenance_service = MemoryMaintenanceService(
             tenant_id=self.tenant_id,
@@ -114,6 +123,7 @@ class MemoryService:
             compression_service=self.compression_service,
             deletion_service=self.deletion_service,
             read_service=self.read_service,
+            strategy_config=self.strategy_config,
         )
 
     def append_message(self, request: AppendMessageRequest) -> Message:
@@ -180,7 +190,7 @@ class MemoryService:
         session_id: str,
         tenant_id: Optional[str] = None,
         created_by_model: str = "rule-based",
-        snapshot_batch_size: int = 200,
+        snapshot_batch_size: Optional[int] = None,
     ) -> SummarySnapshot:
         """把尚未覆盖的事件压缩为一条新的 summary snapshot。"""
 
@@ -195,7 +205,7 @@ class MemoryService:
         self,
         session_id: str,
         tenant_id: Optional[str] = None,
-        snapshot_batch_size: int = 200,
+        snapshot_batch_size: Optional[int] = None,
     ) -> SummarySnapshot:
         """基于已有快照和新增事件生成新的工作快照。"""
 
@@ -259,19 +269,25 @@ class MemoryService:
     ) -> list[Dict[str, Any]]:
         """返回指定会话的全部消息投影，兼容旧调试入口。"""
 
-        return self.read_service.get_all_messages(session_id or self._require_session_id())
+        return self.read_service.get_all_messages(
+            session_id or self._require_session_id()
+        )
 
     def get_tool_calls(self, session_id: Optional[str] = None) -> list[Dict[str, Any]]:
         """返回指定会话的工具调用投影。"""
 
-        return self.read_service.get_tool_calls(session_id or self._require_session_id())
+        return self.read_service.get_tool_calls(
+            session_id or self._require_session_id()
+        )
 
     def get_salient_facts(
         self, session_id: Optional[str] = None
     ) -> list[Dict[str, Any]]:
         """返回指定会话的显著事实投影。"""
 
-        return self.read_service.get_salient_facts(session_id or self._require_session_id())
+        return self.read_service.get_salient_facts(
+            session_id or self._require_session_id()
+        )
 
     def get_summary(self, session_id: Optional[str] = None) -> str:
         """返回指定会话的最新摘要文本。"""

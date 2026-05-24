@@ -19,7 +19,10 @@ from src.memory.long_term_memory.models import (
     MemoryType,
     SourceType,
 )
-
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
 
 EXPLICIT_PATTERNS = [
     r"我(喜欢|偏好|希望|要求|习惯)(.{1,30})",
@@ -34,15 +37,41 @@ EXPLICIT_PATTERNS = [
 ]
 
 TEMPORARY_INDICATORS = [
-    "这次", "本次", "这回", "暂时", "仅此一次",
-    "今天", "今晚", "这一次", "临时",
-    "just this time", "for now", "temporarily", "today", "tonight",
+    "这次",
+    "本次",
+    "这回",
+    "暂时",
+    "仅此一次",
+    "今天",
+    "今晚",
+    "这一次",
+    "临时",
+    "just this time",
+    "for now",
+    "temporarily",
+    "today",
+    "tonight",
 ]
 
 STABLE_INDICATORS = [
-    "记住", "以后", "以后默认", "下次", "下回", "每次", "每次都",
-    "总是", "一直", "通常", "默认", "长期", "永远",
-    "remember", "next time", "always", "usually", "default",
+    "记住",
+    "以后",
+    "以后默认",
+    "下次",
+    "下回",
+    "每次",
+    "每次都",
+    "总是",
+    "一直",
+    "通常",
+    "默认",
+    "长期",
+    "永远",
+    "remember",
+    "next time",
+    "always",
+    "usually",
+    "default",
 ]
 
 REVOCATION_PATTERNS = [
@@ -59,7 +88,11 @@ REVOCATION_PATTERNS = [
     r"之前.*(不算|作废)",
     r"那次只是(开玩笑|临时)",
     r"只是开玩笑",
-    r"改成",
+    r"以后.*改成",
+    r"默认.*改成",
+    r"记住.*改成",
+    r"下次.*改成",
+    r"长期.*改成",
     r"forget",
     r"do not remember",
     r"don't remember",
@@ -68,38 +101,135 @@ REVOCATION_PATTERNS = [
 ]
 
 EQUIPMENT_TERMS = [
-    "望远镜", "镜", "相机", "赤道仪", "镜头", "目镜", "CCD", "CMOS",
-    "道布森", "小黑", "星特朗", "信达", "佳能", "尼康", "索尼",
-    "telescope", "camera", "mount", "eyepiece",
+    "望远镜",
+    "镜",
+    "相机",
+    "赤道仪",
+    "镜头",
+    "目镜",
+    "CCD",
+    "CMOS",
+    "道布森",
+    "小黑",
+    "星特朗",
+    "信达",
+    "佳能",
+    "尼康",
+    "索尼",
+    "双筒",
+    "三脚架",
+    "滤镜",
+    "口径",
+    "焦距",
+    "导星镜",
+    "ZWO",
+    "ASI",
+    "QHY",
+    "Seestar",
+    "telescope",
+    "camera",
+    "mount",
+    "eyepiece",
 ]
 
 LOCATION_TERMS = [
-    "观测地", "观测地点", "地点", "位置", "经纬度", "纬度", "经度",
-    "北京", "上海", "广州", "深圳", "杭州", "苏州", "成都", "南京", "武汉",
-    "location", "site", "latitude", "longitude", "timezone", "time zone",
+    "观测地",
+    "观测地点",
+    "地点",
+    "位置",
+    "经纬度",
+    "纬度",
+    "经度",
+    "北京",
+    "上海",
+    "广州",
+    "深圳",
+    "杭州",
+    "苏州",
+    "成都",
+    "南京",
+    "武汉",
+    "location",
+    "site",
+    "latitude",
+    "longitude",
+    "timezone",
+    "time zone",
 ]
 
 TOPIC_KEYWORDS = [
-    "火星", "木星", "土星", "金星", "月球", "太阳", "黑洞",
-    "星系", "星云", "星团", "流星雨", "彗星", "银河", "深空",
-    "望远镜", "赤道仪", "拍摄", "摄影", "观测",
+    "火星",
+    "木星",
+    "土星",
+    "金星",
+    "月球",
+    "太阳",
+    "黑洞",
+    "星系",
+    "星云",
+    "星团",
+    "流星雨",
+    "彗星",
+    "银河",
+    "深空",
+    "望远镜",
+    "赤道仪",
+    "拍摄",
+    "摄影",
+    "观测",
 ]
 
 EXTRACTION_KEYWORDS = [
-    "简短", "详细", "专业", "通俗", "易懂", "不要", "喜欢", "偏好",
-    "习惯", "经常", "总是", "希望", "要求", "建议", "初学者", "入门",
-    "高级", "进阶", "望远镜", "相机", "拍摄", "观测", "深空", "行星",
-    "月相", "流星雨", "日食", "月食", "星系", "星云", "星团",
+    "简短",
+    "详细",
+    "专业",
+    "通俗",
+    "易懂",
+    "不要",
+    "喜欢",
+    "偏好",
+    "习惯",
+    "经常",
+    "总是",
+    "希望",
+    "要求",
+    "建议",
+    "初学者",
+    "入门",
+    "高级",
+    "进阶",
+    "望远镜",
+    "相机",
+    "拍摄",
+    "观测",
+    "深空",
+    "行星",
+    "月相",
+    "流星雨",
+    "日食",
+    "月食",
+    "星系",
+    "星云",
+    "星团",
 ]
 
 
 class MemoryExtractor:
     """识别并抽取用户偏好、约束、背景、事实等长期记忆候选。"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
+    ):
         """预编译显式画像表达正则，减少每次抽取的重复开销。"""
 
-        self._explicit_patterns = [re.compile(p) for p in EXPLICIT_PATTERNS]
+        self._strategy_config = (
+            strategy_config or get_memory_selection_strategy_config()
+        )
+        self._gating_config = self._strategy_config.long_term.extraction_gating
+        self._explicit_patterns = [
+            re.compile(p) for p in self._gating_config.explicit_signal_patterns
+        ]
 
     def should_attempt_extraction(
         self,
@@ -150,6 +280,8 @@ class MemoryExtractor:
         if self.is_revocation_request(msg):
             return True
 
+        equipment_terms_pattern = self._equipment_terms_pattern()
+
         # Explicit user profile: preference / habit / constraint
         profile_signals = [
             r"我[喜欢偏好习惯希望要求]",
@@ -178,12 +310,12 @@ class MemoryExtractor:
         # Explicit equipment / device mention
         equipment_signals = [
             r"我有一[台个架]",
-            r"我的[观测天]?[设备望远镜相机赤道仪]",
+            rf"我的[观测天]?({equipment_terms_pattern}|设备)",
             r"我用的[是]",
-            r"我用.{1,6}(望远镜|相机|赤道仪|镜头|目镜|CCD|CMOS)",
-            r"我.{1,6}(望远镜|相机|赤道仪)",
+            rf"我用.{{0,20}}({equipment_terms_pattern})",
+            rf"我.{{1,8}}({equipment_terms_pattern})",
             r"我主要[拍观测看]",
-            r"下次.{0,12}(同一台|这台|这个).{0,8}(镜|望远镜|相机|赤道仪)",
+            rf"下次.{{0,12}}(同一台|这台|这个).{{0,8}}({equipment_terms_pattern})",
         ]
         if any(re.search(pattern, msg) for pattern in equipment_signals):
             return True
@@ -223,11 +355,23 @@ class MemoryExtractor:
                 "经纬度",
                 "地点",
                 "光害",
+                "看",
+                "看什么",
             ]
         ):
             return True
 
         return False
+
+    def _equipment_terms_pattern(self) -> str:
+        """Build a regex alternation from configured equipment vocabulary."""
+
+        terms = sorted(
+            {term for term in self._gating_config.equipment_terms if str(term).strip()},
+            key=len,
+            reverse=True,
+        )
+        return "|".join(re.escape(str(term)) for term in terms) or r"望远镜|相机|赤道仪"
 
     def is_explicit_expression(self, text: str) -> bool:
         """判断文本是否包含明确的长期偏好或约束表达。"""
@@ -237,13 +381,18 @@ class MemoryExtractor:
     def is_temporary_request(self, text: str) -> bool:
         """识别“这次/暂时”等一次性请求，降低写入长期记忆的置信度。"""
 
-        return any(indicator in text for indicator in TEMPORARY_INDICATORS)
+        return any(
+            indicator in text for indicator in self._gating_config.temporary_indicators
+        )
 
     def is_revocation_request(self, text: str) -> bool:
         """识别用户撤回、作废或更改之前长期记忆的表达。"""
 
         lowered = (text or "").lower()
-        return any(re.search(pattern, lowered) for pattern in REVOCATION_PATTERNS)
+        return any(
+            re.search(pattern, lowered)
+            for pattern in self._gating_config.revocation_patterns
+        )
 
     def _normalize_conversation_window(
         self,
@@ -274,7 +423,7 @@ class MemoryExtractor:
                     "conversation_id": conversation_id,
                 }
             )
-        return normalized[-4:]
+        return normalized[-self._gating_config.window_size :]
 
     def analyze_conversation_window(
         self,
@@ -291,8 +440,12 @@ class MemoryExtractor:
         joined = "\n".join(user_texts)
         lowered = joined.lower()
 
-        equipment_hits = self._extract_repeated_terms(joined, EQUIPMENT_TERMS)
-        location_hits = self._extract_repeated_terms(joined, LOCATION_TERMS)
+        equipment_hits = self._extract_repeated_terms(
+            joined, self._gating_config.equipment_terms
+        )
+        location_hits = self._extract_repeated_terms(
+            joined, self._gating_config.location_terms
+        )
         correction_targets = self._extract_correction_targets(joined)
         repeated_signal = bool(equipment_hits or location_hits)
 
@@ -308,11 +461,19 @@ class MemoryExtractor:
                     re.I,
                 )
             ),
-            "stable_marker": any(indicator in lowered for indicator in STABLE_INDICATORS),
+            "stable_marker": any(
+                indicator in lowered
+                for indicator in self._gating_config.stable_indicators
+            ),
             "temporary_marker": self.is_temporary_request(lowered),
-            "equipment": any(term.lower() in lowered for term in EQUIPMENT_TERMS),
-            "location": any(term.lower() in lowered for term in LOCATION_TERMS),
-            "correction": bool(correction_targets) or self.is_revocation_request(joined),
+            "equipment": any(
+                term.lower() in lowered for term in self._gating_config.equipment_terms
+            ),
+            "location": any(
+                term.lower() in lowered for term in self._gating_config.location_terms
+            ),
+            "correction": bool(correction_targets)
+            or self.is_revocation_request(joined),
             "repeated_signal": repeated_signal,
             "repeated_equipment": equipment_hits,
             "repeated_location": location_hits,
@@ -320,33 +481,41 @@ class MemoryExtractor:
             "revocation": self.is_revocation_request(joined),
         }
 
+        signal_weights = self._gating_config.signal_weights
         score = 0.0
         if signals["self_reference"]:
-            score += 1.0
+            score += signal_weights.get("self_reference", 1.0)
         if signals["action_modal"]:
-            score += 1.0
+            score += signal_weights.get("action_modal", 1.0)
         if signals["stable_marker"]:
-            score += 1.5
+            score += signal_weights.get("stable_marker", 1.5)
         if signals["equipment"]:
-            score += 0.8
+            score += signal_weights.get("equipment", 0.8)
         if signals["location"]:
-            score += 0.8
+            score += signal_weights.get("location", 0.8)
         if signals["correction"]:
-            score += 1.0
+            score += signal_weights.get("correction", 1.0)
         if signals["repeated_signal"]:
-            score += 1.5
+            score += signal_weights.get("repeated_signal", 1.5)
         if signals["temporary_marker"] and not signals["stable_marker"]:
-            score -= 1.0
+            score += signal_weights.get("temporary_penalty", -1.0)
 
         should_attempt = False
         reasons: List[str] = []
+        thresholds = self._gating_config.gating_thresholds
         if signals["revocation"]:
             should_attempt = True
             reasons.append("revocation_signal")
-        if signals["stable_marker"] and signals["action_modal"] and score >= 2.5:
+        if (
+            signals["stable_marker"]
+            and signals["action_modal"]
+            and score >= thresholds.get("stable_profile_signal", 2.5)
+        ):
             should_attempt = True
             reasons.append("stable_profile_signal")
-        if signals["repeated_signal"] and score >= 3.0:
+        if signals["repeated_signal"] and score >= thresholds.get(
+            "window_repeated_signal", 3.0
+        ):
             should_attempt = True
             reasons.append("window_repeated_signal")
         if signals["correction"] and (
@@ -365,11 +534,7 @@ class MemoryExtractor:
         """返回窗口内出现两次以上的设备、地点等稳定项。"""
 
         lowered = text.lower()
-        counts = Counter(
-            term
-            for term in terms
-            if lowered.count(term.lower()) >= 2
-        )
+        counts = Counter(term for term in terms if lowered.count(term.lower()) >= 2)
 
         model_like = re.findall(
             r"(?:星特朗|信达|佳能|尼康|索尼|Celestron|Canon|Nikon|Sony)"
@@ -383,7 +548,9 @@ class MemoryExtractor:
             r"(?:东经|西经|北纬|南纬)?\s*\d{1,3}(?:\.\d+)?\s*(?:°|度)",
             text,
         )
-        counts.update(item.strip() for item in coordinate_like if coordinate_like.count(item) >= 2)
+        counts.update(
+            item.strip() for item in coordinate_like if coordinate_like.count(item) >= 2
+        )
         return list(counts.keys())
 
     def _extract_correction_targets(self, text: str) -> List[str]:
@@ -394,7 +561,9 @@ class MemoryExtractor:
             r"([A-Za-z0-9_\-一-龥]{2,30})",
             text,
         )
-        counts = Counter(target.strip(" ，。,.") for target in targets if target.strip())
+        counts = Counter(
+            target.strip(" ，。,.") for target in targets if target.strip()
+        )
         return [target for target, count in counts.items() if count >= 2]
 
     def extract_with_llm(
@@ -452,10 +621,17 @@ class MemoryExtractor:
                 ]
             )
             content = response.content.strip()
-            content = content.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            content = (
+                content.removeprefix("```json")
+                .removeprefix("```")
+                .removesuffix("```")
+                .strip()
+            )
             parsed = json.loads(content)
             if "should_extract" not in parsed or "reason" not in parsed:
-                raise ValueError("LLM extraction response missing should_extract/reason")
+                raise ValueError(
+                    "LLM extraction response missing should_extract/reason"
+                )
             if not parsed.get("should_extract"):
                 return []
             extractions = parsed.get("extractions", [])
@@ -477,6 +653,11 @@ class MemoryExtractor:
                     "solid" if is_explicit else "tentative",
                 )
                 action = ext.get("action", "upsert")
+                memory_type, category, key = self._normalize_profile_slot(
+                    ext.get("memory_type", "preference"),
+                    ext.get("category", ""),
+                    ext.get("key", ""),
+                )
                 metadata = {
                     "llm_reason": parsed.get("reason", ""),
                     "gate_reason": signals.get("gate_reason", ""),
@@ -486,12 +667,14 @@ class MemoryExtractor:
                 results.append(
                     ExtractionResult(
                         should_extract=True,
-                        memory_type=ext.get("memory_type", "preference"),
-                        category=ext.get("category", ""),
-                        key=ext.get("key", ""),
+                        memory_type=memory_type,
+                        category=category,
+                        key=key,
                         value=ext.get("value"),
                         confidence=min(confidence, 1.0),
-                        source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                        source_type=(
+                            SourceType.EXPLICIT if is_explicit else SourceType.AUTO
+                        ),
                         is_explicit=is_explicit,
                         is_temporary=is_temporary,
                         raw_content=user_message[:200],
@@ -510,6 +693,36 @@ class MemoryExtractor:
                 conversation_window=window,
                 gating_signals=signals,
             )
+
+    def _normalize_profile_slot(
+        self,
+        memory_type: Any,
+        category: Any,
+        key: Any,
+    ) -> tuple[str, str, str]:
+        """Keep observational profile data in promotable background slots."""
+
+        memory_type_value = getattr(memory_type, "value", memory_type)
+        category_value = str(category or "")
+        key_value = str(key or "")
+        slot = {category_value, key_value}
+        if memory_type_value == MemoryType.FACT.value and slot & {
+            "equipment",
+            "device_info",
+            "location_info",
+            "location",
+            "skill_level",
+            "domain_experience",
+        }:
+            if slot & {"equipment", "device_info"}:
+                return MemoryType.BACKGROUND, "device_info", "device_info"
+            if slot & {"location_info", "location"}:
+                return MemoryType.BACKGROUND, "location", "location"
+            if "skill_level" in slot:
+                return MemoryType.BACKGROUND, "skill_level", "skill_level"
+            if "domain_experience" in slot:
+                return MemoryType.BACKGROUND, "domain_experience", "domain_experience"
+        return memory_type, category_value, key_value
 
     def _fallback_keyword_extraction(
         self,
@@ -544,77 +757,151 @@ class MemoryExtractor:
                 return self._finalize_fallback_results(results, signals)
 
         if "简短" in user_message or "简单" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.PREFERENCE,
-                category="response_style", key="response_style", value="简短",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.PREFERENCE,
+                    category="response_style",
+                    key="response_style",
+                    value="简短",
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
         elif "详细" in user_message or "深入" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.PREFERENCE,
-                category="response_style", key="response_style", value="详细",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.PREFERENCE,
+                    category="response_style",
+                    key="response_style",
+                    value="详细",
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
 
         if "专业" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.PREFERENCE,
-                category="knowledge_level", key="knowledge_level", value="专业",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.PREFERENCE,
+                    category="knowledge_level",
+                    key="knowledge_level",
+                    value="专业",
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
         elif "通俗" in user_message or "易懂" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.PREFERENCE,
-                category="knowledge_level", key="knowledge_level", value="通俗",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.PREFERENCE,
+                    category="knowledge_level",
+                    key="knowledge_level",
+                    value="通俗",
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
 
         if any(token in user_message for token in ["初学者", "入门", "刚开始"]):
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.BACKGROUND,
-                category="skill_level", key="skill_level", value="入门",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.BACKGROUND,
+                    category="skill_level",
+                    key="skill_level",
+                    value="入门",
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
         elif any(token in user_message for token in ["高级", "进阶", "有经验"]):
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.BACKGROUND,
-                category="skill_level", key="skill_level", value="专家",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.BACKGROUND,
+                    category="skill_level",
+                    key="skill_level",
+                    value="专家",
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
 
         if "不要" in user_message and "术语" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.CONSTRAINT,
-                category="no_jargon", key="no_jargon", value=True,
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.CONSTRAINT,
+                    category="no_jargon",
+                    key="no_jargon",
+                    value=True,
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
         if "不要超过" in user_message or "字以内" in user_message:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.CONSTRAINT,
-                category="output_length_limit", key="output_length_limit", value="控制回答长度",
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.CONSTRAINT,
+                    category="output_length_limit",
+                    key="output_length_limit",
+                    value="控制回答长度",
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
 
         # Device / equipment: only extract when explicitly declared with ownership framing
+        equipment_terms_pattern = self._equipment_terms_pattern()
         equipment_match = re.search(
-            r"我(有|用|的).{0,10}(望远镜|相机|赤道仪|镜头|目镜|CCD|CMOS)",
+            rf"我(有|用|使用|的).{{0,30}}({equipment_terms_pattern})",
             user_message,
+            re.I,
         )
         if equipment_match:
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.BACKGROUND,
-                category="device_info", key="device_info", value=equipment_match.group(0).strip(),
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.BACKGROUND,
+                    category="device_info",
+                    key="device_info",
+                    value=equipment_match.group(0).strip(),
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
 
         # Location: only extract when explicitly declared
         location_match = re.search(
@@ -623,15 +910,32 @@ class MemoryExtractor:
         )
         if location_match and any(
             (cue in user_message)
-            for cue in ["观测", "拍照", "拍摄", "地点", "经纬度", "我家在", "我在"]
+            for cue in [
+                "观测",
+                "拍照",
+                "拍摄",
+                "地点",
+                "经纬度",
+                "我家在",
+                "我在",
+                "看什么",
+                "适合看",
+            ]
         ):
-            results.append(ExtractionResult(
-                should_extract=True, memory_type=MemoryType.FACT,
-                category="location_info", key="location_info",
-                value=location_match.group(1),
-                confidence=base_confidence, source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
-                is_explicit=is_explicit, is_temporary=is_temporary, raw_content=user_message[:200],
-            ))
+            results.append(
+                ExtractionResult(
+                    should_extract=True,
+                    memory_type=MemoryType.BACKGROUND,
+                    category="location",
+                    key="location",
+                    value=location_match.group(1),
+                    confidence=base_confidence,
+                    source_type=SourceType.EXPLICIT if is_explicit else SourceType.AUTO,
+                    is_explicit=is_explicit,
+                    is_temporary=is_temporary,
+                    raw_content=user_message[:200],
+                )
+            )
 
         results.extend(self._implicit_window_extractions(window, signals, user_message))
 
@@ -673,23 +977,29 @@ class MemoryExtractor:
     def _infer_revoke_target(self, text: str) -> Dict[str, Any]:
         """从撤回请求中推断目标记忆键；不明确时留空，交给服务降级处理。"""
 
-        if re.search(r"(设备|望远镜|相机|赤道仪|镜头|目镜|CCD|CMOS|同一台|这台|镜)", text):
+        if re.search(
+            rf"(设备|同一台|这台|{self._equipment_terms_pattern()})",
+            text,
+            re.I,
+        ):
             return {
                 "memory_type": MemoryType.BACKGROUND,
                 "category": "device_info",
                 "key": "device_info",
             }
-        if re.search(r"(地点|位置|观测地|这里|北京|上海|广州|深圳|杭州|成都|南京|武汉)", text):
+        if re.search(
+            r"(地点|位置|观测地|这里|北京|上海|广州|深圳|杭州|成都|南京|武汉)", text
+        ):
             return {
-                "memory_type": MemoryType.FACT,
-                "category": "location_info",
-                "key": "location_info",
+                "memory_type": MemoryType.BACKGROUND,
+                "category": "location",
+                "key": "location",
                 "metadata": {
                     "alternate_targets": [
                         {
-                            "memory_type": MemoryType.BACKGROUND,
-                            "category": "location",
-                            "key": "location",
+                            "memory_type": MemoryType.FACT,
+                            "category": "location_info",
+                            "key": "location_info",
                         }
                     ]
                 },
@@ -734,7 +1044,10 @@ class MemoryExtractor:
                     category="device_info",
                     key="device_info",
                     value=equipment,
-                    confidence=0.45,
+                    confidence=self._gating_config.implicit_extraction_confidence.get(
+                        "repeated_equipment",
+                        0.45,
+                    ),
                     source_type=SourceType.AUTO,
                     is_explicit=False,
                     is_temporary=False,
@@ -753,7 +1066,10 @@ class MemoryExtractor:
                     category="location",
                     key="location",
                     value=location,
-                    confidence=0.45,
+                    confidence=self._gating_config.implicit_extraction_confidence.get(
+                        "repeated_location",
+                        0.45,
+                    ),
                     source_type=SourceType.AUTO,
                     is_explicit=False,
                     is_temporary=False,
@@ -772,7 +1088,10 @@ class MemoryExtractor:
                     category="custom",
                     key="data_source_constraint",
                     value=f"用户多次否定 {target} 的结果",
-                    confidence=0.45,
+                    confidence=self._gating_config.implicit_extraction_confidence.get(
+                        "repeated_correction",
+                        0.45,
+                    ),
                     source_type=SourceType.AUTO,
                     is_explicit=False,
                     is_temporary=False,
@@ -793,7 +1112,10 @@ class MemoryExtractor:
                     category="language",
                     key="language",
                     value=language,
-                    confidence=0.35,
+                    confidence=self._gating_config.implicit_extraction_confidence.get(
+                        "language_detected",
+                        0.35,
+                    ),
                     source_type=SourceType.AUTO,
                     is_explicit=False,
                     is_temporary=False,
@@ -813,7 +1135,10 @@ class MemoryExtractor:
                     category="unit_preference",
                     key="unit_preference",
                     value=unit_preference,
-                    confidence=0.35,
+                    confidence=self._gating_config.implicit_extraction_confidence.get(
+                        "unit_detected",
+                        0.35,
+                    ),
                     source_type=SourceType.AUTO,
                     is_explicit=False,
                     is_temporary=False,
@@ -833,7 +1158,10 @@ class MemoryExtractor:
                     category="basic_info",
                     key="timezone",
                     value=timezone,
-                    confidence=0.35,
+                    confidence=self._gating_config.implicit_extraction_confidence.get(
+                        "timezone_detected",
+                        0.35,
+                    ),
                     source_type=SourceType.AUTO,
                     is_explicit=False,
                     is_temporary=False,
@@ -892,9 +1220,11 @@ class MemoryExtractor:
                 str(result.memory_type),
                 result.category,
                 result.key,
-                json.dumps(result.value, ensure_ascii=False, sort_keys=True)
-                if not isinstance(result.value, str)
-                else result.value,
+                (
+                    json.dumps(result.value, ensure_ascii=False, sort_keys=True)
+                    if not isinstance(result.value, str)
+                    else result.value
+                ),
             )
             if identity in seen:
                 continue
@@ -933,7 +1263,9 @@ class MemoryExtractor:
             user_message=user_message,
             conversation_window=window,
         )
-        if not self._fast_should_attempt_extraction(user_message) and not gating_signals.get("should_attempt"):
+        if not self._fast_should_attempt_extraction(
+            user_message
+        ) and not gating_signals.get("should_attempt"):
             return []
 
         if settings.LTM_LLM_EXTRACT_ENABLED and settings.DASHSCOPE_API_KEY:
@@ -963,7 +1295,13 @@ class MemoryExtractor:
 
         results = self.extract_from_conversation(user_message, assistant_message)
         if not results:
-            return {"preferences": {}, "habits": {}, "constraints": [], "background": {}, "facts": []}
+            return {
+                "preferences": {},
+                "habits": {},
+                "constraints": [],
+                "background": {},
+                "facts": [],
+            }
 
         preferences: Dict[str, Any] = {}
         habits: Dict[str, Any] = {}

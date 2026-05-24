@@ -11,7 +11,16 @@ from src.memory.application.memory_read_service import MemoryReadService
 from src.memory.application.memory_write_service import MemoryWriteService
 from src.memory.application.summary_snapshot_manager import SummarySnapshotManager
 from src.memory.application.task_state_manager import TaskStateManager
-from src.memory.application.task_state_runtime_service import TaskStateRuntimeService
+
+
+def __getattr__(name):
+    if name == "TaskStateRuntimeService":
+        from src.memory.application.task_state_runtime_service import (
+            TaskStateRuntimeService,
+        )
+
+        return TaskStateRuntimeService
+    raise AttributeError(name)
 
 __all__ = [
     "CompressionService",

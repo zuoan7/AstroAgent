@@ -1,0 +1,307 @@
+# 记忆选择策略配置。
+# 加载顺序：代码默认值兜底 -> 本 YAML 覆盖 -> 构造参数/测试 overrides 最后覆盖。
+# YAML 缺失或局部字段非法时不会阻断启动，非法字段会回退到对应代码默认值。
+version: memory_selection_strategy_v1
+
+# 短期记忆：控制 build_context 中 summary/facts/tools/messages 的选择、工具证据新鲜度和自动摘要触发。
+short_term:
+  context_policy:
+    # 各场景下剩余 token budget 的 section 分配比例；未使用预算会向后续 section 传递。
+    scene_section_ratios:
+      observation: {summary: 0.10, facts: 0.15, tools: 0.50, messages: 0.25}
+      computation: {summary: 0.15, facts: 0.35, tools: 0.35, messages: 0.15}
+      learning_qa: {summary: 0.30, facts: 0.30, tools: 0.10, messages: 0.30}
+      debugging: {summary: 0.25, facts: 0.10, tools: 0.40, messages: 0.25}
+      general: {summary: 0.20, facts: 0.25, tools: 0.30, messages: 0.25}
+    # 每个 section 经过 MMR 进入预算装配前的候选上限。
+    top_k: {summary: 1, facts: 8, tools: 5, messages: 6}
+    # MMR 相关性/多样性折中；越接近 1 越偏相关性，越低越强调去重。
+    mmr_lambda: 0.70
+    # 候选相似度超过该值时视为重复，MMR 会倾向跳过。
+    similarity_threshold: 0.82
+    # 工具证据硬上限和多样性配额，避免同类工具或同目标占满 prompt。
+    max_tools: 5
+    max_per_tool_type: 2
+    max_per_target: 2
+    # section 至少尝试保留的 token 数；受总预算硬限制。
+    min_section_tokens: 80
+    # 预算不足时记录在 trace 中的降级顺序标签。
+    downgrade_order:
+      - tool_detail
+      - old_messages
+      - low_score_facts
+      - compact_summary
+    # build_context 认为需要 summary 的压力阈值；触发后由 MemoryService 尝试自动摘要。
+    summary_needed_context_pressure: 1.20
+    summary_needed_omitted_total: 8
+
+  tool_evidence:
+    # 工具证据默认有效期，单位秒；0 表示不按时间过期，例如静态目录查询。
+    ttl_seconds:
+      visibility: 3600
+      weather: 10800
+      position: 7200
+      ephemeris: 43200
+      neo: 21600
+      event: 604800
+      catalog: 0
+      photo: 86400
+      generic: 86400
+    # 工具证据场景化打分权重。loc/tgt/tool/fresh/query/success/error 为正向信号，
+    # superseded 为扣分信号；权重不要求归一化，但会影响候选排序。
+    scene_weights:
+      observation:
+        loc: 0.18
+        tgt: 0.10
+        tool: 0.10
+        fresh: 0.32
+        query: 0.12
+        success: 0.08
+        error: 0.10
+        superseded: 0.50
+      computation:
+        loc: 0.08
+        tgt: 0.36
+        tool: 0.14
+        fresh: 0.14
+        query: 0.10
+        success: 0.08
+        error: 0.10
+        superseded: 0.45
+      learning_qa:
+        loc: 0.08
+        tgt: 0.12
+        tool: 0.08
+        fresh: 0.08
+        query: 0.46
+        success: 0.08
+        error: 0.10
+        superseded: 0.35
+      debugging:
+        loc: 0.12
+        tgt: 0.12
+        tool: 0.14
+        fresh: 0.14
+        query: 0.12
+        success: 0.08
+        error: 0.28
+        superseded: 0.30
+      general:
+        loc: 0.15
+        tgt: 0.15
+        tool: 0.12
+        fresh: 0.15
+        query: 0.25
+        success: 0.08
+        error: 0.10
+        superseded: 0.40
+    # 过期工具仍可作为历史/对照证据，但 freshness 会被压到以下上限。
+    expired_freshness_cap: 0.15
+    compare_historical_expired_freshness_cap: 0.40
+    # compare/historical/neutral 意图下，旧证据作为对照进入选择的最低工具分。
+    contrast_min_score: 0.25
+
+  summary_trigger:
+    # 单次 create/rebase snapshot 读取的最大可摘要事件数。
+    snapshot_batch_size: 200
+    # 首次 create 和后续 rebase 的未覆盖事件阈值；现有 env/test patch 可作为基础默认值。
+    initial_uncovered_event_threshold: 10
+    rebase_uncovered_event_threshold: 6
+    # 未覆盖事件的估算 token 阈值。
+    uncovered_token_threshold: 3000
+    # 安全上限：实际触发阈值取配置阈值和 fixed 阈值中较小的正值。
+    fixed_uncovered_event_threshold: 30
+    fixed_uncovered_token_threshold: 6000
+    # build_context 传入的压力/省略数量达到阈值时，也会触发摘要。
+    context_pressure_threshold: 1.20
+    omitted_total_threshold: 8
+    # 新旧事件实体 Jaccard distance 大于该值时认为发生话题漂移。
+    topic_drift_distance_threshold: 0.60
+    # 只有这些事件类型会被纳入 summary snapshot。
+    snapshottable_event_types:
+      - message_created
+      - tool_call_finished
+      - tool_call_failed
+      - fact_extracted
+      - task_state_updated
+      - memory_deleted
+
+# 长期记忆：控制用户画像记忆的召回、注入预算、候选转正和抽取 gating。
+long_term:
+  retrieval:
+    # 长期记忆规则检索的加法评分组件；stale_penalty 会从总分中扣除。
+    task_scoring_weights:
+      observation:
+        confidence: 0.20
+        type_weight: 0.18
+        source_bonus: 0.10
+        query_relevance: 0.27
+        recency: 0.08
+        constraint_bonus: 0.14
+        stale_penalty: 0.03
+      learning:
+        confidence: 0.24
+        type_weight: 0.20
+        source_bonus: 0.12
+        query_relevance: 0.25
+        recency: 0.08
+        constraint_bonus: 0.08
+        stale_penalty: 0.03
+      qa:
+        confidence: 0.24
+        type_weight: 0.20
+        source_bonus: 0.10
+        query_relevance: 0.27
+        recency: 0.08
+        constraint_bonus: 0.08
+        stale_penalty: 0.03
+      general:
+        confidence: 0.25
+        type_weight: 0.18
+        source_bonus: 0.12
+        query_relevance: 0.25
+        recency: 0.10
+        constraint_bonus: 0.07
+        stale_penalty: 0.03
+    # task_type x memory_type 先验，用于让不同任务偏向不同类型的记忆。
+    task_type_priors:
+      observation: {constraint: 1.0, background: 0.90, habit: 0.85, preference: 0.75, fact: 0.75}
+      learning: {preference: 0.90, background: 0.85, fact: 0.70, constraint: 0.65, habit: 0.45}
+      qa: {fact: 0.90, background: 0.85, preference: 0.70, constraint: 0.65, habit: 0.45}
+      general: {constraint: 0.90, preference: 0.85, background: 0.75, fact: 0.70, habit: 0.65}
+    # 任务类型粗分类与关键词召回增强词表。
+    astronomy_keywords: [观测, 望远镜, 行星, 恒星, 星系, 星云, 星团, 流星, 彗星, 月相, 日食, 月食, 冲日, 合日, 拍摄, 摄影, 深空, 赤道仪, 导星, 曝光, 木星, 土星, 火星, 金星, 月球, 太阳, 多大, 距离, 质量, 半径, 亮度]
+    observation_keywords: [今晚, 观测, 天气, 天气怎么样, 适合看, 看什么, 云量, 透明度, 视宁度, 光害, 月相, 可见, 升起, 落下, 最佳, 推荐, 目标, 望远镜, 拍摄]
+    learning_keywords: [什么是, 为什么, 如何, 原理, 解释, 科普, 入门, 学习, 了解]
+    # 语义相似度最多从 query_relevance 分量中借用的权重。
+    semantic_weight_cap: 0.08
+    # 连续注入未命中次数达到该量级时 stale_penalty 接近满额。
+    stale_miss_threshold: 5
+    # 不同来源的可信度加分，confirmed/manual/explicit 通常高于自动抽取。
+    source_bonus: {confirmed: 1.0, manual: 0.95, explicit: 0.90, auto: 0.55, default: 0.55}
+
+  injection:
+    # 低于该相关性分数的长期记忆默认不注入 prompt。
+    relevance_threshold: 0.45
+    # 注入数量与独立长期记忆 token 预算上限。
+    max_memories: 15
+    max_prompt_tokens: 800
+    # 当上层传入总上下文预算时，长期记忆预算按 ratio 折算并 clamp 到 min/max。
+    memory_budget_ratio: 0.10
+    memory_budget_min: 200
+    memory_budget_max: 1200
+    # 仅对策略 TopK 做 rerank，降低延迟和外部模型成本。
+    rerank_top_k: 30
+    # rerank 分和策略分的融合权重。
+    rerank_weight: 0.65
+    policy_weight: 0.35
+    # 同一 memory_type 最多注入数量；constraint_priority 会把最高分约束提前。
+    per_type_quota: 3
+    constraint_priority: true
+
+  promotion:
+    # 候选转正公式：confidence * stability * consistency * source_weight。
+    # FACT 默认不自动转正，因此这里不配置 fact threshold。
+    type_thresholds:
+      preference: 0.50
+      habit: 0.50
+      constraint: 0.65
+      background: 0.60
+    # 抽取等级对转正分的来源权重。
+    source_weights: {solid: 1.0, tentative: 0.85, inferred: 0.60}
+    # 候选出现次数的时间衰减窗口，单位天。
+    decay_days: 30.0
+    # BACKGROUND 中允许自动转正的低风险类别。
+    auto_promotable_background_categories:
+      - device_info
+      - location
+      - skill_level
+      - domain_experience
+    # 这些 key 的新旧值可以扩展/细化，而不是直接视为冲突。
+    expandable_keys:
+      - location
+      - location_info
+      - frequent_topics
+      - domain_experience
+      - observation_type
+    # 这些 key 通常互斥，新值更可能需要冲突处理或人工确认。
+    mutually_exclusive_keys:
+      - response_style
+      - knowledge_level
+      - skill_level
+      - device_info
+      - equipment
+      - timezone
+      - unit_preference
+    # BACKGROUND 自动转正需要更高一致性；单次自动观察默认需要重复出现。
+    background_consistency_threshold: 0.90
+    single_auto_effective_count_threshold: 1.50
+
+  extraction_gating:
+    # 明确画像表达的正则。仅用于是否尝试长期记忆抽取，不承载完整抽取规则。
+    explicit_signal_patterns:
+      - '我(喜欢|偏好|希望|要求|习惯)(.{1,30})'
+      - '(不要|别|避免)(.{1,30})'
+      - '给我(.{1,30})'
+      - '我(是|有)(.{1,30})(经验|基础|背景)'
+      - '请(用|以|按)(.{1,30})'
+      - '我(的)(.{1,30})(是|叫|在)'
+      - '记住(.{1,50})'
+      - '以后(都|一直|总是)(.{1,30})'
+      - '永远(不要|别)(.{1,30})'
+    # 稳定/临时/撤回信号词表，用于 gating 和置信度调整。
+    stable_indicators: [记住, 以后, 以后默认, 下次, 下回, 每次, 每次都, 总是, 一直, 通常, 默认, 长期, 永远, remember, next time, always, usually, default]
+    temporary_indicators: [这次, 本次, 这回, 暂时, 仅此一次, 今天, 今晚, 这一次, 临时, just this time, for now, temporarily, today, tonight]
+    revocation_patterns:
+      - '忘掉'
+      - '别记'
+      - '不要记'
+      - '不用记'
+      - '不再'
+      - '现在不再'
+      - '不是了'
+      - '作废'
+      - '撤回'
+      - '取消之前'
+      - '之前.*(不算|作废)'
+      - '那次只是(开玩笑|临时)'
+      - '只是开玩笑'
+      - '以后.*改成'
+      - '默认.*改成'
+      - '记住.*改成'
+      - '下次.*改成'
+      - '长期.*改成'
+      - 'forget'
+      - 'do not remember'
+      - "don't remember"
+      - 'no longer'
+      - 'revoke'
+    # 设备/地点/主题词表用于窗口聚合和重复信号识别。
+    equipment_terms: [望远镜, 镜, 相机, 赤道仪, 镜头, 目镜, CCD, CMOS, 道布森, 小黑, 星特朗, 信达, 佳能, 尼康, 索尼, 双筒, 三脚架, 滤镜, 口径, 焦距, 导星镜, ZWO, ASI, QHY, Seestar, telescope, camera, mount, eyepiece]
+    location_terms: [观测地, 观测地点, 地点, 位置, 经纬度, 纬度, 经度, 北京, 上海, 广州, 深圳, 杭州, 苏州, 成都, 南京, 武汉, location, site, latitude, longitude, timezone, time zone]
+    topic_keywords: [火星, 木星, 土星, 金星, 月球, 太阳, 黑洞, 星系, 星云, 星团, 流星雨, 彗星, 银河, 深空, 望远镜, 赤道仪, 拍摄, 摄影, 观测]
+    extraction_keywords: [简短, 详细, 专业, 通俗, 易懂, 不要, 喜欢, 偏好, 习惯, 经常, 总是, 希望, 要求, 建议, 初学者, 入门, 高级, 进阶, 望远镜, 相机, 拍摄, 观测, 深空, 行星, 月相, 流星雨, 日食, 月食, 星系, 星云, 星团]
+    # 最近对话窗口大小，用于聚合重复设备/地点/纠错信号。
+    window_size: 4
+    # gating 密度分的各信号权重；temporary_penalty 为负向项。
+    signal_weights:
+      self_reference: 1.0
+      action_modal: 1.0
+      stable_marker: 1.5
+      equipment: 0.8
+      location: 0.8
+      correction: 1.0
+      repeated_signal: 1.5
+      temporary_penalty: -1.0
+    # 不同 gating 路径的最低密度分。
+    gating_thresholds:
+      stable_profile_signal: 2.5
+      window_repeated_signal: 3.0
+    # 隐式窗口抽取候选的默认置信度，通常低于显式表达。
+    implicit_extraction_confidence:
+      repeated_equipment: 0.45
+      repeated_location: 0.45
+      repeated_correction: 0.45
+      language_detected: 0.35
+      unit_detected: 0.35
+      timezone_detected: 0.35

@@ -21,7 +21,10 @@ from src.memory.long_term_memory.models import (
     SourceType,
     _utcnow_iso,
 )
-
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
 
 EXPANDABLE_KEYS = {
     "location",
@@ -117,7 +120,9 @@ class ConfidenceScorer:
     def boost_on_access(self, current: float, access_count: int) -> float:
         """记忆被访问后按访问次数小幅提升置信度。"""
 
-        return min(current + self.access_boost * min(access_count, 10), self.max_confidence)
+        return min(
+            current + self.access_boost * min(access_count, 10), self.max_confidence
+        )
 
     def apply_time_decay(self, current: float, days_since_access: int) -> float:
         """按未访问天数衰减置信度，并保留最低置信下限。"""
@@ -146,6 +151,19 @@ class ConfidenceScorer:
 class ConflictDetector:
     """识别同 key 记忆的新旧值冲突并给出默认解决策略。"""
 
+    def __init__(
+        self,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
+    ):
+        """初始化可配置的 key 关系集合。"""
+
+        self._strategy_config = (
+            strategy_config or get_memory_selection_strategy_config()
+        )
+        promotion_config = self._strategy_config.long_term.promotion
+        self.expandable_keys = set(promotion_config.expandable_keys)
+        self.mutually_exclusive_keys = set(promotion_config.mutually_exclusive_keys)
+
     def classify_value_relation(
         self,
         existing_value: Any,
@@ -169,7 +187,7 @@ class ConflictDetector:
                 return "extension"
             if new_set and new_set.issubset(old_set):
                 return "same"
-            if key in EXPANDABLE_KEYS or memory_type in (MemoryType.HABIT,):
+            if key in self.expandable_keys or memory_type in (MemoryType.HABIT,):
                 return "extension"
             return "conflict"
 
@@ -181,16 +199,20 @@ class ConflictDetector:
             return "same"
 
         if old_norm and old_norm in new_norm:
-            if key in EXPANDABLE_KEYS or self._looks_like_range_extension(new_text):
+            if key in self.expandable_keys or self._looks_like_range_extension(
+                new_text
+            ):
                 return "extension"
             return "refinement"
         if new_norm and new_norm in old_norm:
             return "same"
 
-        if key in EXPANDABLE_KEYS and self._shares_location_or_topic(old_text, new_text):
+        if key in self.expandable_keys and self._shares_location_or_topic(
+            old_text, new_text
+        ):
             return "extension"
 
-        if key in MUTUALLY_EXCLUSIVE_KEYS or memory_type in (
+        if key in self.mutually_exclusive_keys or memory_type in (
             MemoryType.PREFERENCE,
             MemoryType.CONSTRAINT,
         ):
@@ -298,7 +320,10 @@ class ConflictDetector:
     ) -> str:
         """为偏好类冲突选择覆盖、更新或人工确认策略。"""
 
-        if existing.source_type == SourceType.EXPLICIT and new_confidence < existing.confidence:
+        if (
+            existing.source_type == SourceType.EXPLICIT
+            and new_confidence < existing.confidence
+        ):
             return ConflictResolution.NEEDS_CONFIRM
         if new_confidence > existing.confidence + 0.2:
             return ConflictResolution.OVERWRITE
@@ -330,7 +355,9 @@ class ConflictDetector:
     def _looks_like_range_extension(self, text: str) -> bool:
         """判断文本是否像多值范围扩展表达。"""
 
-        return any(separator in text for separator in ["和", "与", "、", ",", "，", "/", "及"])
+        return any(
+            separator in text for separator in ["和", "与", "、", ",", "，", "/", "及"]
+        )
 
     def _shares_location_or_topic(self, old_text: str, new_text: str) -> bool:
         """判断两段文本是否共享常见观测地点或天文主题。"""
@@ -379,11 +406,31 @@ class CandidatePromotionEvaluator:
         self,
         conflict_detector: Optional[ConflictDetector] = None,
         decay_days: float = 30.0,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
     ):
         """初始化候选转正评分器和出现次数时间衰减窗口。"""
 
-        self.conflict_detector = conflict_detector or ConflictDetector()
-        self.decay_days = decay_days
+        self._strategy_config = (
+            strategy_config or get_memory_selection_strategy_config()
+        )
+        promotion_config = self._strategy_config.long_term.promotion
+        self.conflict_detector = conflict_detector or ConflictDetector(
+            strategy_config=self._strategy_config
+        )
+        self.decay_days = (
+            promotion_config.decay_days if decay_days == 30.0 else decay_days
+        )
+        self.type_thresholds = dict(promotion_config.type_thresholds)
+        self.source_weights = dict(promotion_config.source_weights)
+        self.auto_promotable_background_categories = set(
+            promotion_config.auto_promotable_background_categories
+        )
+        self.background_consistency_threshold = (
+            promotion_config.background_consistency_threshold
+        )
+        self.single_auto_effective_count_threshold = (
+            promotion_config.single_auto_effective_count_threshold
+        )
 
     def evaluate(self, candidate: Any) -> PromotionDecision:
         """综合稳定性、一致性、来源权重和类型阈值判断候选能否转正。"""
@@ -395,10 +442,13 @@ class CandidatePromotionEvaluator:
             return self._blocked(candidate, "active_memory_conflict")
         if memory_type == MemoryType.FACT:
             return self._blocked(candidate, "fact_never_auto_promote")
-        if memory_type == MemoryType.BACKGROUND and category not in AUTO_PROMOTABLE_BACKGROUND_CATEGORIES:
+        if (
+            memory_type == MemoryType.BACKGROUND
+            and category not in self.auto_promotable_background_categories
+        ):
             return self._blocked(candidate, "background_category_needs_confirm")
 
-        threshold = self.TYPE_THRESHOLDS.get(memory_type)
+        threshold = self.type_thresholds.get(memory_type)
         if threshold is None:
             return self._blocked(candidate, "memory_type_not_auto_promotable")
 
@@ -407,7 +457,7 @@ class CandidatePromotionEvaluator:
         stability = self.stability(candidate, history, effective_count)
         consistency = self.consistency(candidate, history)
         grade = self._grade(candidate, history)
-        source_weight = self.SOURCE_WEIGHTS.get(grade, 0.85)
+        source_weight = self.source_weights.get(grade, 0.85)
         promote_score = round(
             candidate.confidence * stability * consistency * source_weight,
             3,
@@ -419,12 +469,15 @@ class CandidatePromotionEvaluator:
         if (
             should_promote
             and candidate.source_type != SourceType.EXPLICIT
-            and effective_count < 1.5
+            and effective_count < self.single_auto_effective_count_threshold
             and "stable_profile_signal" not in gate_reason
         ):
             should_promote = False
             reason = "single_auto_observation_needs_repetition"
-        if memory_type == MemoryType.BACKGROUND and consistency < 0.9:
+        if (
+            memory_type == MemoryType.BACKGROUND
+            and consistency < self.background_consistency_threshold
+        ):
             should_promote = False
             reason = "background_consistency_below_threshold"
         if consistency <= 0.0:
@@ -456,7 +509,9 @@ class CandidatePromotionEvaluator:
         else:
             synthesized.append(self._history_item(candidate, candidate.first_seen_at))
             for _ in range(max(0, count - 2)):
-                synthesized.append(self._history_item(candidate, candidate.last_seen_at))
+                synthesized.append(
+                    self._history_item(candidate, candidate.last_seen_at)
+                )
             synthesized.append(self._history_item(candidate, candidate.last_seen_at))
         return synthesized
 
@@ -596,8 +651,16 @@ class Deduplicator:
     def compute_similarity(self, value_a: Any, value_b: Any) -> float:
         """计算两个记忆值的相似度，支持 list/dict 和普通字符串。"""
 
-        str_a = json.dumps(value_a, ensure_ascii=False, sort_keys=True) if isinstance(value_a, (dict, list)) else str(value_a)
-        str_b = json.dumps(value_b, ensure_ascii=False, sort_keys=True) if isinstance(value_b, (dict, list)) else str(value_b)
+        str_a = (
+            json.dumps(value_a, ensure_ascii=False, sort_keys=True)
+            if isinstance(value_a, (dict, list))
+            else str(value_a)
+        )
+        str_b = (
+            json.dumps(value_b, ensure_ascii=False, sort_keys=True)
+            if isinstance(value_b, (dict, list))
+            else str(value_b)
+        )
 
         if str_a == str_b:
             return 1.0
@@ -660,7 +723,9 @@ class Deduplicator:
                 duplicates.append((item, sim))
         return sorted(duplicates, key=lambda x: x[1], reverse=True)
 
-    def merge_values(self, existing_value: Any, new_value: Any, memory_type: str) -> Any:
+    def merge_values(
+        self, existing_value: Any, new_value: Any, memory_type: str
+    ) -> Any:
         """按值类型合并重复记忆，列表去重合并，字典覆盖合并。"""
 
         if isinstance(existing_value, list) and isinstance(new_value, list):
@@ -711,6 +776,7 @@ class ExpiryManager:
         days = days_map.get(memory_type, self.default_expiry_days)
         try:
             from datetime import timedelta
+
             expiry = datetime.now() + timedelta(days=days)
             return expiry.isoformat()
         except Exception:
@@ -734,6 +800,7 @@ class ExpiryManager:
         if not item.accessed_at:
             try:
                 from datetime import timedelta
+
                 created = datetime.fromisoformat(item.created_at)
                 cutoff = datetime.now() - timedelta(days=self.archive_after_days_unused)
                 return created < cutoff and item.access_count == 0
@@ -741,6 +808,7 @@ class ExpiryManager:
                 return False
         try:
             from datetime import timedelta
+
             accessed = datetime.fromisoformat(item.accessed_at)
             cutoff = datetime.now() - timedelta(days=self.archive_after_days_unused)
             return accessed < cutoff
@@ -764,14 +832,25 @@ class QualityAssurance:
         expiry_manager: Optional[ExpiryManager] = None,
         min_confidence_to_store: float = 0.3,
         dedup_similarity_threshold: float = 0.85,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
     ):
         """组合置信度、冲突、去重、过期和候选转正策略对象。"""
 
+        self._strategy_config = (
+            strategy_config or get_memory_selection_strategy_config()
+        )
         self.confidence_scorer = confidence_scorer or ConfidenceScorer()
-        self.conflict_detector = conflict_detector or ConflictDetector()
-        self.deduplicator = deduplicator or Deduplicator(similarity_threshold=dedup_similarity_threshold)
+        self.conflict_detector = conflict_detector or ConflictDetector(
+            strategy_config=self._strategy_config
+        )
+        self.deduplicator = deduplicator or Deduplicator(
+            similarity_threshold=dedup_similarity_threshold
+        )
         self.expiry_manager = expiry_manager or ExpiryManager()
-        self.promotion_evaluator = CandidatePromotionEvaluator(self.conflict_detector)
+        self.promotion_evaluator = CandidatePromotionEvaluator(
+            self.conflict_detector,
+            strategy_config=self._strategy_config,
+        )
         self.min_confidence_to_store = min_confidence_to_store
 
     def should_store(self, confidence: float, is_explicit: bool = False) -> bool:
@@ -782,19 +861,32 @@ class QualityAssurance:
         return confidence >= self.min_confidence_to_store
 
     def detect_conflicts(
-        self, new_type: str, new_key: str, new_value: Any, new_confidence: float, existing_items: List[MemoryItem]
+        self,
+        new_type: str,
+        new_key: str,
+        new_value: Any,
+        new_confidence: float,
+        existing_items: List[MemoryItem],
     ) -> List[ConflictInfo]:
         """在同 type/key 的 active memories 中检测冲突。"""
 
         conflicts = []
         for item in existing_items:
-            if item.memory_type == new_type and item.key == new_key and item.status == MemoryStatus.ACTIVE:
-                conflict = self.conflict_detector.detect_conflict(item, new_value, new_confidence)
+            if (
+                item.memory_type == new_type
+                and item.key == new_key
+                and item.status == MemoryStatus.ACTIVE
+            ):
+                conflict = self.conflict_detector.detect_conflict(
+                    item, new_value, new_confidence
+                )
                 if conflict:
                     conflicts.append(conflict)
         return conflicts
 
-    def resolve_conflict(self, conflict: ConflictInfo, strategy: Optional[str] = None) -> ConflictResolution:
+    def resolve_conflict(
+        self, conflict: ConflictInfo, strategy: Optional[str] = None
+    ) -> ConflictResolution:
         """根据显式策略或默认策略决定冲突处理方式。"""
 
         resolution = strategy or conflict.resolution
@@ -818,7 +910,9 @@ class QualityAssurance:
     ) -> Tuple[Any, float]:
         """合并重复记忆值，并保留较高置信度。"""
 
-        merged_value = self.deduplicator.merge_values(existing.value, new_value, existing.memory_type)
+        merged_value = self.deduplicator.merge_values(
+            existing.value, new_value, existing.memory_type
+        )
         merged_confidence = max(existing.confidence, new_confidence)
         return merged_value, merged_confidence
 

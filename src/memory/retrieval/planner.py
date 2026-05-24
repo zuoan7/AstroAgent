@@ -18,22 +18,28 @@ from typing import Any, Dict, Sequence
 from src.memory.core.models import Message, SalientFact, ToolCallRecord
 from src.memory.domain.summary_snapshot import SummarySnapshot
 from src.memory.domain.task_state import TaskState
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
 from src.memory.task_context import (
     TaskContextProfile,
     coerce_task_context_profile,
     normalize_context_scene,
 )
+from src.memory.tool_evidence import infer_tool_evidence_type
 
 ROLE_LABELS = {"user": "用户", "assistant": "助手", "system": "系统", "tool": "工具"}
 
 TOOL_TTL_SECONDS = {
     "visibility": 1 * 60 * 60,
-    "weather": 6 * 60 * 60,
-    "position": 24 * 60 * 60,
-    "ephemeris": 24 * 60 * 60,
-    "neo": 12 * 60 * 60,
-    "event": 24 * 60 * 60,
+    "weather": 3 * 60 * 60,
+    "position": 2 * 60 * 60,
+    "ephemeris": 12 * 60 * 60,
+    "neo": 6 * 60 * 60,
+    "event": 7 * 24 * 60 * 60,
     "catalog": 0,
+    "photo": 24 * 60 * 60,
     "generic": 24 * 60 * 60,
 }
 
@@ -121,6 +127,7 @@ class RetrievalPlan:
     context_pressure: float = 0.0
     summary_needed: bool = False
     trace_version: str = "memory_selection_v1"
+    strategy_config_version: str = "memory_selection_strategy_v1"
     task_context_profile: Dict[str, Any] = field(default_factory=dict)
     decision_trace: Dict[str, Any] = field(default_factory=dict)
     trace_candidates: Dict[str, list[Dict[str, Any]]] = field(default_factory=dict)
@@ -204,11 +211,20 @@ class ContextPolicy:
 class RetrievalPlanner:
     """Deterministic query-aware context assembler."""
 
-    def __init__(self, token_counter, semantic_ranker=None):
+    def __init__(
+        self,
+        token_counter,
+        semantic_ranker=None,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
+        strategy_overrides: Dict[str, Any] | None = None,
+    ):
         """注入 token 估算器和可选语义排序器，默认保持确定性排序。"""
 
         self._estimate_tokens = token_counter
         self._semantic_ranker = semantic_ranker
+        self._strategy_config = strategy_config or get_memory_selection_strategy_config(
+            overrides=strategy_overrides
+        )
 
     def build_context(
         self,
@@ -248,6 +264,7 @@ class RetrievalPlanner:
             context_scene=context_scene,
             focus_stack=focus_stack,
             task_context_profile=profile.to_dict(),
+            strategy_config_version=self._strategy_config.version,
         )
 
         rendered_sections: list[str] = []
@@ -283,7 +300,9 @@ class RetrievalPlanner:
                 focus,
             ),
             "facts": self._fact_candidates(query, facts, focus),
-            "tools": self._tool_candidates(query, task_state, tool_calls, focus, policy),
+            "tools": self._tool_candidates(
+                query, task_state, tool_calls, focus, policy
+            ),
             "messages": self._message_candidates(query, task_state, messages, focus),
         }
         plan.context_pressure = self._context_pressure(
@@ -303,7 +322,7 @@ class RetrievalPlanner:
             available = self._remaining_budget(rendered_sections, token_budget)
             if available <= 0:
                 plan.omitted_counts[section] = len(candidates)
-                self._record_downgrade(plan, section, len(candidates))
+                self._record_downgrade(plan, section, len(candidates), policy)
                 continue
 
             requested = section_budgets.get(section, 0) + carry
@@ -332,7 +351,7 @@ class RetrievalPlanner:
 
             plan.omitted_counts[section] = omitted
             if omitted:
-                self._record_downgrade(plan, section, omitted)
+                self._record_downgrade(plan, section, omitted, policy)
             carry = max(requested - used_tokens, 0)
 
         selected_messages.sort(key=lambda item: item.timestamp)
@@ -489,7 +508,15 @@ class RetrievalPlanner:
         lower = text.lower()
         if any(
             token in lower
-            for token in ["bug", "debug", "traceback", "exception", "报错", "失败", "修复"]
+            for token in [
+                "bug",
+                "debug",
+                "traceback",
+                "exception",
+                "报错",
+                "失败",
+                "修复",
+            ]
         ):
             return ContextScene.DEBUGGING.value
         if any(
@@ -523,42 +550,19 @@ class RetrievalPlanner:
     def _policy_for_scene(self, scene: str) -> ContextPolicy:
         """返回指定场景的 section token 配额和候选选择策略。"""
 
-        ratios = {
-            ContextScene.OBSERVATION.value: {
-                "summary": 0.10,
-                "facts": 0.15,
-                "tools": 0.50,
-                "messages": 0.25,
-            },
-            ContextScene.COMPUTATION.value: {
-                "summary": 0.15,
-                "facts": 0.35,
-                "tools": 0.35,
-                "messages": 0.15,
-            },
-            ContextScene.LEARNING_QA.value: {
-                "summary": 0.30,
-                "facts": 0.30,
-                "tools": 0.10,
-                "messages": 0.30,
-            },
-            ContextScene.DEBUGGING.value: {
-                "summary": 0.25,
-                "facts": 0.10,
-                "tools": 0.40,
-                "messages": 0.25,
-            },
-            ContextScene.GENERAL.value: {
-                "summary": 0.20,
-                "facts": 0.25,
-                "tools": 0.30,
-                "messages": 0.25,
-            },
-        }
+        config = self._strategy_config.short_term.context_policy
+        ratios = config.scene_section_ratios
         return ContextPolicy(
             scene=scene,
             section_ratios=ratios.get(scene, ratios[ContextScene.GENERAL.value]),
-            top_k={"summary": 1, "facts": 8, "tools": 5, "messages": 6},
+            top_k=dict(config.top_k),
+            mmr_lambda=config.mmr_lambda,
+            similarity_threshold=config.similarity_threshold,
+            max_tools=config.max_tools,
+            max_per_tool_type=config.max_per_tool_type,
+            max_per_target=config.max_per_target,
+            min_section_tokens=config.min_section_tokens,
+            downgrade_order=list(config.downgrade_order),
         )
 
     def _section_budgets(
@@ -648,7 +652,9 @@ class RetrievalPlanner:
             lines.append("topics: " + "; ".join(chosen_topics))
 
         open_questions = self._summary_string_items(payload.get("open_questions", []))
-        chosen_questions = self._select_summary_items(open_questions, focus_terms, limit=5)
+        chosen_questions = self._select_summary_items(
+            open_questions, focus_terms, limit=5
+        )
         if chosen_questions:
             selected_fields.append("open_questions")
             lines.append("open_questions:")
@@ -752,9 +758,7 @@ class RetrievalPlanner:
             overlap = len(item_terms & focus_terms)
             scored.append((overlap, -index, item))
         matched = [
-            item
-            for overlap, _, item in sorted(scored, reverse=True)
-            if overlap > 0
+            item for overlap, _, item in sorted(scored, reverse=True) if overlap > 0
         ]
         if len(matched) >= limit:
             return matched[:limit]
@@ -813,7 +817,9 @@ class RetrievalPlanner:
                     timestamp=float(fact.timestamp),
                     metadata={
                         "recall_sources": recall_sources,
-                        "lexical_score": round(lexical_scores.get(fact.fact_id, 0.0), 4),
+                        "lexical_score": round(
+                            lexical_scores.get(fact.fact_id, 0.0), 4
+                        ),
                         "focus_score": round(focus_score, 4),
                     },
                     payload=fact,
@@ -978,7 +984,9 @@ class RetrievalPlanner:
             items,
             key=lambda item: float(getattr(item, "timestamp", 0.0) or 0.0),
         )[-limit:]
-        return {str(getattr(item, id_attr)) for item in recent if getattr(item, id_attr, "")}
+        return {
+            str(getattr(item, id_attr)) for item in recent if getattr(item, id_attr, "")
+        }
 
     def _lexical_recall_scores(
         self,
@@ -1264,10 +1272,14 @@ class RetrievalPlanner:
             return f"=== {title} ===\n{compact_body}"
         return ""
 
-    def _remaining_budget(self, rendered_sections: Sequence[str], token_budget: int) -> int:
+    def _remaining_budget(
+        self, rendered_sections: Sequence[str], token_budget: int
+    ) -> int:
         """计算已渲染 section 之后仍可使用的 token budget。"""
 
-        return max(token_budget - self._estimate_tokens("\n\n".join(rendered_sections)), 0)
+        return max(
+            token_budget - self._estimate_tokens("\n\n".join(rendered_sections)), 0
+        )
 
     def _context_pressure(
         self,
@@ -1289,14 +1301,19 @@ class RetrievalPlanner:
     def _summary_needed(self, plan: RetrievalPlan) -> bool:
         """根据上下文压力和省略数量判断是否建议创建 summary。"""
 
+        config = self._strategy_config.short_term.context_policy
         omitted_total = sum(plan.omitted_counts.values())
-        return plan.context_pressure >= 1.2 or omitted_total >= 8
+        return (
+            plan.context_pressure >= config.summary_needed_context_pressure
+            or omitted_total >= config.summary_needed_omitted_total
+        )
 
     def _build_decision_trace(self, plan: RetrievalPlan) -> Dict[str, Any]:
         """生成短期上下文选择的统一 decision trace。"""
 
         return {
             "trace_version": plan.trace_version,
+            "strategy_config_version": plan.strategy_config_version,
             "profile": dict(plan.task_context_profile or {}),
             "selected": {
                 "messages": list(plan.selected_message_ids),
@@ -1323,7 +1340,9 @@ class RetrievalPlanner:
         """按 section 输出候选召回和最终选择状态。"""
 
         selected_by_section = {
-            "summary": {plan.selected_snapshot_id} if plan.selected_snapshot_id else set(),
+            "summary": (
+                {plan.selected_snapshot_id} if plan.selected_snapshot_id else set()
+            ),
             "facts": set(plan.selected_fact_ids),
             "tools": set(plan.selected_tool_call_ids),
             "messages": set(plan.selected_message_ids),
@@ -1387,7 +1406,11 @@ class RetrievalPlanner:
         return ""
 
     def _record_downgrade(
-        self, plan: RetrievalPlan, section: str, omitted_count: int
+        self,
+        plan: RetrievalPlan,
+        section: str,
+        omitted_count: int,
+        policy: ContextPolicy | None = None,
     ) -> None:
         """在 retrieval plan 中记录因预算不足发生的降级步骤。"""
 
@@ -1401,6 +1424,11 @@ class RetrievalPlanner:
         }.get(section)
         if step and step not in plan.downgrade_steps:
             plan.downgrade_steps.append(step)
+        if policy:
+            order = {name: index for index, name in enumerate(policy.downgrade_order)}
+            plan.downgrade_steps.sort(
+                key=lambda name: (order.get(name, len(order)), name)
+            )
 
     def _omitted_placeholder(self, section: str, omitted_count: int) -> str:
         """生成 section 内省略候选数量的可读占位提示。"""
@@ -1442,9 +1470,10 @@ class RetrievalPlanner:
                 if similarity >= similarity_threshold:
                     mmr_score = -1.0
                 else:
-                    mmr_score = lambda_value * (
-                        candidate.score / max_score
-                    ) - (1 - lambda_value) * similarity
+                    mmr_score = (
+                        lambda_value * (candidate.score / max_score)
+                        - (1 - lambda_value) * similarity
+                    )
                 if mmr_score > best_score:
                     best_score = mmr_score
                     best_index = index
@@ -1493,11 +1522,12 @@ class RetrievalPlanner:
             is_recent = message.message_id in recent_message_ids
             if base_score == 0 and not is_recent:
                 continue
-            if self._task_state_covers_message_noise(message.content, task_state, focus):
+            if self._task_state_covers_message_noise(
+                message.content, task_state, focus
+            ):
                 continue
-            if (
-                not is_recent
-                and self._task_state_covers_message(message.content, task_state, focus)
+            if not is_recent and self._task_state_covers_message(
+                message.content, task_state, focus
             ):
                 continue
 
@@ -1580,9 +1610,9 @@ class RetrievalPlanner:
         if not state_text:
             return False
 
-        message_entities = self._extract_locations(message_text) | self._extract_targets(
+        message_entities = self._extract_locations(
             message_text
-        )
+        ) | self._extract_targets(message_text)
         focus_entities = focus.locations | focus.targets
         if message_entities and message_entities <= focus_entities:
             return all(entity in state_text for entity in message_entities)
@@ -1600,16 +1630,20 @@ class RetrievalPlanner:
         if not state_text:
             return False
 
-        message_entities = self._extract_locations(message_text) | self._extract_targets(
+        message_entities = self._extract_locations(
             message_text
-        )
+        ) | self._extract_targets(message_text)
         focus_entities = focus.locations | focus.targets
         conflict_entities = message_entities - focus_entities
-        if conflict_entities and all(entity in state_text for entity in conflict_entities):
+        if conflict_entities and all(
+            entity in state_text for entity in conflict_entities
+        ):
             return True
 
         stale_markers = ["旧参数", "旧地点", "旧结果"]
-        if any(marker in message_text and marker in state_text for marker in stale_markers):
+        if any(
+            marker in message_text and marker in state_text for marker in stale_markers
+        ):
             return True
 
         if self._is_negative_constraint_text(message_text) and message_entities:
@@ -1866,9 +1900,8 @@ class RetrievalPlanner:
             if len(selected) >= max_tools:
                 break
 
-        if (
-            contrast is not None
-            and all(call.tool_call_id != contrast.tool_call_id for call in selected)
+        if contrast is not None and all(
+            call.tool_call_id != contrast.tool_call_id for call in selected
         ):
             self._inject_contrast_tool_evidence(
                 selected=selected,
@@ -1940,7 +1973,10 @@ class RetrievalPlanner:
         for call in ranked_tools:
             meta = self._extract_tool_meta(call)
             tool_score = self._float_metadata(call.metadata.get("tool_score"), 0.0)
-            if tool_score < 0.25:
+            if (
+                tool_score
+                < self._strategy_config.short_term.tool_evidence.contrast_min_score
+            ):
                 continue
             if meta.expired or meta.superseded_by or meta.is_stale_marked:
                 return call
@@ -2067,7 +2103,12 @@ class RetrievalPlanner:
         fresh_score = meta.fresh_score or self._tool_fresh_score(meta)
         expired = meta.expired or self._tool_is_expired(meta)
         if expired:
-            cap = 0.4 if focus.freshness_intent in {"compare", "historical"} else 0.15
+            evidence_config = self._strategy_config.short_term.tool_evidence
+            cap = (
+                evidence_config.compare_historical_expired_freshness_cap
+                if focus.freshness_intent in {"compare", "historical"}
+                else evidence_config.expired_freshness_cap
+            )
             fresh_score = min(fresh_score, cap)
 
         superseded_penalty = 1.0 if meta.superseded_by else 0.0
@@ -2083,23 +2124,30 @@ class RetrievalPlanner:
                 focus.targets | focus.boosted_targets,
                 meta.targets,
             ),
-            "match_tool": 1.0
-            if focus.preferred_tool_types
-            and meta.tool_type in focus.preferred_tool_types
-            else 0.0,
+            "match_tool": (
+                1.0
+                if focus.preferred_tool_types
+                and meta.tool_type in focus.preferred_tool_types
+                else 0.0
+            ),
             "fresh_score": self._clamp01(fresh_score),
             "query_relevance": self._clamp01(query_relevance),
             "success_signal": 1.0 if call.success else 0.0,
-            "error_signal": self._clamp01(meta.error_signal if not call.success else 0.0),
+            "error_signal": self._clamp01(
+                meta.error_signal if not call.success else 0.0
+            ),
             "superseded_penalty": superseded_penalty,
         }
 
     def _tool_scene_weights(self, scene: str) -> dict[str, float]:
         """返回工具证据场景化权重表，未知场景回退 general。"""
 
-        return TOOL_SCENE_WEIGHTS.get(scene, TOOL_SCENE_WEIGHTS[ContextScene.GENERAL.value])
+        weights = self._strategy_config.short_term.tool_evidence.scene_weights
+        return weights.get(scene, weights[ContextScene.GENERAL.value])
 
-    def _entity_match_signal(self, focus_entities: set[str], meta_entities: set[str]) -> float:
+    def _entity_match_signal(
+        self, focus_entities: set[str], meta_entities: set[str]
+    ) -> float:
         """计算焦点实体与证据实体的二值匹配信号。"""
 
         if not focus_entities:
@@ -2155,7 +2203,11 @@ class RetrievalPlanner:
     ) -> bool:
         """用硬约束排除明确属于其他地点、目标或工具类型的证据。"""
 
-        if focus.locations and meta.locations and not (meta.locations & focus.locations):
+        if (
+            focus.locations
+            and meta.locations
+            and not (meta.locations & focus.locations)
+        ):
             return False
         if focus.targets and meta.targets and not (meta.targets & focus.targets):
             return False
@@ -2249,14 +2301,18 @@ class RetrievalPlanner:
 
         metadata = dict(call.metadata or {})
         text = " ".join([call.tool_name, call.input_summary, call.output_summary])
-        tool_type = str(metadata.get("tool_type") or self._infer_tool_type(call.tool_name))
+        tool_type = str(
+            metadata.get("tool_type") or self._infer_tool_type(call.tool_name)
+        )
         produced_at = self._float_metadata(metadata.get("produced_at"), call.timestamp)
         effective_raw = metadata.get("effective_until")
         effective_until = self._float_metadata(effective_raw, 0.0)
         if effective_raw is None and produced_at > 0:
             ttl_seconds = self._tool_ttl_seconds(tool_type)
             effective_until = 0.0 if ttl_seconds <= 0 else produced_at + ttl_seconds
-        params_hash = str(metadata.get("params_hash") or self._params_hash(call.input_summary))
+        params_hash = str(
+            metadata.get("params_hash") or self._params_hash(call.input_summary)
+        )
         supersedes_tool_call_ids = self._string_list_metadata(
             metadata.get("supersedes_tool_call_ids")
         )
@@ -2324,7 +2380,8 @@ class RetrievalPlanner:
     def _tool_ttl_seconds(self, tool_type: str) -> float:
         """返回工具类型对应的默认证据有效期秒数。"""
 
-        return TOOL_TTL_SECONDS.get(tool_type, TOOL_TTL_SECONDS["generic"])
+        ttl_seconds = self._strategy_config.short_term.tool_evidence.ttl_seconds
+        return ttl_seconds.get(tool_type, ttl_seconds["generic"])
 
     def _tool_tau_seconds(self, tool_type: str) -> float:
         """返回 freshness 指数衰减的 tau；默认与 TTL 策略一致。"""
@@ -2376,7 +2433,9 @@ class RetrievalPlanner:
             parsed = json.loads(raw)
         except Exception:
             return raw
-        return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
 
     def _derive_focus_stack(
         self,
@@ -2435,10 +2494,10 @@ class RetrievalPlanner:
             if not targets:
                 targets |= recent_targets
 
-        task_entities = self._extract_locations(task_state.current_goal) | self._extract_targets(
+        task_entities = self._extract_locations(
             task_state.current_goal
-        )
-        for entity in (query_focus.locations | query_focus.targets | task_entities):
+        ) | self._extract_targets(task_state.current_goal)
+        for entity in query_focus.locations | query_focus.targets | task_entities:
             entity_counts[entity] = entity_counts.get(entity, 0) + 1
 
         boosted_locations = {
@@ -2468,7 +2527,9 @@ class RetrievalPlanner:
         stack[0]["boosted_targets"] = sorted(focus.boosted_targets)
         return focus, stack
 
-    def _focus_drifted(self, current_entities: set[str], previous_entities: set[str]) -> bool:
+    def _focus_drifted(
+        self, current_entities: set[str], previous_entities: set[str]
+    ) -> bool:
         """用实体 Jaccard distance 判断当前追问是否发生话题漂移。"""
 
         if not current_entities or not previous_entities:
@@ -2585,36 +2646,7 @@ class RetrievalPlanner:
     def _infer_tool_type(self, tool_name: str) -> str:
         """根据工具名称推断工具证据类型。"""
 
-        name = (tool_name or "").lower()
-        if any(token in name for token in ["visibility", "seeing", "透明度", "能见度"]):
-            return "visibility"
-        if any(token in name for token in ["weather", "天气"]):
-            return "weather"
-        if any(token in name for token in ["celestial-position", "position", "位置"]):
-            return "position"
-        if any(token in name for token in ["ephemeris", "星历"]):
-            return "ephemeris"
-        if any(token in name for token in ["catalog", "simbad", "messier", "ngc", "gaia"]):
-            return "catalog"
-        if any(
-            token in name
-            for token in [
-                "astrophotography",
-                "astrophoto",
-                "photo",
-                "exposure",
-                "calculator",
-            ]
-        ):
-            return "photo"
-        if any(token in name for token in ["neo", "asteroid", "小行星", "近地"]):
-            return "neo"
-        if any(
-            token in name
-            for token in ["event", "forecast", "calendar", "meteor", "天象", "流星雨"]
-        ):
-            return "event"
-        return "generic"
+        return infer_tool_evidence_type(tool_name)
 
     def _extract_locations(self, text: str) -> set[str]:
         """从文本中抽取当前支持的城市地点实体。"""
@@ -2690,7 +2722,9 @@ class RetrievalPlanner:
             if state.next_action:
                 parts.append(f"next_action: {state.next_action}")
             if state.active_constraints:
-                parts.append("active_constraints: " + "; ".join(state.active_constraints[:3]))
+                parts.append(
+                    "active_constraints: " + "; ".join(state.active_constraints[:3])
+                )
             if not parts and state.status and state.status != "active":
                 parts.append(f"status: {state.status}")
             return " | ".join(parts)

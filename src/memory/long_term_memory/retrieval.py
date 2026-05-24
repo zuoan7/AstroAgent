@@ -19,7 +19,13 @@ from src.memory.long_term_memory.models import (
 )
 from src.memory.long_term_memory.embedding import MemoryEmbeddingService
 from src.memory.long_term_memory.repository import LongTermMemoryRepository
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
 from src.memory.task_context import TaskContextProfile, coerce_task_context_profile
+
+_UNSET = object()
 
 
 # Legacy export kept for callers/tests that import the old task map. The new
@@ -28,18 +34,87 @@ TASK_TYPE_MEMORY_MAP: Dict[str, List[str]] = {
     "qa": [MemoryType.PREFERENCE, MemoryType.BACKGROUND, MemoryType.FACT],
     "creative": [MemoryType.PREFERENCE, MemoryType.BACKGROUND],
     "analysis": [MemoryType.PREFERENCE, MemoryType.BACKGROUND, MemoryType.FACT],
-    "observation": [MemoryType.PREFERENCE, MemoryType.HABIT, MemoryType.BACKGROUND, MemoryType.CONSTRAINT],
+    "observation": [
+        MemoryType.PREFERENCE,
+        MemoryType.HABIT,
+        MemoryType.BACKGROUND,
+        MemoryType.CONSTRAINT,
+    ],
     "learning": [MemoryType.PREFERENCE, MemoryType.BACKGROUND],
-    "general": [MemoryType.PREFERENCE, MemoryType.HABIT, MemoryType.CONSTRAINT, MemoryType.BACKGROUND, MemoryType.FACT],
+    "general": [
+        MemoryType.PREFERENCE,
+        MemoryType.HABIT,
+        MemoryType.CONSTRAINT,
+        MemoryType.BACKGROUND,
+        MemoryType.FACT,
+    ],
 }
 
 ASTRONOMY_KEYWORDS: Set[str] = {
-    "观测", "望远镜", "行星", "恒星", "星系", "星云", "星团",
-    "流星", "彗星", "月相", "日食", "月食", "冲日", "合日",
-    "拍摄", "摄影", "深空", "赤道仪", "导星", "曝光",
+    "观测",
+    "望远镜",
+    "行星",
+    "恒星",
+    "星系",
+    "星云",
+    "星团",
+    "流星",
+    "彗星",
+    "月相",
+    "日食",
+    "月食",
+    "冲日",
+    "合日",
+    "拍摄",
+    "摄影",
+    "深空",
+    "赤道仪",
+    "导星",
+    "曝光",
+    "木星",
+    "土星",
+    "火星",
+    "金星",
+    "月球",
+    "太阳",
+    "多大",
+    "距离",
+    "质量",
+    "半径",
+    "亮度",
 }
-OBSERVATION_KEYWORDS: Set[str] = {"今晚", "观测", "天气", "可见", "升起", "落下", "最佳", "推荐", "目标", "望远镜", "拍摄"}
-LEARNING_KEYWORDS: Set[str] = {"什么是", "为什么", "怎么", "如何", "原理", "解释", "科普", "入门", "学习", "了解"}
+OBSERVATION_KEYWORDS: Set[str] = {
+    "今晚",
+    "观测",
+    "天气",
+    "天气怎么样",
+    "适合看",
+    "看什么",
+    "云量",
+    "透明度",
+    "视宁度",
+    "光害",
+    "月相",
+    "可见",
+    "升起",
+    "落下",
+    "最佳",
+    "推荐",
+    "目标",
+    "望远镜",
+    "拍摄",
+}
+LEARNING_KEYWORDS: Set[str] = {
+    "什么是",
+    "为什么",
+    "如何",
+    "原理",
+    "解释",
+    "科普",
+    "入门",
+    "学习",
+    "了解",
+}
 
 
 TASK_SCORING_WEIGHTS: Dict[str, Dict[str, float]] = {
@@ -87,7 +162,7 @@ TASK_TYPE_TYPE_PRIORS: Dict[str, Dict[str, float]] = {
         MemoryType.BACKGROUND: 0.90,
         MemoryType.HABIT: 0.85,
         MemoryType.PREFERENCE: 0.75,
-        MemoryType.FACT: 0.45,
+        MemoryType.FACT: 0.75,
     },
     "learning": {
         MemoryType.PREFERENCE: 0.90,
@@ -164,45 +239,55 @@ class LongTermMemoryRetriever:
     def __init__(
         self,
         repository: LongTermMemoryRepository,
-        relevance_threshold: float = 0.3,
-        max_memories: int = 15,
+        relevance_threshold: Any = _UNSET,
+        max_memories: Any = _UNSET,
         embedding_service: Optional[MemoryEmbeddingService] = None,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
     ):
         """初始化规则检索参数和可选语义 embedding 服务。"""
 
         self._repo = repository
         self._embedding_service = embedding_service
-        self.relevance_threshold = relevance_threshold
-        self.max_memories = max_memories
-        self.type_weights = {
-            MemoryType.PREFERENCE: 1.0,
-            MemoryType.HABIT: 0.7,
-            MemoryType.CONSTRAINT: 1.2,
-            MemoryType.BACKGROUND: 0.8,
-            MemoryType.FACT: 0.9,
-        }
+        self._strategy_config = (
+            strategy_config or get_memory_selection_strategy_config()
+        )
+        injection_config = self._strategy_config.long_term.injection
+        self.relevance_threshold = (
+            injection_config.relevance_threshold
+            if relevance_threshold is _UNSET
+            else float(relevance_threshold)
+        )
+        self.max_memories = (
+            injection_config.max_memories
+            if max_memories is _UNSET
+            else int(max_memories)
+        )
+        self.type_weights = dict(
+            self._strategy_config.long_term.retrieval.task_type_priors["general"]
+        )
 
     def policy_for_task(self, task_type: Optional[str]) -> InjectionPolicy:
         """解析任务类型对应的静态评分权重和类型先验。"""
 
         resolved = task_type or "general"
-        if resolved not in TASK_SCORING_WEIGHTS:
+        scoring_weights = self._strategy_config.long_term.retrieval.task_scoring_weights
+        type_priors = self._strategy_config.long_term.retrieval.task_type_priors
+        if resolved not in scoring_weights:
             resolved = "general"
         return InjectionPolicy(
             task_type=resolved,
-            weights=TASK_SCORING_WEIGHTS[resolved],
-            type_weights=TASK_TYPE_TYPE_PRIORS.get(
-                resolved, TASK_TYPE_TYPE_PRIORS["general"]
-            ),
+            weights=scoring_weights[resolved],
+            type_weights=type_priors.get(resolved, type_priors["general"]),
         )
 
     def classify_task_type(self, query: str) -> str:
         """根据关键词粗分天文问答、观测、学习等任务类型。"""
 
         text = query.lower()
-        obs_score = sum(1 for kw in OBSERVATION_KEYWORDS if kw in text)
-        learn_score = sum(1 for kw in LEARNING_KEYWORDS if kw in text)
-        astro_score = sum(1 for kw in ASTRONOMY_KEYWORDS if kw in text)
+        retrieval_config = self._strategy_config.long_term.retrieval
+        obs_score = sum(1 for kw in retrieval_config.observation_keywords if kw in text)
+        learn_score = sum(1 for kw in retrieval_config.learning_keywords if kw in text)
+        astro_score = sum(1 for kw in retrieval_config.astronomy_keywords if kw in text)
         if obs_score >= 2:
             return "observation"
         if learn_score >= 1:
@@ -211,7 +296,9 @@ class LongTermMemoryRetriever:
             return "qa"
         return "general"
 
-    def score(self, item: MemoryItem, query: str, task_type: str) -> Tuple[float, List[str]]:
+    def score(
+        self, item: MemoryItem, query: str, task_type: str
+    ) -> Tuple[float, List[str]]:
         """计算单条长期记忆与 query/task_type 的相关性分数和原因。"""
 
         hit = self.score_hit(item, query, task_type)
@@ -242,14 +329,17 @@ class LongTermMemoryRetriever:
             "query_relevance": self._query_relevance(item, query),
             "semantic_similarity": semantic_value,
             "recency": self._recency(item),
-            "constraint_bonus": 1.0
-            if item.memory_type == MemoryType.CONSTRAINT
-            else 0.0,
+            "constraint_bonus": (
+                1.0 if item.memory_type == MemoryType.CONSTRAINT else 0.0
+            ),
             "stale_penalty": self._stale_penalty(item),
         }
         weights = dict(policy.weights)
         if semantic_value > 0:
-            semantic_weight = min(weights.get("query_relevance", 0.0), 0.08)
+            semantic_weight = min(
+                weights.get("query_relevance", 0.0),
+                self._strategy_config.long_term.retrieval.semantic_weight_cap,
+            )
             weights["query_relevance"] = max(
                 weights.get("query_relevance", 0.0) - semantic_weight,
                 0.0,
@@ -299,9 +389,7 @@ class LongTermMemoryRetriever:
         if not items:
             return []
 
-        adaptive_type_weights = self._adaptive_type_weights(
-            items, resolved_task_type
-        )
+        adaptive_type_weights = self._adaptive_type_weights(items, resolved_task_type)
         rule_hits = [
             self.score_hit(
                 item,
@@ -348,9 +436,7 @@ class LongTermMemoryRetriever:
         hits.sort(key=lambda hit: hit.score, reverse=True)
         return hits[: limit or self.max_memories]
 
-    def _score_reasons(
-        self, task_type: str, components: Dict[str, float]
-    ) -> List[str]:
+    def _score_reasons(self, task_type: str, components: Dict[str, float]) -> List[str]:
         """根据组件分生成面向 explain trace 的命中原因。"""
 
         reasons = [f"任务类型={task_type}"]
@@ -376,13 +462,15 @@ class LongTermMemoryRetriever:
     def _source_bonus(self, item: MemoryItem) -> float:
         """按来源可信度和人工确认状态计算来源加分。"""
 
+        source_bonus = self._strategy_config.long_term.retrieval.source_bonus
         if item.confirmed_by_user or item.source_type == "confirmed":
-            return 1.0
+            return source_bonus.get("confirmed", 1.0)
         if item.source_type == "manual":
-            return 0.95
+            return source_bonus.get("manual", 0.95)
         if item.source_type == "explicit":
-            return 0.90
-        return 0.55
+            return source_bonus.get("explicit", 0.90)
+        source_type = getattr(item.source_type, "value", item.source_type)
+        return source_bonus.get(str(source_type), source_bonus.get("default", 0.55))
 
     def _query_relevance(self, item: MemoryItem, query: str) -> float:
         """基于关键词重叠、key/value 直包含计算规则相关性。"""
@@ -435,7 +523,8 @@ class LongTermMemoryRetriever:
             consecutive_miss_count = int(stats.get("consecutive_miss_count", 0) or 0)
         except (TypeError, ValueError):
             consecutive_miss_count = 0
-        return self._clamp(consecutive_miss_count / 5.0)
+        threshold = self._strategy_config.long_term.retrieval.stale_miss_threshold
+        return self._clamp(consecutive_miss_count / max(float(threshold), 1.0))
 
     def _semantic_scores(
         self,
@@ -469,9 +558,8 @@ class LongTermMemoryRetriever:
     ) -> Dict[str, float]:
         """按注入反馈统计生成 task_type x memory_type 自适应先验。"""
 
-        static = dict(
-            TASK_TYPE_TYPE_PRIORS.get(task_type, TASK_TYPE_TYPE_PRIORS["general"])
-        )
+        priors = self._strategy_config.long_term.retrieval.task_type_priors
+        static = dict(priors.get(task_type, priors["general"]))
         aggregates: Dict[str, Dict[str, int]] = {}
         for item in items:
             stats = (item.metadata or {}).get("injection_stats") or {}
@@ -526,7 +614,13 @@ class LongTermMemoryRetriever:
             for token in re.findall(r"[a-z0-9_]{2,}|[\u4e00-\u9fff]+", lower)
             if len(token) >= 2
         }
-        for keyword in ASTRONOMY_KEYWORDS | OBSERVATION_KEYWORDS | LEARNING_KEYWORDS:
+        retrieval_config = self._strategy_config.long_term.retrieval
+        keywords = (
+            set(retrieval_config.astronomy_keywords)
+            | set(retrieval_config.observation_keywords)
+            | set(retrieval_config.learning_keywords)
+        )
+        for keyword in keywords:
             if keyword.lower() in lower:
                 terms.add(keyword.lower())
         for token in list(terms):

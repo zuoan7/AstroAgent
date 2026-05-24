@@ -293,6 +293,40 @@ def test_memory_service_adds_catalog_tool_metadata_as_permanent(memory_db):
     assert stored["metadata"]["effective_until"] == 0
 
 
+def test_memory_service_uses_strategy_tool_types_and_ttls(memory_db):
+    service = MemoryService(
+        db_path=memory_db, tenant_id="tenant", session_id="session", user_id="user"
+    )
+
+    position = service.append_tool_call(
+        AppendToolCallRequest(
+            tenant_id="tenant",
+            session_id="session",
+            user_id="user",
+            tool_name="get_altaz",
+            tool_input='{"target":"木星"}',
+            raw_output="高度 35 度",
+            timestamp=1000.0,
+        )
+    )
+    photo = service.append_tool_call(
+        AppendToolCallRequest(
+            tenant_id="tenant",
+            session_id="session",
+            user_id="user",
+            tool_name="AstrophotographyCalculator",
+            tool_input='{"target":"M42"}',
+            raw_output="曝光 30s ISO 1600",
+            timestamp=2000.0,
+        )
+    )
+
+    assert position.metadata["tool_type"] == "position"
+    assert position.metadata["effective_until"] == 8200.0
+    assert photo.metadata["tool_type"] == "photo"
+    assert photo.metadata["effective_until"] == 88400.0
+
+
 def test_compression_creates_summary_snapshot_from_events(memory_db):
     """测试 compression creates summary snapshot from events 场景。"""
 

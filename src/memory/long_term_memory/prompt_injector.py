@@ -19,8 +19,23 @@ from src.memory.long_term_memory.retrieval import (
     LongTermMemoryRetriever,
     RetrievalHit,
 )
+from src.memory.selection_strategy_config import (
+    MemorySelectionStrategyConfig,
+    get_memory_selection_strategy_config,
+)
 from src.memory.task_context import TaskContextProfile, coerce_task_context_profile
 from src.rag.reranker import DashScopeReranker
+
+_UNSET = object()
+_OBSERVATION_CRITICAL_MEMORY_KEYS = {
+    "location",
+    "location_info",
+    "device_info",
+    "equipment",
+    "skill_level",
+    "timezone",
+    "unit_preference",
+}
 
 
 class PromptInjector:
@@ -29,25 +44,42 @@ class PromptInjector:
     def __init__(
         self,
         repository: LongTermMemoryRepository,
-        max_prompt_tokens: int = 800,
-        max_memories: int = 15,
-        relevance_threshold: float = 0.3,
-        preference_weight: float = 1.0,
-        habit_weight: float = 0.7,
-        constraint_weight: float = 1.2,
-        background_weight: float = 0.8,
-        fact_weight: float = 0.9,
+        max_prompt_tokens: Any = _UNSET,
+        max_memories: Any = _UNSET,
+        relevance_threshold: Any = _UNSET,
+        preference_weight: Any = 1.0,
+        habit_weight: Any = 0.7,
+        constraint_weight: Any = 1.2,
+        background_weight: Any = 0.8,
+        fact_weight: Any = 0.9,
         embedding_service: Optional[MemoryEmbeddingService] = None,
         rerank_enabled: bool = True,
         rerank_timeout_seconds: float = 1.2,
+        strategy_config: MemorySelectionStrategyConfig | None = None,
     ):
         """初始化检索器、reranker、注入预算和类型权重配置。"""
 
         self._repo = repository
+        self._strategy_config = (
+            strategy_config or get_memory_selection_strategy_config()
+        )
+        injection_config = self._strategy_config.long_term.injection
         self._projection = ProfileProjection(repository)
-        self.max_prompt_tokens = max_prompt_tokens
-        self.max_memories = max_memories
-        self.relevance_threshold = relevance_threshold
+        self.max_prompt_tokens = (
+            injection_config.max_prompt_tokens
+            if max_prompt_tokens is _UNSET
+            else int(max_prompt_tokens)
+        )
+        self.max_memories = (
+            injection_config.max_memories
+            if max_memories is _UNSET
+            else int(max_memories)
+        )
+        self.relevance_threshold = (
+            injection_config.relevance_threshold
+            if relevance_threshold is _UNSET
+            else float(relevance_threshold)
+        )
         self.rerank_enabled = bool(rerank_enabled)
         self.rerank_timeout_seconds = max(float(rerank_timeout_seconds or 1.2), 0.1)
         self.type_weights = {
@@ -59,9 +91,10 @@ class PromptInjector:
         }
         self._retriever = LongTermMemoryRetriever(
             repository,
-            relevance_threshold=relevance_threshold,
-            max_memories=max_memories,
+            relevance_threshold=self.relevance_threshold,
+            max_memories=self.max_memories,
             embedding_service=embedding_service,
+            strategy_config=self._strategy_config,
         )
         self._reranker = self._build_reranker()
         self._last_selection_trace: Dict[str, Any] = {}
@@ -170,6 +203,7 @@ class PromptInjector:
         all_hits = selected + omitted
         self._last_selection_trace = {
             "trace_version": "memory_selection_v1",
+            "strategy_config_version": self._strategy_config.version,
             "task_type": resolved_task_type,
             "task_context_profile": profile.to_dict(),
             "profile": profile.to_dict(),
@@ -214,9 +248,10 @@ class PromptInjector:
                 self._omit(hit, "token_budget")
             return [], hits
 
-        strategy_hits = hits[:30]
+        injection_config = self._strategy_config.long_term.injection
+        strategy_hits = hits[: injection_config.rerank_top_k]
         omitted = []
-        for hit in hits[30:]:
+        for hit in hits[injection_config.rerank_top_k :]:
             self._omit(hit, hit.omitted_reason or "rerank_limit")
             omitted.append(hit)
 
@@ -225,13 +260,23 @@ class PromptInjector:
         deduped: List[RetrievalHit] = []
         seen_keys = set()
         for hit in strategy_hits:
-            hit.token_estimate = self._estimate_tokens(self._format_single_memory(hit.item))
-            if hit.score < self.relevance_threshold:
+            hit.token_estimate = self._estimate_tokens(
+                self._format_single_memory(hit.item)
+            )
+            threshold_score = max(
+                hit.score,
+                float(hit.components.get("policy_score", hit.score) or 0.0),
+            )
+            if threshold_score < self.relevance_threshold:
                 self._omit(hit, "below_threshold")
                 omitted.append(hit)
                 continue
             if hit.omitted_reason == "below_threshold":
                 hit.omitted_reason = None
+            if self._is_unmatched_background_noise(hit, task_type):
+                self._omit(hit, "background_without_query_match")
+                omitted.append(hit)
+                continue
             normalized_key = self._normalized_key(hit.item)
             if normalized_key in seen_keys:
                 self._omit(hit, "duplicate_key")
@@ -240,15 +285,22 @@ class PromptInjector:
             seen_keys.add(normalized_key)
             deduped.append(hit)
 
-        top_constraint = next(
-            (hit for hit in deduped if hit.item.memory_type == MemoryType.CONSTRAINT),
-            None,
-        )
-        ordered = (
-            [top_constraint] + [hit for hit in deduped if hit is not top_constraint]
-            if top_constraint
-            else deduped
-        )
+        if injection_config.constraint_priority:
+            top_constraint = next(
+                (
+                    hit
+                    for hit in deduped
+                    if hit.item.memory_type == MemoryType.CONSTRAINT
+                ),
+                None,
+            )
+            ordered = (
+                [top_constraint] + [hit for hit in deduped if hit is not top_constraint]
+                if top_constraint
+                else deduped
+            )
+        else:
+            ordered = deduped
 
         selected: List[RetrievalHit] = []
         type_counts: Dict[str, int] = {}
@@ -260,7 +312,7 @@ class PromptInjector:
                 continue
 
             memory_type = hit.item.memory_type
-            if type_counts.get(memory_type, 0) >= 3:
+            if type_counts.get(memory_type, 0) >= injection_config.per_type_quota:
                 self._omit(hit, "type_quota")
                 omitted.append(hit)
                 continue
@@ -285,7 +337,7 @@ class PromptInjector:
             return None
         try:
             reranker = DashScopeReranker(
-                top_n=30,
+                top_n=self._strategy_config.long_term.injection.rerank_top_k,
                 request_timeout=self.rerank_timeout_seconds,
                 enabled=True,
             )
@@ -319,7 +371,10 @@ class PromptInjector:
             results = self._reranker.rerank(
                 query,
                 documents,
-                top_n=min(30, len(documents)),
+                top_n=min(
+                    self._strategy_config.long_term.injection.rerank_top_k,
+                    len(documents),
+                ),
             )
         except Exception as exc:
             for hit in hits:
@@ -337,7 +392,12 @@ class PromptInjector:
             hit = hits[result.index]
             policy_score = float(hit.components.get("policy_score", hit.score) or 0.0)
             hit.components["rerank_score"] = round(rerank_score, 3)
-            hit.score = round(0.65 * rerank_score + 0.35 * policy_score, 3)
+            injection_config = self._strategy_config.long_term.injection
+            hit.score = round(
+                injection_config.rerank_weight * rerank_score
+                + injection_config.policy_weight * policy_score,
+                3,
+            )
             hit.reasons.append(f"rerank_score={round(rerank_score, 3)}")
             scored.append(hit)
             seen_indices.add(result.index)
@@ -400,7 +460,13 @@ class PromptInjector:
             MemoryType.BACKGROUND: "用户背景",
             MemoryType.FACT: "稳定事实",
         }
-        type_order = [MemoryType.CONSTRAINT, MemoryType.PREFERENCE, MemoryType.BACKGROUND, MemoryType.FACT, MemoryType.HABIT]
+        type_order = [
+            MemoryType.CONSTRAINT,
+            MemoryType.PREFERENCE,
+            MemoryType.BACKGROUND,
+            MemoryType.FACT,
+            MemoryType.HABIT,
+        ]
 
         parts = []
         for mem_type in type_order:
@@ -421,10 +487,17 @@ class PromptInjector:
         if total_context_budget is None:
             return self.max_prompt_tokens
         try:
-            coupled = int(float(total_context_budget) * 0.1)
+            coupled = int(
+                float(total_context_budget)
+                * self._strategy_config.long_term.injection.memory_budget_ratio
+            )
         except (TypeError, ValueError):
             return self.max_prompt_tokens
-        coupled = max(200, min(1200, coupled))
+        injection_config = self._strategy_config.long_term.injection
+        coupled = max(
+            injection_config.memory_budget_min,
+            min(injection_config.memory_budget_max, coupled),
+        )
         return min(self.max_prompt_tokens, coupled)
 
     def _value_to_prompt_text(self, value: Any, max_chars: int = 180) -> str:
@@ -447,6 +520,31 @@ class PromptInjector:
         if key:
             return key
         return f"{item.memory_type}:{item.category}:{self._value_to_prompt_text(item.value, 40)}"
+
+    def _is_unmatched_background_noise(self, hit: RetrievalHit, task_type: str) -> bool:
+        """Filter generic background memories that matched only by type prior."""
+
+        memory_type = getattr(hit.item.memory_type, "value", hit.item.memory_type)
+        if memory_type != MemoryType.BACKGROUND.value:
+            return False
+        if self._has_query_or_semantic_match(hit):
+            return False
+        if task_type == "observation" and self._is_observation_critical_key(hit.item):
+            return False
+        return True
+
+    def _has_query_or_semantic_match(self, hit: RetrievalHit) -> bool:
+        components = hit.components or {}
+        return (
+            float(components.get("query_relevance", 0.0) or 0.0) > 0.0
+            or float(components.get("semantic_similarity", 0.0) or 0.0) > 0.0
+        )
+
+    def _is_observation_critical_key(self, item: MemoryItem) -> bool:
+        return bool(
+            {str(item.key or ""), str(item.category or "")}
+            & _OBSERVATION_CRITICAL_MEMORY_KEYS
+        )
 
     def _omit(self, hit: RetrievalHit, reason: str) -> None:
         """标记命中未入选，并记录可解释的省略原因。"""
@@ -502,17 +600,25 @@ class PromptInjector:
             lines = [f"- {k}: {v}" for k, v in profile["background"].items()]
             parts.append("【用户背景】\n" + "\n".join(lines))
         if profile.get("facts"):
-            lines = [f"- {f.get('key', '')}: {f.get('value', '')}" for f in profile["facts"]]
+            lines = [
+                f"- {f.get('key', '')}: {f.get('value', '')}" for f in profile["facts"]
+            ]
             parts.append("【稳定事实】\n" + "\n".join(lines))
         return "\n\n".join(parts)
 
-    def _select_events_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> List[MemoryEvent]:
+    def _select_events_for_prompt(
+        self, user_id: str, task_type: Optional[str] = None
+    ) -> List[MemoryEvent]:
         """选择兼容旧事件模型的高置信记忆事件。"""
 
         events = self._repo.get_active_events(user_id, limit=self.max_memories)
         return sorted(
             events,
-            key=lambda event: (event.confidence, event.last_confirmed_at or event.created_at, event.created_at),
+            key=lambda event: (
+                event.confidence,
+                event.last_confirmed_at or event.created_at,
+                event.created_at,
+            ),
             reverse=True,
         )[: self.max_memories]
 
@@ -524,7 +630,9 @@ class PromptInjector:
         lines = [f"- {event.event_type}.{event.key}: {event.value}" for event in events]
         return "【近期记忆事件】\n" + "\n".join(lines)
 
-    def format_profile_for_prompt(self, user_id: str, task_type: Optional[str] = None) -> str:
+    def format_profile_for_prompt(
+        self, user_id: str, task_type: Optional[str] = None
+    ) -> str:
         """渲染完整画像和旧版 active events，主要用于兼容路径。"""
 
         profile = self._projection.build(user_id)
@@ -539,7 +647,9 @@ class PromptInjector:
         formatted_profile = self._format_profile(profile)
         if formatted_profile:
             parts.append(formatted_profile)
-        formatted_events = self._format_events(self._select_events_for_prompt(user_id, task_type=task_type))
+        formatted_events = self._format_events(
+            self._select_events_for_prompt(user_id, task_type=task_type)
+        )
         if formatted_events:
             parts.append(formatted_events)
         return "\n\n".join(parts) if parts else "暂无用户偏好信息"
