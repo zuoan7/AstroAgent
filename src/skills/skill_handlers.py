@@ -1,1002 +1,128 @@
-"""复杂高层技能 handler，实现观测计划、天象预报、深空指导、NEO、摄影和位置计算。
+"""Compatibility facade for split skill handlers.
+
+New code should use SkillRegistry definitions from ``src.skills.registry``.
+The classes here preserve the legacy ``Handler()(mcp, **params)`` test/API shape.
 """
 
 from __future__ import annotations
 
-import json
-import re
-import time
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Type
 
-from src.core.config import settings
-from src.core.errors import AgentError, ErrorCode
-from src.core.mcp_protocol import extract_tool_data, is_tool_error, parse_tool_response
-from src.core.logger import logger
-from src.agent.param_parser import ParamParser
 from src.agent.models.skill_result import SkillResult
-from src.skills import registry
-from src.transport.mcp.client import MCPClient
+from src.skills.context import SkillContext
+from src.skills.handlers.astrophotography_calculator import (
+    astrophotography_calculator_handler,
+)
+from src.skills.handlers.celestial_events_forecast import (
+    celestial_events_forecast_handler,
+)
+from src.skills.handlers.celestial_position_calculator import (
+    celestial_position_calculator_handler,
+)
+from src.skills.handlers.deep_sky_observing_guide import (
+    deep_sky_observing_guide_handler,
+)
+from src.skills.handlers.neo_tracker import neo_tracker_handler
+from src.skills.handlers.observation_planner import observation_planner_handler
+from src.skills.handlers.weather_lookup import weather_lookup_handler
+from src.skills.inputs import (
+    AstrophotographyCalculatorInput,
+    CelestialEventsForecastInput,
+    CelestialPositionCalculatorInput,
+    DeepSkyObservingGuideInput,
+    NeoTrackerInput,
+    ObservationPlannerInput,
+    WeatherLookupInput,
+)
+from src.tools.results import ToolResult
 
 
-def _summarize_weather(raw: str) -> str:
-    """从天气工具原始响应中提取适合回答展示的摘要文本。"""
-    envelope = parse_tool_response(raw)
-    if envelope is not None:
-        if is_tool_error(raw):
-            return ""
-        data = envelope.data
-    else:
-        try:
-            data = json.loads(raw)
-        except Exception:
-            return ""
+class _LegacyToolKit:
+    """Small adapter that returns ToolResult without output schema validation."""
 
-    if isinstance(data, dict) and data.get("error"):
-        return ""
+    def __init__(self, backend: Any) -> None:
+        self._backend = backend
 
-    parts = []
+    def with_policy(self, **_: Any) -> "_LegacyToolKit":
+        """Legacy direct handler tests do not exercise guard policy."""
+        return self
 
-    live = data.get("live") or {}
-    if live:
-        city = live.get("city")
-        weather = live.get("weather")
-        temp = live.get("temperature")
-        humidity = live.get("humidity")
-        wind = live.get("windpower")
-        if city:
-            parts.append(f"{city} 当前天气：{weather}，气温约 {temp}°C，湿度 {humidity}%，风力 {wind} 级左右。")
+    def invoke(self, tool_name: str, **kwargs: Any) -> ToolResult:
+        """Call one legacy backend tool and wrap its raw value."""
+        raw = self._backend.call_tool(tool_name, **kwargs)
+        return ToolResult.from_raw(tool_name, raw, output_model=None)
+
+    def invoke_parallel(self, calls: list[dict]) -> list[ToolResult]:
+        """Call legacy backend batch API when available."""
+        if hasattr(self._backend, "call_tools_parallel"):
+            raw_results = self._backend.call_tools_parallel(calls)
         else:
-            parts.append(f"当前天气：{weather}，气温约 {temp}°C，湿度 {humidity}%。")
-
-    forecast = data.get("forecast") or {}
-    if forecast:
-        casts = forecast.get("casts") or []
-        if casts:
-            first_day = casts[0]
-            date = first_day.get("date", "")
-            day_weather = first_day.get("dayweather", "")
-            night_weather = first_day.get("nightweather", "")
-            day_temp = first_day.get("daytemp", "")
-            night_temp = first_day.get("nighttemp", "")
-            city = forecast.get("city", "")
-            if city:
-                parts.append(f"{city} ({date}) 白天：{day_weather}，{day_temp}°C；夜间：{night_weather}，{night_temp}°C。")
-            else:
-                parts.append(f"{date} 白天：{day_weather}，{day_temp}°C；夜间：{night_weather}，{night_temp}°C。")
-
-    tips = data.get("observing_tips") or []
-    for t in tips:
-        parts.append(f"- {t}")
-
-    return "\n".join(parts) if parts else ""
-
-
-def _extract_weather_data(raw: str) -> Dict[str, Any]:
-    """把天气工具响应解析为字典数据，失败时保留原始内容。"""
-    envelope = parse_tool_response(raw)
-    if envelope is not None:
-        if is_tool_error(raw):
-            return {"error": True}
-        return envelope.data if isinstance(envelope.data, dict) else {"raw": envelope.data}
-    try:
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else {"raw": data}
-    except Exception:
-        return {"raw": raw}
-
-
-def _format_tool_display_text(data: Any) -> str:
-    """把工具 payload 规范化为可展示文本。"""
-    if data is None:
-        return ""
-    if isinstance(data, str):
-        return data
-    if isinstance(data, (int, float, bool)):
-        return str(data)
-    if isinstance(data, list):
-        if all(isinstance(item, str) for item in data):
-            return "\n".join(item for item in data if item)
-        try:
-            return json.dumps(data, ensure_ascii=False, indent=2)
-        except Exception:
-            return str(data)
-    if isinstance(data, dict):
-        for key in ("summary", "description", "content", "text", "message", "answer", "result"):
-            value = data.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
-        try:
-            return json.dumps(data, ensure_ascii=False, indent=2)
-        except Exception:
-            return str(data)
-    return str(data)
-
-
-def _extract_tool_payload_and_text(raw: Any) -> tuple[Any, str]:
-    """从工具原始响应中同时提取结构化 payload 和展示文本。"""
-    payload = extract_tool_data(raw)
-    if payload is None and is_tool_error(raw):
-        envelope = parse_tool_response(raw)
-        if envelope is not None and hasattr(envelope, "error"):
-            return None, getattr(envelope.error, "message", "")
-        return None, ""
-    return payload, _format_tool_display_text(payload)
-
-
-def _tool_source_entry(tool_name: str, raw: Any, *, snippet_text: Optional[str] = None) -> Dict[str, Any]:
-    """构造统一 sources 条目，记录工具名和结果片段。"""
-    text = snippet_text
-    if text is None:
-        _, text = _extract_tool_payload_and_text(raw)
-    snippet = ParamParser.shorten_text(text or str(raw), 240)
-    return {"kind": "tool_output", "tool": tool_name, "snippet": snippet}
-
-
-def _is_date_like(text: str) -> bool:
-    """判断文本是否像日期或常见相对日期表达。"""
-    t = text.strip()
-    if not t:
-        return False
-    if t in (
-        "今天",
-        "明天",
-        "今晚",
-        "明晚",
-        "本周末",
-        "这个周末",
-        "周末",
-        "今日",
-        "次日",
-        "today",
-        "tomorrow",
-    ):
-        return True
-    if re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", t):
-        return True
-    return False
-
-
-CITY_COORDS: Dict[str, tuple[float, float]] = {
-    "北京": (39.9, 116.4),
-    "上海": (31.23, 121.47),
-    "广州": (23.13, 113.26),
-    "深圳": (22.54, 114.06),
-    "苏州": (31.3, 120.58),
-    "杭州": (30.27, 120.16),
-    "成都": (30.57, 104.07),
-    "南京": (32.06, 118.79),
-    "武汉": (30.59, 114.3),
-    "西安": (34.34, 108.94),
-    "重庆": (29.56, 106.55),
-    "天津": (39.12, 117.2),
-    "青岛": (36.07, 120.38),
-    "厦门": (24.48, 118.09),
-}
-
-
-PLANET_NAME_ALIASES: Dict[str, str] = {
-    "水星": "mercury",
-    "金星": "venus",
-    "火星": "mars",
-    "木星": "jupiter",
-    "土星": "saturn",
-    "天王星": "uranus",
-    "海王星": "neptune",
-}
-
-
-def _parse_location(location: str) -> tuple[Optional[float], Optional[float]]:
-    """把城市名或“纬度,经度”文本解析为经纬度。"""
-    if not location:
-        return None, None
-    text = str(location).strip()
-    if text in CITY_COORDS:
-        return CITY_COORDS[text]
-    text = location.replace("，", ",")
-    parts = [p.strip() for p in text.split(",") if p.strip()]
-    if len(parts) != 2:
-        return None, None
-    try:
-        lat = float(parts[0])
-        lon = float(parts[1])
-        return lat, lon
-    except Exception:
-        return None, None
-
-
-def _parse_time_range(time_range: Optional[str]) -> tuple[str, str]:
-    """把近地天体查询的自然语言时间范围解析为起止日期。"""
-    today = datetime.now().date()
-    if not time_range:
-        return today.strftime("%Y-%m-%d"), (today + timedelta(days=7)).strftime("%Y-%m-%d")
-
-    text = str(time_range)
-    if "30" in text and "天" in text:
-        start = today
-        end = today + timedelta(days=30)
-    elif "本月" in text:
-        start = today.replace(day=1)
-        if start.month == 12:
-            end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
-        else:
-            end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
-    else:
-        start = today
-        end = today + timedelta(days=7)
-
-    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
-
-
-class ObservationPlannerHandler:
-    """观测计划技能 handler，聚合天气、天象事件和今晚推荐目标。"""
-
-    def __call__(
-        self,
-        mcp: MCPClient,
-        date: Optional[str] = None,
-        location: Optional[str] = None,
-        duration: Optional[str] = None,
-    ) -> SkillResult:
-        """生成指定日期、地点和时段的观测计划。"""
-        started = time.perf_counter()
-        sources = []
-
-        if not location and date:
-            text = str(date).strip()
-            if not _is_date_like(text):
-                location = text
-                date = None
-        if not location:
-            location = "北京"
-
-        obs_date = ParamParser.parse_date(date)
-
-        display_location = ParamParser.normalize_location(location)
-        query_city = None
-        if location is not None:
-            if isinstance(location, dict):
-                query_city = location.get("city") or display_location
-            else:
-                query_city = display_location
-
-        weather_brief = ""
-        weather_data: Dict[str, Any] = {}
-        weekly_events = ""
-        tonight_best = ""
-
-        parallel_calls = []
-        if query_city:
-            parallel_calls.append({
-                "tool_name": "get_weather",
-                "kwargs": {"city": query_city, "extensions": "all"},
-                "_key": "weather",
-            })
-        parallel_calls.append({
-            "tool_name": "get_weekly_events",
-            "kwargs": {"start_date": obs_date.strftime("%Y-%m-%d")},
-            "_key": "weekly_events",
-        })
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        if obs_date.strftime("%Y-%m-%d") == today_str:
-            parallel_calls.append({
-                "tool_name": "get_tonight_best",
-                "kwargs": {},
-                "_key": "tonight_best",
-            })
-
-        if len(parallel_calls) > 1:
-            parallel_results = mcp.call_tools_parallel(parallel_calls)
-            for i, result in enumerate(parallel_results):
-                key = parallel_calls[i]["_key"]
-                if key == "weather":
-                    weather_brief = _summarize_weather(result)
-                    weather_data = _extract_weather_data(result)
-                    sources.append(_tool_source_entry("get_weather", result, snippet_text=weather_brief))
-                elif key == "weekly_events":
-                    _, weekly_events = _extract_tool_payload_and_text(result)
-                    sources.append(_tool_source_entry("get_weekly_events", result, snippet_text=weekly_events))
-                elif key == "tonight_best":
-                    _, tonight_best = _extract_tool_payload_and_text(result)
-                    sources.append(_tool_source_entry("get_tonight_best", result, snippet_text=tonight_best))
-        else:
-            for call in parallel_calls:
-                if call["_key"] == "weather":
-                    weather_raw = mcp.call_tool("get_weather", city=query_city, extensions="all")
-                    weather_brief = _summarize_weather(weather_raw)
-                    weather_data = _extract_weather_data(weather_raw)
-                    sources.append(_tool_source_entry("get_weather", weather_raw, snippet_text=weather_brief))
-                elif call["_key"] == "weekly_events":
-                    weekly_raw = mcp.call_tool(
-                        "get_weekly_events",
-                        start_date=obs_date.strftime("%Y-%m-%d"),
-                    )
-                    _, weekly_events = _extract_tool_payload_and_text(weekly_raw)
-                    sources.append(_tool_source_entry("get_weekly_events", weekly_raw, snippet_text=weekly_events))
-                elif call["_key"] == "tonight_best":
-                    tonight_raw = mcp.call_tool("get_tonight_best")
-                    _, tonight_best = _extract_tool_payload_and_text(tonight_raw)
-                    sources.append(_tool_source_entry("get_tonight_best", tonight_raw, snippet_text=tonight_best))
-
-        plan_lines = [
-            f"📅 观测日期：{obs_date.strftime('%Y-%m-%d')}",
-        ]
-        if display_location:
-            plan_lines.append(f"📍 观测地点：{display_location}")
-        else:
-            plan_lines.append("📍 观测地点：未明确指定，本计划为一般性观测建议。")
-        if duration:
-            plan_lines.append(f"⏱️ 观测时段：{duration}")
-
-        plan_lines.append("\n一、观测条件（天气概览）")
-        if weather_brief:
-            plan_lines.append(weather_brief)
-        else:
-            plan_lines.append("暂时无法获取指定地点的天气信息，请根据当地实际情况或天气预报应用调整计划。")
-
-        plan_lines.append("\n二、本周重要天象（摘要）")
-        plan_lines.append(ParamParser.shorten_text(weekly_events, 600))
-
-        if tonight_best:
-            plan_lines.append("\n三、系统给出的\"今晚最佳观测目标\"参考")
-            plan_lines.append(ParamParser.shorten_text(tonight_best, 600))
-
-        plan_lines.append("\n四、实用建议")
-        plan_lines.append(
-            "1. 根据云量与月相选择目标：若接近新月，可优先考虑深空天体；若接近满月，可多观测月面细节与行星。\n"
-            "2. 提前抵达观测地，预留架台、极轴校准与试拍时间。\n"
-            "3. 如湿度偏高或风力较大，请准备除露带、配重或防风措施。"
-        )
-
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        return SkillResult(
-            skill_name="observation-planner",
-            success=True,
-            data={
-                "obs_date": obs_date.strftime("%Y-%m-%d"),
-                "location": display_location or "",
-                "weather": weather_data,
-                "weekly_events": weekly_events,
-                "tonight_best": tonight_best,
-            },
-            summary="\n".join(plan_lines),
-            sources=sources,
-            latency_ms=round(elapsed_ms, 2),
-        )
-
-
-class CelestialEventsForecastHandler:
-    """天象预报技能 handler，按周度或月度 operation 调用事件工具。"""
-
-    def __call__(
-        self,
-        mcp: MCPClient,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        event_type: Optional[str] = None,
-        operation: Optional[str] = None,
-    ) -> SkillResult:
-        """查询指定时间范围内的天象事件并整理为用户可读摘要。"""
-        started = time.perf_counter()
-        sources = []
-
-        if start_date:
-            start_dt = ParamParser.parse_date(start_date)
-        else:
-            start_dt = datetime.now()
-
-        supported_min, supported_max = settings.SUPPORTED_YEAR_RANGE
-        if not (supported_min <= start_dt.year <= supported_max):
-            start_dt = start_dt.replace(year=supported_min)
-
-        end_dt: Optional[datetime] = None
-        if end_date:
-            try:
-                end_dt = ParamParser.parse_date(end_date)
-                if not (supported_min <= end_dt.year <= supported_max):
-                    end_dt = end_dt.replace(year=supported_min)
-            except Exception:
-                end_dt = None
-
-        description_prefix: list[str] = []
-        if end_dt:
-            description_prefix.append(
-                f"天象预报范围：从 {start_dt.strftime('%Y-%m-%d')} 开始，直到 {end_dt.strftime('%Y-%m-%d')}"
-            )
-        else:
-            description_prefix.append(
-                f"天象预报范围：从 {start_dt.strftime('%Y-%m-%d')} 开始"
-                + (f"，直到 {end_date}" if end_date else "，未来一段时间内")
-            )
-        if event_type:
-            description_prefix.append(f"用户关心的事件类型：{event_type}（当前版本为软筛选，仅供解释用）")
-
-        operation_name = (operation or "").strip().lower()
-        if operation_name not in {"weekly", "monthly"}:
-            use_weekly = False
-            if end_dt:
-                try:
-                    days = (end_dt - start_dt).days
-                    use_weekly = days <= 7
-                except Exception:
-                    use_weekly = False
-            else:
-                use_weekly = True
-            operation_name = "weekly" if use_weekly else "monthly"
-        else:
-            use_weekly = operation_name == "weekly"
-
-        operation_spec = registry.get_operation_spec(
-            "celestial-events-forecast",
-            operation_name,
-        )
-
-        if use_weekly:
-            body_raw = mcp.call_tool(
-                operation_spec.atomic_tool_name,
-                start_date=start_dt.strftime("%Y-%m-%d"),
-            )
-            body_data, body = _extract_tool_payload_and_text(body_raw)
-            sources.append(_tool_source_entry(operation_spec.atomic_tool_name, body_raw, snippet_text=body))
-        else:
-            if end_dt:
-                current_dt = start_dt
-                monthly_calls = []
-                while current_dt <= end_dt:
-                    monthly_calls.append({
-                        "tool_name": operation_spec.atomic_tool_name,
-                        "kwargs": {"year": current_dt.year, "month": current_dt.month},
-                    })
-                    if current_dt.month == 12:
-                        current_dt = current_dt.replace(year=current_dt.year + 1, month=1)
-                    else:
-                        current_dt = current_dt.replace(month=current_dt.month + 1)
-                monthly_results = mcp.call_tools_parallel(monthly_calls)
-                monthly_payloads = []
-                monthly_texts = []
-                for raw in monthly_results:
-                    payload, text = _extract_tool_payload_and_text(raw)
-                    monthly_payloads.append(payload)
-                    monthly_texts.append(text)
-                body_data = monthly_payloads
-                body = "\n".join(text for text in monthly_texts if text)
-                sources.append(_tool_source_entry(operation_spec.atomic_tool_name, body, snippet_text=body))
-            else:
-                year = start_dt.year
-                month = start_dt.month
-                body_raw = mcp.call_tool(
-                    operation_spec.atomic_tool_name,
-                    year=year,
-                    month=month,
-                )
-                body_data, body = _extract_tool_payload_and_text(body_raw)
-                sources.append(_tool_source_entry(operation_spec.atomic_tool_name, body_raw, snippet_text=body))
-
-        description_prefix.append("\n下面是为你整理的天象预报：\n")
-        description_prefix.append(ParamParser.shorten_text(body, 1200))
-        summary = "\n".join(description_prefix)
-
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        return SkillResult(
-            skill_name="celestial-events-forecast",
-            success=True,
-            data={
-                "start_date": start_dt.strftime("%Y-%m-%d"),
-                "end_date": end_dt.strftime("%Y-%m-%d") if end_dt else None,
-                "event_type": event_type,
-                "operation": operation_name,
-                "events_body": body_data if 'body_data' in locals() else body,
-            },
-            summary=summary,
-            sources=sources,
-            latency_ms=round(elapsed_ms, 2),
-            logical_skill="celestial-events-forecast",
-            operation=operation_name,
-            expected_mcp_tools=[operation_spec.atomic_tool_name],
-            allowed_child_tools=list(operation_spec.allowed_child_tools),
-            forbidden_child_tools=list(operation_spec.forbidden_child_tools),
-        )
-
-
-class DeepSkyObservingGuideHandler:
-    """深空观测指导技能 handler，查询目标资料并生成观测建议。"""
-
-    def __call__(
-        self,
-        mcp: MCPClient,
-        target: str,
-        observer_location: Optional[str] = None,
-        date: Optional[str] = None,
-        equipment: Optional[str] = None,
-    ) -> SkillResult:
-        """为指定深空目标生成基础信息、设备约束和观测建议。"""
-        started = time.perf_counter()
-
-        if not target:
-            return SkillResult.from_error(
-                skill_name="deep-sky-observing-guide",
-                error_code="VALIDATION_ERROR",
-                error_message="深空观测指导技能需要提供目标名称（target），例如\"M31\"或\"猎户座大星云\"",
-            )
-
-        sources = []
-        obs_date = ParamParser.parse_date(date) if date else datetime.now()
-
-        parallel_calls = [
-            {
-                "tool_name": "get_astrophysical_object_info",
-                "kwargs": {"object_name": target},
-                "_key": "obj_info",
-            },
-        ]
-        if self._is_galaxy_target(target):
-            parallel_calls.append({
-                "tool_name": "get_galaxy_data",
-                "kwargs": {"galaxy_name": target},
-                "_key": "galaxy_info",
-            })
-        parallel_results = mcp.call_tools_parallel(parallel_calls)
-        obj_info_raw = ""
-        galaxy_info_raw: Optional[str] = None
-        for i, result in enumerate(parallel_results):
-            key = parallel_calls[i]["_key"]
-            if key == "obj_info":
-                obj_info_data, obj_info_raw = _extract_tool_payload_and_text(result)
-                sources.append(_tool_source_entry("get_astrophysical_object_info", result, snippet_text=obj_info_raw))
-            elif key == "galaxy_info":
-                galaxy_info_data, galaxy_info_raw = _extract_tool_payload_and_text(result)
-                sources.append(_tool_source_entry("get_galaxy_data", result, snippet_text=galaxy_info_raw))
-
-        lines = [
-            f"🎯 深空目标：{target}",
-            f"📅 观测日期：{obs_date.strftime('%Y-%m-%d')}",
-        ]
-        if observer_location:
-            lines.append(f"📍 观测地点：{observer_location}")
-        if equipment:
-            lines.append(f"🔭 计划使用设备：{equipment}")
-
-        lines.append("\n一、目标基础信息（基于专业数据库）")
-        lines.append(ParamParser.shorten_text(obj_info_raw, 600))
-        if galaxy_info_raw:
-            lines.append("\n补充：星系数据摘要")
-            lines.append(ParamParser.shorten_text(galaxy_info_raw, 400))
-
-        lines.append("\n三、观测建议")
-        lines.append(
-            "1. 建议选择无月光或月亮落下后 1-2 小时的时段进行深空观测。\n"
-            "2. 若使用双筒或小口径望远镜，可优先寻找目标所在星座的亮星作\"跳星\"指引。\n"
-            "3. 使用较低倍率（长焦距目镜）先锁定目标，再逐步提高放大倍率细看结构。"
-        )
-
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        return SkillResult(
-            skill_name="deep-sky-observing-guide",
-            success=True,
-            data={
-                "target": target,
-                "obs_date": obs_date.strftime("%Y-%m-%d"),
-                "observer_location": observer_location,
-                "equipment": equipment,
-                "obj_info": obj_info_data if 'obj_info_data' in locals() else obj_info_raw,
-                "galaxy_info": galaxy_info_data if 'galaxy_info_data' in locals() else galaxy_info_raw,
-            },
-            summary="\n".join(lines),
-            sources=sources,
-            latency_ms=round(elapsed_ms, 2),
-        )
-
-    def _is_galaxy_target(self, target: str) -> bool:
-        """判断目标是否更适合补充星系数据库信息。"""
-        normalized = (target or "").strip().lower().replace(" ", "")
-        if "galaxy" in normalized or "星系" in normalized or "银河系" in normalized:
-            return True
-        return normalized in {
-            "m31",
-            "m33",
-            "m51",
-            "m81",
-            "m82",
-            "m87",
-            "m101",
-            "m104",
-            "ngc224",
-            "ngc598",
-        }
-
-
-class NeoTrackerHandler:
-    """近地天体技能 handler，调用 NASA NEO 工具并筛选飞掠目标。"""
-
-    def __call__(
-        self,
-        mcp: MCPClient,
-        time_range: Optional[str] = None,
-        min_size: Optional[float] = None,
-        max_distance: Optional[float] = None,
-        observable_only: Optional[bool] = None,
-    ) -> SkillResult:
-        """按时间、尺寸、距离和可观测性筛选近地天体飞掠事件。"""
-        started = time.perf_counter()
-        sources = []
-        start_date, end_date = _parse_time_range(time_range)
-
-        warning_lines = []
-        try:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            delta_days = (end_dt - start_dt).days
-
-            if delta_days > 7:
-                warning_lines.append(f"⚠️ 注意：NASA NEO API 最多只支持查询7天的数据。")
-                warning_lines.append(f"请求范围：{start_date} 至 {end_date}（{delta_days}天）")
-                warning_lines.append(f"将返回最近7天的数据：{start_date} 至 {(start_dt + timedelta(days=7)).strftime('%Y-%m-%d')}")
-                warning_lines.append("")
-        except Exception:
-            pass
-
-        raw_json = mcp.call_tool(
-            "get_neo_data",
-            start_date=start_date,
-            end_date=end_date,
-            limit=50,
-        )
-        neo_payload, neo_text = _extract_tool_payload_and_text(raw_json)
-        sources.append(_tool_source_entry("get_neo_data", raw_json, snippet_text=neo_text))
-
-        data = None
-        try:
-            if isinstance(raw_json, str):
-                envelope = parse_tool_response(raw_json)
-                data = envelope.data if envelope and envelope.ok else json.loads(raw_json)
-            else:
-                data = raw_json
-        except Exception:
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            return SkillResult(
-                skill_name="neo-tracker",
-                success=True,
-                data={"raw": neo_payload if neo_payload is not None else raw_json},
-                summary=neo_text or str(raw_json),
-                sources=sources,
-                latency_ms=round(elapsed_ms, 2),
-            )
-
-        if is_tool_error(raw_json):
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            return SkillResult.from_error(
-                skill_name="neo-tracker",
-                error_code="TOOL_CALL_FAILED",
-                error_message=str(raw_json)[:500],
-                latency_ms=round(elapsed_ms, 2),
-            )
-        if isinstance(data, dict) and data.get("error"):
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            return SkillResult.from_error(
-                skill_name="neo-tracker",
-                error_code="TOOL_CALL_FAILED",
-                error_message=str(data.get("error")),
-                latency_ms=round(elapsed_ms, 2),
-            )
-
-        neos = []
-        for day, objs in (data.get("near_earth_objects") or {}).items():
-            for obj in objs:
-                neos.append((day, obj))
-
-        filtered = []
-        for day, obj in neos:
-            name = obj.get("name")
-            est = obj.get("estimated_diameter", {}).get("meters", {})
-            size = est.get("estimated_diameter_max")
-            ca_list = obj.get("close_approach_data") or []
-            if not ca_list:
-                continue
-            ca = ca_list[0]
-            miss_lunar = None
-            try:
-                miss_lunar = float(ca.get("miss_distance", {}).get("lunar", "0"))
-            except Exception:
-                miss_lunar = None
-
-            if min_size is not None and size is not None and size < min_size:
-                continue
-            if max_distance is not None and miss_lunar is not None and miss_lunar > max_distance:
-                continue
-
-            if observable_only:
-                try:
-                    abs_mag = float(obj.get("absolute_magnitude_h"))
-                    if abs_mag > 25:
-                        continue
-                except Exception:
-                    pass
-
-            filtered.append(
-                {
-                    "date": day,
-                    "name": name,
-                    "size_m": size,
-                    "miss_distance_lunar": miss_lunar,
-                    "hazardous": obj.get("is_potentially_hazardous_asteroid"),
-                }
-            )
-
-        if not filtered:
-            warning_text = "\n".join(warning_lines) if warning_lines else ""
-            summary = warning_text + "\n在给定的时间范围和筛选条件下，没有找到明显具有观测价值的近地天体飞掠事件。"
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            return SkillResult(
-                skill_name="neo-tracker",
-                success=True,
-                data={"filtered_neos": [], "total_raw": len(neos)},
-                summary=summary.strip(),
-                sources=sources,
-                latency_ms=round(elapsed_ms, 2),
-            )
-
-        if warning_lines:
-            lines = warning_lines.copy()
-            lines.extend([
-                "",
-                "📡 近地天体飞掠列表（按时间排序）：",
-            ])
-        else:
-            lines = [
-                "📡 近地天体飞掠列表（按时间排序）：",
+            raw_results = [
+                self._backend.call_tool(call["tool_name"], **call.get("kwargs", {}))
+                for call in calls
             ]
-
-        filtered.sort(key=lambda x: (x["date"], x.get("miss_distance_lunar") or 1e9))
-        for item in filtered[:20]:
-            hazard = "⚠️ 潜在威胁小行星" if item["hazardous"] else ""
-            size_str = f"{item['size_m']:.0f} m" if item['size_m'] is not None else "未知"
-            dist_str = f"{item['miss_distance_lunar']:.2f} 个地月距离" if item['miss_distance_lunar'] is not None else "未知"
-            lines.append(
-                f"- 日期 {item['date']}，目标 {item['name']}，"
-                f"估计直径约 {size_str}，最近距离约 {dist_str} {hazard}"
-            )
-
-        lines.append(
-            "\n注：以上数据来自 NASA NEO 数据接口，是否实际可见还与亮度、天空背景和观测设备有关。"
-        )
-
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        return SkillResult(
-            skill_name="neo-tracker",
-            success=True,
-            data={"filtered_neos": filtered[:20], "total_raw": len(neos)},
-            summary="\n".join(lines),
-            sources=sources,
-            latency_ms=round(elapsed_ms, 2),
-        )
-
-
-class AstrophotographyCalculatorHandler:
-    """天文摄影参数技能 handler，生成曝光、叠加和赤道仪建议。"""
-
-    def __call__(
-        self,
-        mcp: MCPClient,
-        target: str,
-        camera: str,
-        telescope: Optional[str] = None,
-        mount: Optional[str] = None,
-        location: Optional[str] = None,
-        date: Optional[str] = None,
-        iso: Optional[str] = None,
-        aperture: Optional[str] = None,
-    ) -> SkillResult:
-        """根据目标、相机和设备参数生成摄影建议。"""
-        started = time.perf_counter()
-        obs_date = ParamParser.parse_date(date) if date else datetime.now()
-
-        lines = [
-            f"📷 天文摄影参数建议",
-            f"🎯 拍摄目标：{target}",
-            f"📅 拍摄日期：{obs_date.strftime('%Y-%m-%d')}",
-            f"📸 相机：{camera}",
+        return [
+            ToolResult.from_raw(call["tool_name"], raw, output_model=None)
+            for call, raw in zip(calls, raw_results)
         ]
-        if telescope:
-            lines.append(f"🔭 望远镜/镜头：{telescope}")
-        if mount:
-            lines.append(f"🗜 赤道仪/支架：{mount}")
-        if location:
-            lines.append(f"📍 拍摄地点：{location}")
-        if aperture:
-            lines.append(f"🔆 光圈：{aperture}")
-        if iso:
-            lines.append(f"🎚 ISO：{iso}")
-
-        lines.append("\n一、曝光时间估算（星点不拖尾的经验值）")
-        lines.append(
-            "若使用广角/标准镜头并在赤道仪跟踪下：\n"
-            "- 星野/银河：单张 20-60 秒，ISO 1600-6400，光圈尽量开大。\n"
-            "- 星云/星团：根据目标亮度，单张 120-300 秒，ISO 800-3200。\n"
-            "若非跟踪（固定三脚架），可按\"500 规则\"粗略估计：曝光秒数 ≈ 500 / 焦距（全画幅等效）。"
-        )
-
-        lines.append("\n二、总曝光时间与叠加")
-        lines.append(
-            "为了获得较低噪点和更丰富细节，建议：\n"
-            "- 星云/星系：累计曝光时间 1–3 小时以上（例如 120s × 30–90 张）。\n"
-            "- 银河/星野：累计曝光 20 分钟以上即可有明显提升。\n"
-            "请务必拍摄暗场/平场/偏置帧，以便后期校正。"
-        )
-
-        lines.append("\n三、赤道仪与极轴校准建议")
-        lines.append(
-            "若使用赤道仪：\n"
-            "- 极轴误差越小，可用的单张曝光时间越长。\n"
-            "- 建议使用极轴镜/电子极轴校准工具，将极轴误差控制在 1–2 角分以内。"
-        )
-
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        return SkillResult(
-            skill_name="astrophotography-calculator",
-            success=True,
-            data={
-                "target": target,
-                "camera": camera,
-                "telescope": telescope,
-                "mount": mount,
-                "location": location,
-                "obs_date": obs_date.strftime("%Y-%m-%d"),
-                "iso": iso,
-                "aperture": aperture,
-            },
-            summary="\n".join(lines),
-            sources=[],
-            latency_ms=round(elapsed_ms, 2),
-        )
 
 
-class CelestialPositionCalculatorHandler:
-    """天体位置计算技能 handler，按 operation 调用位置、升落或坐标转换工具。"""
+class _LegacyHandlerAdapter:
+    skill_name: str
+    input_model: Type[Any]
+    handler: Any
 
-    def __call__(
-        self,
-        mcp: MCPClient,
-        target: str = "",
-        datetime: Optional[str] = None,
-        location: Optional[str] = None,
-        output_format: Optional[str] = None,
-        operation: Optional[str] = None,
-        ra: Optional[float] = None,
-        dec: Optional[float] = None,
-        epoch: Optional[str] = None,
-        target_system: Optional[str] = None,
-    ) -> SkillResult:
-        """计算目标在指定时间地点的位置、升落时间或坐标转换结果。"""
-        started = time.perf_counter()
+    def __call__(self, mcp: Any, **params: Any) -> SkillResult:
+        """Adapt legacy ``mcp, **params`` invocation to the new handler contract."""
+        payload = self.input_model.model_validate(params or {})
+        ctx = SkillContext(tool_kit=_LegacyToolKit(mcp), skill_name=self.skill_name)
+        return self.handler(ctx, payload)
 
-        requested_operation = (operation or "").strip().lower()
-        if not target and requested_operation not in {"current_sky", "coordinate_transformation"}:
-            return SkillResult.from_error(
-                skill_name="celestial-position-calculator",
-                error_code="VALIDATION_ERROR",
-                error_message="天体位置计算技能需要提供目标名称（target），例如\"mars\"\"jupiter\"等",
-            )
 
-        import datetime as dt_mod
-        obs_time = ParamParser.parse_date(datetime) if datetime else dt_mod.datetime.now()
-        fmt = (output_format or "radec").lower()
-        mcp_target = PLANET_NAME_ALIASES.get(target, target).lower()
+class WeatherLookupHandler(_LegacyHandlerAdapter):
+    skill_name = "weather-lookup"
+    input_model = WeatherLookupInput
+    handler = staticmethod(weather_lookup_handler)
 
-        operation_name = requested_operation
-        if operation_name not in {"altaz", "rise_set", "planet_position", "current_sky", "coordinate_transformation"}:
-            if fmt in {"rise_set", "rise-set", "riseset"}:
-                operation_name = "rise_set"
-            elif fmt == "altaz":
-                operation_name = "altaz"
-            else:
-                operation_name = "planet_position"
 
-        if operation_name == "coordinate_transformation" and (ra is None or dec is None):
-            return SkillResult.from_error(
-                skill_name="celestial-position-calculator",
-                error_code="VALIDATION_ERROR",
-                error_message="坐标转换需要提供赤经 ra 和赤纬 dec。",
-            )
+class ObservationPlannerHandler(_LegacyHandlerAdapter):
+    skill_name = "observation-planner"
+    input_model = ObservationPlannerInput
+    handler = staticmethod(observation_planner_handler)
 
-        operation_spec = registry.get_operation_spec(
-            "celestial-position-calculator",
-            operation_name,
-        )
 
-        if location:
-            lat, lon = _parse_location(location)
-        else:
-            lat, lon = None, None
+class CelestialEventsForecastHandler(_LegacyHandlerAdapter):
+    skill_name = "celestial-events-forecast"
+    input_model = CelestialEventsForecastInput
+    handler = staticmethod(celestial_events_forecast_handler)
 
-        if lat is None or lon is None:
-            lat, lon = 39.9, 116.4
 
-        if operation_name == "current_sky":
-            tool_name = operation_spec.atomic_tool_name
-            result_raw = mcp.call_tool(
-                tool_name,
-                latitude=lat,
-                longitude=lon,
-                date=obs_time.strftime("%Y-%m-%d"),
-            )
-        elif operation_name == "coordinate_transformation":
-            tool_name = operation_spec.atomic_tool_name
-            result_raw = mcp.call_tool(
-                tool_name,
-                ra=float(ra or 0.0),
-                dec=float(dec or 0.0),
-                epoch=epoch or "J2000",
-                target_system=target_system or "fk5",
-            )
-        elif operation_name == "rise_set":
-            tool_name = operation_spec.atomic_tool_name
-            result_raw = mcp.call_tool(
-                tool_name,
-                body_name=mcp_target,
-                date=obs_time.strftime("%Y-%m-%d"),
-                latitude=lat,
-                longitude=lon,
-            )
-        else:
-            tool_name = operation_spec.atomic_tool_name
-            result_raw = mcp.call_tool(
-                tool_name,
-                planet_name=mcp_target,
-                observation_time=obs_time.isoformat(),
-                latitude=lat,
-                longitude=lon,
-            )
-        position_data, body = _extract_tool_payload_and_text(result_raw)
-        sources = [_tool_source_entry(tool_name, result_raw, snippet_text=body)]
+class DeepSkyObservingGuideHandler(_LegacyHandlerAdapter):
+    skill_name = "deep-sky-observing-guide"
+    input_model = DeepSkyObservingGuideInput
+    handler = staticmethod(deep_sky_observing_guide_handler)
 
-        body = ParamParser.shorten_text(body, 600)
-        if operation_name == "rise_set":
-            coordinate_label = "升起/落下时间"
-        elif operation_name == "altaz":
-            coordinate_label = "地平坐标（高度角/方位角）"
-        elif operation_name == "current_sky":
-            coordinate_label = "当前天空目标"
-        elif operation_name == "coordinate_transformation":
-            coordinate_label = "坐标转换"
-        else:
-            coordinate_label = "赤道坐标"
-        header = (
-            f"🪐 天体位置计算\n"
-            f"- 目标：{target}\n"
-            f"- 时间：{obs_time.isoformat()}\n"
-            f"- 观测点：纬度 {lat}，经度 {lon}\n"
-            f"- 输出坐标系：{coordinate_label}\n"
-        )
-        summary = header + "\n原始计算结果（来自底层工具）：\n" + body
 
-        if not isinstance(position_data, dict):
-            position_data = {"raw": position_data if position_data is not None else result_raw}
+class NeoTrackerHandler(_LegacyHandlerAdapter):
+    skill_name = "neo-tracker"
+    input_model = NeoTrackerInput
+    handler = staticmethod(neo_tracker_handler)
 
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        return SkillResult(
-            skill_name="celestial-position-calculator",
-            success=True,
-            data={
-                "target": target,
-                "observation_time": obs_time.isoformat(),
-                "latitude": lat,
-                "longitude": lon,
-                "output_format": fmt,
-                "operation": operation_name,
-                "position": position_data,
-            },
-            summary=summary,
-            sources=sources,
-            latency_ms=round(elapsed_ms, 2),
-            logical_skill="celestial-position-calculator",
-            operation=operation_name,
-            expected_mcp_tools=[operation_spec.atomic_tool_name],
-            allowed_child_tools=list(operation_spec.allowed_child_tools),
-            forbidden_child_tools=list(operation_spec.forbidden_child_tools),
-        )
+
+class AstrophotographyCalculatorHandler(_LegacyHandlerAdapter):
+    skill_name = "astrophotography-calculator"
+    input_model = AstrophotographyCalculatorInput
+    handler = staticmethod(astrophotography_calculator_handler)
+
+
+class CelestialPositionCalculatorHandler(_LegacyHandlerAdapter):
+    skill_name = "celestial-position-calculator"
+    input_model = CelestialPositionCalculatorInput
+    handler = staticmethod(celestial_position_calculator_handler)
 
 
 SKILL_HANDLERS: Dict[str, type] = {
+    "weather-lookup": WeatherLookupHandler,
     "observation-planner": ObservationPlannerHandler,
     "celestial-events-forecast": CelestialEventsForecastHandler,
     "deep-sky-observing-guide": DeepSkyObservingGuideHandler,

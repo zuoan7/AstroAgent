@@ -1,17 +1,15 @@
-"""高层技能路由器，连接 SkillExecutor、ToolRuntime、MCPClient 和复杂技能 handler。
-"""
+"""高层技能路由器，连接 SkillExecutor、ToolRuntime、MCPClient 和复杂技能 handler。"""
 
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from src.core.logger import logger
 from src.agent.models.skill_result import SkillResult
-from src.skills.executor import SkillExecutor
-from src.transport.mcp.client import MCPClient
+from src.core.logger import logger
 from src.skills import registry
-from src.skills.skill_handlers import SKILL_HANDLERS
+from src.skills.executor import SkillExecutor
 from src.tools.runtime import ToolRuntime
+from src.transport.mcp.client import MCPClient
 
 
 class AstronomySkillRouter:
@@ -27,13 +25,11 @@ class AstronomySkillRouter:
 
     def __init__(self) -> None:
         """初始化 MCP 客户端、工具运行时、技能 handler 和执行器。"""
-        registry.validate_skill_registry(handler_names=set(SKILL_HANDLERS.keys()))
+        registry.validate_skill_registry()
         self._mcp = MCPClient()
         self._tool_runtime = ToolRuntime(self._mcp)
 
         self._handlers: Dict[str, Any] = {}
-        for skill_name, handler_cls in SKILL_HANDLERS.items():
-            self._handlers[skill_name] = handler_cls()
 
         self._executor = SkillExecutor(
             tool_runtime=self._tool_runtime,

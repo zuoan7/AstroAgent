@@ -70,3 +70,37 @@ def test_simple_skill_result_declares_logical_skill_and_mcp_contract(monkeypatch
     assert result.expected_mcp_tools == ["web_search"]
     assert result.allowed_child_tools == ["web_search"]
     assert result.sources[0]["tool"] == "web_search"
+
+
+def test_weather_lookup_uses_explicit_skill_handler(monkeypatch):
+    router = AstronomySkillRouter()
+    calls = []
+
+    def fake_call_mcp_tool(tool_name: str, **kwargs):
+        calls.append((tool_name, kwargs))
+        return serialize_envelope(
+            success_envelope(
+                tool_name,
+                {
+                    "live": {
+                        "city": kwargs.get("city"),
+                        "weather": "晴",
+                        "temperature": "20",
+                        "humidity": "40",
+                        "windpower": "2",
+                    }
+                },
+            )
+        )
+
+    monkeypatch.setattr(router, "call_mcp_tool", fake_call_mcp_tool)
+
+    result = router.call("weather-lookup", location="北京")
+
+    assert result.success is True
+    assert calls == [("get_weather", {"city": "北京", "extensions": "all"})]
+    assert result.skill_name == "weather-lookup"
+    assert result.logical_skill == "weather-lookup"
+    assert result.expected_mcp_tools == ["get_weather"]
+    assert result.allowed_child_tools == ["get_weather"]
+    assert result.sources[0]["tool"] == "get_weather"

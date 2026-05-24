@@ -1,5 +1,4 @@
-"""能力注册表，合并高层技能和底层原子 MCP 工具的可执行能力视图。
-"""
+"""能力注册表，合并高层技能和底层原子 MCP 工具的可执行能力视图。"""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from typing import Dict, Iterable, List, Literal, Optional
 
 from src.skills import registry as skill_registry
 from src.tools.catalog import ToolCatalog, get_default_tool_catalog
-
 
 CapabilitySpecKind = Literal["skill", "tool"]
 
@@ -27,32 +25,6 @@ class CapabilitySpec:
     operations: List[str] = field(default_factory=list)
     route_type: str = ""
     metadata: Dict[str, object] = field(default_factory=dict)
-
-
-_HANDLER_ALLOWED_TOOLS: Dict[str, List[str]] = {
-    "observation-planner": [
-        "get_weather",
-        "get_weekly_events",
-        "get_tonight_best",
-    ],
-    "deep-sky-observing-guide": [
-        "get_astrophysical_object_info",
-        "get_galaxy_data",
-    ],
-    "neo-tracker": ["get_neo_data"],
-    "astrophotography-calculator": [],
-}
-
-
-_REQUIRED_PARAMS: Dict[str, List[str]] = {
-    "weather-lookup": [],
-    "observation-planner": ["location"],
-    "celestial-events-forecast": [],
-    "deep-sky-observing-guide": ["target"],
-    "neo-tracker": [],
-    "astrophotography-calculator": ["target", "camera"],
-    "celestial-position-calculator": ["target"],
-}
 
 
 class CapabilityRegistry:
@@ -103,7 +75,9 @@ class CapabilityRegistry:
         except KeyError as exc:
             raise KeyError(f"Unknown tool capability: {name}") from exc
 
-    def get(self, name: str, *, kind: Optional[CapabilitySpecKind] = None) -> CapabilitySpec:
+    def get(
+        self, name: str, *, kind: Optional[CapabilitySpecKind] = None
+    ) -> CapabilitySpec:
         """按名称和可选类型读取能力描述。"""
         if kind == "skill":
             return self.get_skill(name)
@@ -114,43 +88,28 @@ class CapabilityRegistry:
         return self.get_tool(name)
 
     def _build_skill_specs(self) -> Dict[str, CapabilitySpec]:
-        """从技能注册表和 operation 策略构建高层技能能力描述。"""
+        """从 SkillDefinition 构建高层技能能力描述。"""
         specs: Dict[str, CapabilitySpec] = {}
-        operation_specs = skill_registry.get_operation_specs()
-        operations_by_skill: Dict[str, List[str]] = {}
-        tools_by_skill: Dict[str, List[str]] = {}
-
-        for op in operation_specs:
-            operations_by_skill.setdefault(op.logical_skill, []).append(op.operation)
-            tools_by_skill.setdefault(op.logical_skill, [])
-            if op.atomic_tool_name not in tools_by_skill[op.logical_skill]:
-                tools_by_skill[op.logical_skill].append(op.atomic_tool_name)
-
-        for skill in skill_registry.get_skill_specs():
-            if skill.route_type == "simple" and skill.mcp_tool_name:
-                allowed_tools = [skill.mcp_tool_name]
-            else:
-                allowed_tools = [
-                    *tools_by_skill.get(skill.skill_name, []),
-                    *_HANDLER_ALLOWED_TOOLS.get(skill.skill_name, []),
-                ]
-                allowed_tools = list(dict.fromkeys(allowed_tools))
-
-            specs[skill.skill_name] = CapabilitySpec(
-                name=skill.skill_name,
+        legacy_specs = {
+            spec.skill_name: spec for spec in skill_registry.get_skill_specs()
+        }
+        for skill in skill_registry.get_skill_definitions():
+            legacy = legacy_specs[skill.name]
+            specs[skill.name] = CapabilitySpec(
+                name=skill.name,
                 kind="skill",
                 summary=skill.summary,
                 description=skill.description,
-                required_params=list(_REQUIRED_PARAMS.get(skill.skill_name, [])),
-                allowed_tools=allowed_tools,
+                required_params=list(skill.required_params),
+                allowed_tools=list(skill.allowed_tools),
                 forbidden_tools=[],
-                operations=list(operations_by_skill.get(skill.skill_name, [])),
-                route_type=skill.route_type,
+                operations=[operation.operation for operation in skill.operations],
+                route_type=legacy.route_type,
                 metadata={
-                    "langchain_tool_name": skill.langchain_tool_name,
-                    "mcp_tool_name": skill.mcp_tool_name,
+                    "langchain_tool_name": skill.display_name,
+                    "mcp_tool_name": legacy.mcp_tool_name,
                     "param_names": list(skill.param_names),
-                    "defaults": dict(skill.defaults),
+                    "defaults": dict(legacy.defaults),
                 },
             )
 

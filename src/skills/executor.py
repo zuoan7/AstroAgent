@@ -1,5 +1,4 @@
-"""高层技能执行器，统一处理 simple skill、复杂 handler 和原子工具 fallback。
-"""
+"""高层技能执行器，统一处理 simple skill、复杂 handler 和原子工具 fallback。"""
 
 from __future__ import annotations
 
@@ -7,10 +6,17 @@ import json
 import time
 from typing import Any, Callable, Dict, Optional
 
+from pydantic import ValidationError
+
 from src.agent.models.skill_result import SkillResult
-from src.capabilities.registry import CapabilityRegistry, get_default_capability_registry
+from src.capabilities.registry import (
+    CapabilityRegistry,
+    get_default_capability_registry,
+)
 from src.core.mcp_protocol import is_tool_error, parse_tool_response
 from src.skills import registry
+from src.skills.context import SkillContext
+from src.skills.definition import SkillDefinition
 from src.skills.policies.operation_policy import (
     OperationPolicyResolver,
     OperationToolPolicy,
@@ -39,12 +45,14 @@ class SkillExecutor:
         tool_runtime: ToolRuntime,
         handlers: Dict[str, Any],
         capability_registry: Optional[CapabilityRegistry] = None,
+        skill_registry: Optional[registry.SkillRegistry] = None,
         simple_tool_caller: Optional[Callable[..., str]] = None,
     ) -> None:
         """初始化工具运行时、handler、能力注册表和 simple skill 映射。"""
         self._tool_runtime = tool_runtime
         self._handlers = dict(handlers)
         self._capabilities = capability_registry or get_default_capability_registry()
+        self._skill_registry = skill_registry or registry.get_default_skill_registry()
         self._operation_policy = OperationPolicyResolver()
         self._simple_tool_caller = simple_tool_caller
         self._simple_skills: Dict[str, Dict[str, Any]] = {}
@@ -53,31 +61,59 @@ class SkillExecutor:
     def call(self, name: str, **params: Any) -> SkillResult:
         """调用指定高层技能、原子工具或对应 handler。"""
         try:
-            spec = registry.get_skill_spec(name)
+            definition = self._skill_registry.get(name)
         except KeyError:
             if self._capabilities.has_tool(name):
                 return self._call_atomic_tool(name, **dict(params or {}))
             raise
+
+        if definition.name in self._handlers:
+            return self._call_legacy_handler(definition.name, params)
+
+        return self._call_skill_definition(definition, params)
+
+    def _call_legacy_handler(
+        self,
+        skill_name: str,
+        params: Dict[str, Any],
+    ) -> SkillResult:
+        """Call an explicitly injected legacy handler."""
+        spec = registry.get_skill_spec(skill_name)
         normalized = self._normalize_skill_params(spec.skill_name, params)
 
-        if spec.skill_name in self._handlers:
-            operation_policy = self._operation_policy.resolve(
-                spec.skill_name,
-                normalized,
-            )
-            runtime = self._runtime_for_skill(
-                spec.skill_name,
-                operation_policy=operation_policy,
-            )
-            result = self._handlers[spec.skill_name](runtime, **normalized)
-            self._attach_default_metadata(result, spec.skill_name)
-            self._attach_operation_policy_metadata(result, operation_policy)
-            return result
+        operation_policy = self._operation_policy.resolve(
+            spec.skill_name,
+            normalized,
+        )
+        runtime = self._runtime_for_skill(
+            spec.skill_name,
+            operation_policy=operation_policy,
+        )
+        result = self._handlers[spec.skill_name](runtime, **normalized)
+        self._attach_default_metadata(result, spec.skill_name)
+        self._attach_operation_policy_metadata(result, operation_policy)
+        return result
 
-        if spec.skill_name in self._simple_skills:
-            return self._call_simple_skill(spec.skill_name, **normalized)
+    def _call_skill_definition(
+        self,
+        definition: SkillDefinition,
+        params: Dict[str, Any],
+    ) -> SkillResult:
+        """Validate input and execute the registered SkillDefinition handler."""
+        try:
+            payload = definition.input_model.model_validate(params or {})
+        except ValidationError as exc:
+            return SkillResult.from_error(
+                skill_name=definition.name,
+                error_code="VALIDATION_ERROR",
+                error_message=str(exc),
+            )
 
-        raise ValueError(f"未知技能：{name}")
+        tool_kit = self._runtime_for_definition(definition)
+        ctx = SkillContext(tool_kit=tool_kit, skill_name=definition.name)
+        result = definition.handler(ctx, payload)
+        self._attach_default_metadata(result, definition.name)
+        return result
 
     def register_simple_skill(
         self,
@@ -230,6 +266,21 @@ class SkillExecutor:
             logical_skill=skill_name,
             allowed_tools=list(spec.allowed_tools),
             forbidden_tools=list(spec.forbidden_tools),
+            enforce_allowed_tools=True,
+        )
+
+    def _runtime_for_definition(self, definition: SkillDefinition) -> ToolRuntime:
+        """Build a policy-constrained ToolRuntime for a SkillDefinition."""
+        runtime = self._tool_runtime
+        if definition.name == "weather-lookup" and self._simple_tool_caller is not None:
+            runtime = ToolRuntime(
+                _CallableToolBackend(self._simple_tool_caller),
+                guard=self._tool_runtime.guard,
+            )
+        return runtime.with_policy(
+            logical_skill=definition.name,
+            allowed_tools=list(definition.allowed_tools),
+            forbidden_tools=[],
             enforce_allowed_tools=True,
         )
 

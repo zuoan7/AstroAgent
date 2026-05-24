@@ -90,11 +90,7 @@ class ReactToolTraceAdapter:
         spec = self._skill_spec_for_tool_name(name)
         if spec is not None:
             expected = self._expected_mcp_tools_for_skill(spec.skill_name)
-            actual = (
-                (spec.mcp_tool_name,)
-                if spec.route_type == "simple" and spec.mcp_tool_name
-                else ()
-            )
+            actual = (spec.mcp_tool_name,) if spec.mcp_tool_name else ()
             if (
                 spec.mcp_tool_name
                 and spec.skill_name == spec.mcp_tool_name
