@@ -126,6 +126,34 @@ def test_upper_layers_and_tests_do_not_reference_raw_tool_envelope_storage():
         _assert_token_absent_under(root, forbidden_token)
 
 
+def test_phase_l_handlers_only_expose_entrypoint_functions():
+    handler_root = REPO_ROOT / "src" / "skills" / "handlers"
+    expected_functions = {
+        "celestial_events_forecast.py": {"celestial_events_forecast_handler"},
+        "celestial_position_calculator.py": {"celestial_position_calculator_handler"},
+        "neo_tracker.py": {"neo_tracker_handler"},
+        "observation_planner.py": {"observation_planner_handler"},
+    }
+    violations: list[str] = []
+
+    for filename, allowed_names in expected_functions.items():
+        path = handler_root / filename
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        defined_names = {
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        extra_names = defined_names - allowed_names
+        if extra_names:
+            violations.append(
+                f"{path.relative_to(REPO_ROOT)} defines extra functions: "
+                + ", ".join(sorted(extra_names))
+            )
+
+    assert violations == []
+
+
 def test_toolkit_does_not_expose_legacy_runtime_api():
     kit_path = REPO_ROOT / "src" / "tools" / "kit.py"
     tree = ast.parse(kit_path.read_text(encoding="utf-8"))
