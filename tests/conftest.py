@@ -424,7 +424,7 @@ def perf_timer():
 
 
 @pytest.fixture
-def skill_manager():
+def capability_kit():
     from unittest.mock import MagicMock, patch
 
     with patch("src.core.config.settings") as mock_settings:
@@ -525,24 +525,25 @@ def skill_manager():
         mock_settings.RAG_CACHE_TTL = 300
         mock_settings.RAG_CACHE_MAX_SIZE = 256
 
-        with patch("src.agent.skill_manager.AstronomySkillRouter") as MockRouter:
-            from src.agent.models.skill_result import SkillResult
+        from src.skills.result import SkillResult
+        from src.tools.results import ToolResult
 
-            mock_router = MagicMock()
+        mock_kit = MagicMock()
 
-            def fake_call(name, **params):
-                return SkillResult(
-                    skill_name=name,
-                    success=True,
-                    data={"params": params},
-                    summary=f"{name} result",
-                )
+        def fake_call(name, **params):
+            return SkillResult(
+                skill_name=name,
+                success=True,
+                data={"params": params},
+                summary=f"{name} result",
+            )
 
-            mock_router.call.side_effect = fake_call
-            mock_router.call_mcp_tool.return_value = '{"status": "ok"}'
-            MockRouter.return_value = mock_router
-
-            from src.agent.skill_manager import SkillManager
-
-            sm = SkillManager()
-            yield sm
+        mock_kit.list_skills.return_value = []
+        mock_kit.call_skill.side_effect = fake_call
+        mock_kit.call_tool.return_value = ToolResult(
+            ok=True,
+            tool_name="mock_tool",
+            data={"status": "ok"},
+        )
+        mock_kit.to_langchain_tools.return_value = []
+        yield mock_kit

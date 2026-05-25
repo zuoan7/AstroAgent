@@ -1,15 +1,15 @@
-"""Planned 执行器，串联计划生成、WorkflowGraph DAG 执行、fallback 决策和答案合成。
-"""
+"""Planned 执行器，串联计划生成、WorkflowGraph DAG 执行、fallback 决策和答案合成。"""
+
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from src.agent.executor import EventCallback
 from src.agent.execution.workflow_executor import WorkflowExecutor
+from src.agent.executor import EventCallback
 from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.execution_plan import ExecutionPlan
-from src.agent.models.final_response import FinalResponse
 from src.agent.models.execution_trace_entry import ExecutionTraceEntry
+from src.agent.models.final_response import FinalResponse
 from src.agent.models.workflow_graph import WorkflowGraph
 from src.agent.planner import Planner
 from src.agent.policies.budget_policy import RequestBudgetTracker
@@ -24,21 +24,23 @@ class PlannedExecutor:
 
     def __init__(
         self,
-        skill_manager: Any,
-        llm: Any,
-        synthesizer: Any,
+        capability_kit: Any = None,
+        llm: Any = None,
+        synthesizer: Any = None,
         planner: Optional[Planner] = None,
         fallback_policy: Optional[FallbackPolicy] = None,
         workflow_executor: Optional[WorkflowExecutor] = None,
     ) -> None:
         """初始化 PlannedExecutor 的依赖、配置和内部状态。"""
-        self._skill_manager = skill_manager
+        self._capability_kit = capability_kit
         self._llm = llm
         self._synthesizer = synthesizer
         self._planner = planner or Planner(llm=llm)
         self._fallback_policy = fallback_policy or FallbackPolicy()
-        self._workflow_executor = workflow_executor or WorkflowExecutor(skill_manager=skill_manager)
-        self._param_builder = SkillParamBuilder(skill_manager)
+        self._workflow_executor = workflow_executor or WorkflowExecutor(
+            capability_kit=capability_kit
+        )
+        self._param_builder = SkillParamBuilder(capability_kit)
 
     async def run_context(
         self,
@@ -129,7 +131,9 @@ class PlannedExecutor:
         response.execution_plan = plan.to_dict()
         response.execution_trace = [step.to_dict() for step in outcome.step_results]
         response.route_decision = route_meta
-        response.fallback_path = [fallback_decision.to_dict()] if fallback_decision else []
+        response.fallback_path = (
+            [fallback_decision.to_dict()] if fallback_decision else []
+        )
         response.budget_usage = budget_tracker.snapshot() if budget_tracker else None
         response.versions = response.versions or versions_payload
         response.audit_metadata = self._build_observability_metadata(
@@ -338,7 +342,11 @@ class PlannedExecutor:
         context: Optional[Any] = None,
     ) -> dict[str, Any]:
         """构造 planned 响应的审计和可观测性元信息。"""
-        route_meta = profile.to_legacy_route_meta() if profile is not None else decision.to_meta()
+        route_meta = (
+            profile.to_legacy_route_meta()
+            if profile is not None
+            else decision.to_meta()
+        )
         capability = getattr(context, "capability_decision", None)
         capability_payload = (
             capability.to_dict()
@@ -363,7 +371,8 @@ class PlannedExecutor:
                 operations.append(
                     {
                         "step_id": trace.get("step_id"),
-                        "logical_skill": trace.get("logical_skill") or trace.get("skill"),
+                        "logical_skill": trace.get("logical_skill")
+                        or trace.get("skill"),
                         "operation": trace.get("operation"),
                         "expected_mcp_tools": list(
                             trace.get("expected_mcp_tools") or []
@@ -385,9 +394,7 @@ class PlannedExecutor:
             "llm_confidence": route_meta.get("llm_confidence"),
             "tool_necessity_action": route_meta.get("tool_necessity_action"),
             "tool_necessity_reason": route_meta.get("tool_necessity_reason"),
-            "tool_necessity_confidence": route_meta.get(
-                "tool_necessity_confidence"
-            ),
+            "tool_necessity_confidence": route_meta.get("tool_necessity_confidence"),
             "tool_necessity_missing_params": route_meta.get(
                 "tool_necessity_missing_params", []
             ),

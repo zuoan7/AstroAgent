@@ -40,17 +40,18 @@ AstroAgent 的目标不是单纯的聊天，而是把自然语言理解、天文
 
 ### 1. Agent 智能编排
 
-- `AstroAgent` 是总入口，负责初始化 LLM、RAG、技能管理、记忆、统一执行引擎和流式输出
+- `AstroAgent` 是总入口，负责初始化 LLM、RAG、CapabilityKit、记忆、统一执行引擎和流式输出
 - `ExecutionEngine` 按 `ExecutionDecision.mode` 分发到 `direct`、`planned` 或 `react` 执行路径
 - `planned` 路径采用 `WorkflowGraph + WorkflowExecutor` 执行 DAG，支持步骤依赖、并行、重试、失败策略和证据聚合
 - `react` 保留为开放式任务路径，以及 structured planned 路径失败后的真实兜底执行
-- 工具由 `SkillManager` 统一注册，避免 Agent 直接依赖底层实现细节
+- Skill / Tool 由 `CapabilityKit` 统一暴露，避免 Agent 直接依赖底层实现细节
 
-### 2. 技能路由与 MCP 工具调用
+### 2. Skill / Tool 与 MCP 工具调用
 
-- `SkillManager` 提供 8 个高层技能工具，其中包含 1 个 RAG 工具和 7 个领域技能
-- `AstronomySkillRouter` 负责将技能请求路由到技能处理器或底层 MCP 工具
-- `MCPClient` 通过 Streamable HTTP 与 `FastMCP` 服务器通信，支持会话初始化、并发工具调用和重连
+- `CapabilityKit.call_skill()` 调用高层技能，`CapabilityKit.call_tool()` 调用原子 MCP 工具，两者不互相 fallback
+- `SkillKit` 执行 `SkillDefinition` handler，handler 通过 `SkillContext.tool_kit` 组合调用底层工具
+- `ToolKit` 负责原子工具输入/输出校验、策略防护和 `ToolResult` 封装
+- `MCPClient` 位于 `src/transport/mcp/client.py`，通过 Streamable HTTP 与 `FastMCP` 服务器通信
 
 ### 3. RAG 检索
 
@@ -129,21 +130,24 @@ Execution Layer
 ├── WorkflowExecutor
 └── ReactExecutor
 
-Skill Orchestration Layer
-├── SkillManager
-├── AstronomySkillRouter
-├── Skill Handlers
-└── MCPClient
+Capability / Skill Layer
+├── CapabilityKit
+├── LangChain Adapter
+├── SkillKit / SkillDefinition
+└── Skill Handlers
 
-Domain / Data Layer
+Tool / Transport Layer
+├── ToolKit / ToolDefinition
+├── ToolGuard / ToolResult
+├── transport.mcp.MCPClient
+└── FastMCP Server
+
+Domain / Data / Infrastructure Layer
 ├── Astronomy 模块
 ├── RAG 检索模块
 ├── Memory 模块
-└── Config / Prompt / Skill Definitions
-
-Infrastructure Layer
+├── Config / Prompt
 ├── FastAPI 服务（8002）
-├── FastMCP 服务（8001）
 └── Vue3 Frontend（5173）
 ```
 
@@ -169,7 +173,9 @@ AstroAgent/
 │   ├── memory/                 # 分层记忆模块（core / infrastructure / short_term_memory / long_term_memory）
 │   ├── rag/                    # 检索、融合、重排序、缓存
 │   ├── services/               # MCP Server
-│   ├── skills/                 # 技能路由、MCP 客户端、处理器
+│   ├── skills/                 # SkillDefinition、SkillKit、handler 和技能策略
+│   ├── tools/                  # ToolDefinition、ToolKit、ToolGuard 和 ToolResult
+│   ├── transport/              # MCP client、envelope 和 SSE 传输解析
 │   └── utils/                  # 通用工具
 ├── tests/
 │   ├── unit/
@@ -187,15 +193,19 @@ AstroAgent/
 | 模块 | 说明 |
 | --- | --- |
 | `src/agent/__init__.py` | `AstroAgent` 主入口，初始化 LLM、RAG、记忆和技能工具 |
-| `src/agent/skill_manager.py` | 高层技能注册与统一入口 |
+| `src/agent/capability_kit.py` | Skill / Tool 对外统一门面 |
+| `src/agent/adapters/langchain_adapter.py` | 将 SkillDefinition / ToolDefinition 暴露为 LangChain Tool |
 | `src/agent/streaming_events.py` | 流式事件模型、校验器与文本/JSON/SSE 适配器 |
 | `src/agent/streaming_service.py` | 统一事件总线驱动的流式输出与记忆写入 |
 | `src/agent/execution/engine.py` | 统一执行入口，按 direct/planned/react 分发并协调 planned recovery |
 | `src/agent/execution/workflow_executor.py` | planned DAG 执行器，处理依赖、并行、重试、失败策略和证据聚合 |
 | `src/agent/policies/fallback_policy.py` | planned 执行后的 partial answer、plan repair 与 react fallback 策略 |
-| `src/skills/router.py` | 技能路由，连接技能处理器与 MCP 工具 |
-| `src/skills/skill_handlers.py` | 观测计划、天象预报、深空观测等复杂技能实现 |
-| `src/skills/mcp_client.py` | Streamable HTTP MCP 客户端，负责会话与工具调用 |
+| `src/skills/registry.py` | 高层技能定义注册表 |
+| `src/skills/kit.py` | Skill 执行入口，构造 SkillContext 并调用 handler |
+| `src/skills/handlers/` | 观测计划、天象预报、深空观测等技能实现 |
+| `src/tools/registry.py` | 原子 MCP 工具定义与输入/输出 schema |
+| `src/tools/runtime.py` | ToolKit / ToolRuntime，负责工具校验、防护和调用 |
+| `src/transport/mcp/client.py` | Streamable HTTP MCP 客户端，负责会话与工具调用 |
 | `src/services/mcp_server.py` | FastMCP 服务入口，注册天文工具并暴露 MCP 服务 |
 | `src/api/main.py` | FastAPI 服务入口，暴露问答与记忆管理接口 |
 | `src/rag/online_retriever.py` | 三级混合检索主流程 |
@@ -212,7 +222,7 @@ AstroAgent/
 3. `StreamingService` 组织上下文、用户画像、任务画像和流式事件
 4. `AgentExecutionPolicy` 生成 `ExecutionDecision`，由 `ExecutionEngine` 分发到 `direct`、`planned` 或 `react`
 5. `planned` 路径由 `Planner.plan_graph()` 生成 `WorkflowGraph`，再由 `WorkflowExecutor` 按 DAG 执行技能步骤
-6. 高层技能通过 `SkillManager -> AstronomySkillRouter -> MCPClient` 调用 MCP 工具，或直接访问 RAG
+6. 高层技能通过 `CapabilityKit -> SkillKit -> ToolKit -> MCPClient` 调用 MCP 工具，或直接访问 RAG
 7. 底层天文服务返回结果后，统一内部事件总线生成标准事件，再按文本流 / JSON / SSE 适配输出给客户端
 
 ### Planned DAG 与恢复策略
@@ -277,35 +287,34 @@ planned 执行后的恢复由 `FallbackPolicy` 和 `ExecutionEngine` 共同完�
 实现约束：
 
 - 服务端入口统一由 `src/core/errors.py::safe_tool_call` 包装输出。
-- 协议模型、输入校验和解析辅助函数统一放在 `src/core/mcp_protocol.py`。
+- envelope 模型和解析辅助函数统一放在 `src/transport/mcp/envelope.py`。
+- 工具 schema、输入校验和 `wrap_tool_result()` 放在 `src/tools/protocol.py` 与 `src/tools/registry.py`。
 - `src/services/mcp_server.py` 中每个工具都使用对应的 Pydantic 输入模型校验参数。
-- `src/skills/mcp_client.py`、Router、Streaming、Fallback 等上层模块按 envelope 解析，不再猜测底层返回形态。
+- `ToolKit`、Streaming、Fallback 等上层模块按 envelope 解析，不再猜测底层返回形态。
 
 ### 工具层命名边界
 
-当前系统同时存在三层“工具”概念，运行时真源是 `src/skills/registry.py`：
+当前系统明确区分三类能力，运行时真源分别是 `src/skills/registry.py` 和 `src/tools/registry.py`：
 
 | 层级 | 字段 | 含义 | 示例 |
 | --- | --- | --- | --- |
-| Logical Skill | `skill_name` / `logical_skill` | Router 和 Planner 选择的领域能力入口 | `observation-planner` |
-| LangChain Tool Adapter | `langchain_tool_name` | ReAct / 旧链路兼容适配器名 | `ObservationPlanner` |
-| Atomic MCP Tool | `mcp_tool_name` / `mcp_tools_used` | MCP Server 上真实执行的原子工具 | `get_weather` |
+| Skill | `SkillDefinition.name` / `logical_skill` | Router 和 Planner 选择的领域能力入口 | `observation-planner` |
+| LangChain Adapter | `SkillDefinition.display_name` 或 tool name | ReAct 暴露给模型的工具名 | `ObservationPlanner` |
+| Atomic MCP Tool | `ToolDefinition.name` / `mcp_tools_used` | MCP Server 上真实执行的原子工具 | `get_weather` |
 
 当前系统向 Agent 暴露的 logical skills 如下：
 
-| Logical skill | LangChain Tool Adapter | 路由类型 | 底层 MCP / Handler |
-| --- | --- | --- | --- |
-| `weather-lookup` | `WeatherLookup` | `simple` | `get_weather` |
-| `get_nasa_apod` | `get_nasa_apod` | `simple` | `get_nasa_apod` |
-| `web_search` | `web_search` | `simple` | `web_search` |
-| `observation-planner` | `ObservationPlanner` | `handler` | 组合调用 `get_weather`、`get_weekly_events`、`get_tonight_best` |
-| `celestial-events-forecast` | `CelestialEventsForecast` | `handler` | 按 operation 调用 `get_weekly_events` 或 `get_monthly_events` |
-| `deep-sky-observing-guide` | `DeepSkyObservingGuide` | `handler` | `get_astrophysical_object_info`，星系目标额外调用 `get_galaxy_data` |
-| `neo-tracker` | `NEOTracker` | `handler` | `get_neo_data` |
-| `astrophotography-calculator` | `AstrophotographyCalculator` | `handler` | 当前为内部计算/建议，不直接调用 MCP |
-| `celestial-position-calculator` | `CelestialPositionCalculator` | `handler` | 按 operation 调用 `get_altaz`、`get_rise_set_times`、`get_planet_position`、`get_current_sky_objects` 或 `coordinate_transformation` |
+| Skill | LangChain Adapter | 底层 MCP / Handler |
+| --- | --- | --- |
+| `weather-lookup` | `WeatherLookup` | `get_weather` |
+| `observation-planner` | `ObservationPlanner` | 组合调用 `get_weather`、`get_weekly_events`、`get_tonight_best` |
+| `celestial-events-forecast` | `CelestialEventsForecast` | 按 operation 调用 `get_weekly_events` 或 `get_monthly_events` |
+| `deep-sky-observing-guide` | `DeepSkyObservingGuide` | `get_astrophysical_object_info`，星系目标额外调用 `get_galaxy_data` |
+| `neo-tracker` | `NEOTracker` | `get_neo_data` |
+| `astrophotography-calculator` | `AstrophotographyCalculator` | 当前为内部计算/建议，不直接调用 MCP |
+| `celestial-position-calculator` | `CelestialPositionCalculator` | 按 operation 调用 `get_altaz`、`get_rise_set_times`、`get_planet_position`、`get_current_sky_objects` 或 `coordinate_transformation` |
 
-`RAGRetrieve` 是 LangChain 兼容工具，用于本地知识库检索；它不属于 astronomy logical skill registry。
+`get_nasa_apod`、`get_weather`、`web_search` 等带 `react-exposed` tag 的原子工具可直接暴露给 ReAct；`RAGRetrieve` 是本地知识库检索适配器，不属于 astronomy skill registry。
 
 ## 环境配置与依赖管理
 

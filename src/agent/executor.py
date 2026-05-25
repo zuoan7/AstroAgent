@@ -1,5 +1,4 @@
-"""执行层公共模型与证据聚合工具，供 planned DAG 和 direct 路径共享步骤结果、事件回调和证据结构。
-"""
+"""执行层公共模型与证据聚合工具，供 planned DAG 和 direct 路径共享步骤结果、事件回调和证据结构。"""
 
 from __future__ import annotations
 
@@ -7,10 +6,10 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from src.agent.models.execution_plan import ExecutionPlan
-from src.agent.models.skill_result import SkillResult
-from src.core.mcp_protocol import TOOL_INPUT_MODELS
+from src.skills.result import SkillResult
+from src.tools.registry import get_default_tool_registry
 
-KNOWN_MCP_TOOL_NAMES = frozenset(TOOL_INPUT_MODELS)
+KNOWN_MCP_TOOL_NAMES = frozenset(get_default_tool_registry().list_names())
 
 
 EventCallback = Callable[[str, Dict[str, Any]], Awaitable[None] | None]
@@ -36,6 +35,7 @@ def _extract_mcp_tools_from_sources(sources: List[Dict[str, Any]]) -> List[str]:
 @dataclass
 class StepExecutionResult:
     """单个执行步骤的结构化结果，供 trace、审计和证据聚合复用。"""
+
     step_id: str
     title: str
     kind: str
@@ -98,6 +98,7 @@ class StepExecutionResult:
 @dataclass
 class ExecutionOutcome:
     """一次 planned DAG 执行的整体结果。"""
+
     plan: ExecutionPlan
     skill_results: List[SkillResult] = field(default_factory=list)
     step_results: List[StepExecutionResult] = field(default_factory=list)

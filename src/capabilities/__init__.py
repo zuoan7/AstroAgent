@@ -1,20 +1,16 @@
-"""能力层公共导出，提供能力注册表、参数构建、计划适配和能力选择器。
-"""
+"""能力层公共导出，提供参数构建、计划适配和能力选择器。"""
 
-from src.capabilities.registry import (
-    CapabilityRegistry,
-    CapabilitySpec,
-    get_default_capability_registry,
-)
+from src.capabilities.decision import CapabilityDecision, CapabilityKind
 from src.capabilities.param_builder import CapabilityParamBuilder
+from src.capabilities.plan import PlanStep
 
 __all__ = [
-    "CapabilityRegistry",
+    "CapabilityDecision",
+    "CapabilityKind",
     "CapabilityParamBuilder",
     "CapabilityPlanAdapter",
     "CapabilitySelector",
-    "CapabilitySpec",
-    "get_default_capability_registry",
+    "PlanStep",
 ]
 
 

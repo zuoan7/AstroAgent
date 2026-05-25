@@ -2,36 +2,48 @@ from __future__ import annotations
 
 import json
 
-from src.agent.models.skill_result import SkillResult
-from src.core.mcp_protocol import (
-    is_tool_error,
-    parse_tool_response,
-)
-from src.skills.executor import SkillExecutor
+from src.agent.capability_kit import CapabilityKit
 from src.skills.policies.operation_policy import OperationPolicyResolver
-from src.tools.runtime import ToolRuntime
+from src.skills.policies.skill_policy import SkillPolicy
+from src.skills.registry import get_default_skill_registry
+from src.tools.kit import ToolKit
 
 
 class _FakeBackend:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
-    def call_tool(self, tool_name: str, **kwargs):
+    def invoke(self, tool_name: str, **kwargs):
         self.calls.append((tool_name, kwargs))
+        if tool_name == "get_altaz":
+            data = {
+                "planet": kwargs.get("planet_name", "mars"),
+                "altitude": 42.0,
+                "azimuth": 120.0,
+                "distance_au": 1.5,
+            }
+        elif tool_name in {
+            "get_tonight_best",
+            "get_weekly_events",
+            "get_monthly_events",
+        }:
+            data = f"{tool_name} ok"
+        else:
+            data = {"ok": True}
         return json.dumps(
             {
                 "ok": True,
-                "data": {"ok": True},
+                "data": data,
                 "meta": {"tool_name": tool_name, "schema_version": "1.0"},
             },
             ensure_ascii=False,
         )
 
-    def call_tools_parallel(self, calls: list[dict]):
+    def invoke_parallel(self, calls: list[dict]):
         results = []
         for call in calls:
             results.append(
-                self.call_tool(
+                self.invoke(
                     call["tool_name"],
                     **call.get("kwargs", {}),
                 )
@@ -76,9 +88,29 @@ def test_operation_policy_resolves_events_weekly_and_monthly():
     assert monthly.allowed_tools == ["get_monthly_events"]
 
 
-def test_tool_runtime_rejects_forbidden_operation_child_tool():
+def test_skill_policy_keeps_skill_required_params_out_of_tool_guard_by_default():
+    definition = get_default_skill_registry().get("observation-planner")
+
+    policy = SkillPolicy.from_definition(definition)
+    kwargs = policy.to_tool_policy_kwargs()
+
+    assert policy.skill_name == "observation-planner"
+    assert policy.required_params == ("location",)
+    assert kwargs["logical_skill"] == "observation-planner"
+    assert kwargs["allowed_tools"] == [
+        "get_weather",
+        "get_weekly_events",
+        "get_tonight_best",
+    ]
+    assert "required_params" not in kwargs
+    assert policy.to_tool_policy_kwargs(include_required_params=True)[
+        "required_params"
+    ] == ["location"]
+
+
+def test_toolkit_rejects_forbidden_operation_child_tool():
     backend = _FakeBackend()
-    runtime = ToolRuntime(backend).with_context(
+    runtime = ToolKit(backend).with_policy(
         logical_skill="celestial-position-calculator",
         operation="altaz",
         allowed_tools=["get_altaz"],
@@ -86,36 +118,34 @@ def test_tool_runtime_rejects_forbidden_operation_child_tool():
         enforce_allowed_tools=True,
     )
 
-    raw = runtime.call_tool(
+    result = runtime.invoke(
         "get_planet_position",
         planet_name="mars",
         observation_time="2026-05-22T00:00:00",
     )
 
-    assert is_tool_error(raw)
-    envelope = parse_tool_response(raw)
-    assert envelope is not None
-    assert envelope.error.code == "TOOL_GUARD_REJECTED"
-    assert envelope.error.details["operation"] == "altaz"
+    assert result.ok is False
+    assert result.error is not None
+    assert result.error.code == "TOOL_GUARD_REJECTED"
+    assert result.error.details["operation"] == "altaz"
     assert backend.calls == []
 
 
-def test_tool_runtime_validates_mcp_input_schema():
+def test_toolkit_validates_mcp_input_schema():
     backend = _FakeBackend()
-    runtime = ToolRuntime(backend)
+    runtime = ToolKit(backend)
 
-    raw = runtime.call_tool("get_altaz", planet_name="mars")
+    result = runtime.invoke("get_altaz", planet_name="mars")
 
-    assert is_tool_error(raw)
-    envelope = parse_tool_response(raw)
-    assert envelope is not None
-    assert envelope.error.code == "TOOL_INPUT_VALIDATION_ERROR"
+    assert result.ok is False
+    assert result.error is not None
+    assert result.error.code == "TOOL_INPUT_VALIDATION_ERROR"
     assert backend.calls == []
 
 
-def test_parallel_runtime_returns_error_envelope_for_rejected_call():
+def test_parallel_toolkit_returns_tool_result_for_rejected_call():
     backend = _FakeBackend()
-    runtime = ToolRuntime(backend).with_context(
+    runtime = ToolKit(backend).with_policy(
         logical_skill="celestial-events-forecast",
         operation="weekly",
         allowed_tools=["get_weekly_events"],
@@ -123,7 +153,7 @@ def test_parallel_runtime_returns_error_envelope_for_rejected_call():
         enforce_allowed_tools=True,
     )
 
-    results = runtime.call_tools_parallel(
+    results = runtime.invoke_parallel(
         [
             {
                 "tool_name": "get_weekly_events",
@@ -137,37 +167,18 @@ def test_parallel_runtime_returns_error_envelope_for_rejected_call():
     )
 
     assert len(results) == 2
-    assert not is_tool_error(results[0])
-    assert is_tool_error(results[1])
+    assert results[0].ok is True
+    assert results[1].ok is False
+    assert results[1].error is not None
+    assert results[1].error.code == "TOOL_GUARD_REJECTED"
     assert backend.calls == [("get_weekly_events", {"start_date": "2026-05-22"})]
 
 
-class _BadPositionHandler:
-    def __call__(self, runtime: ToolRuntime, **params):
-        raw = runtime.call_tool(
-            "get_planet_position",
-            planet_name="mars",
-            observation_time="2026-05-22T00:00:00",
-        )
-        envelope = parse_tool_response(raw)
-        return SkillResult(
-            skill_name="celestial-position-calculator",
-            success=not is_tool_error(raw),
-            data={
-                "error_code": getattr(getattr(envelope, "error", None), "code", "")
-            },
-            summary=raw,
-        )
-
-
-def test_skill_executor_applies_operation_policy_to_handler_runtime():
+def test_capability_kit_applies_operation_policy_to_position_handler():
     backend = _FakeBackend()
-    executor = SkillExecutor(
-        tool_runtime=ToolRuntime(backend),
-        handlers={"celestial-position-calculator": _BadPositionHandler()},
-    )
+    kit = CapabilityKit(tool_kit=ToolKit(backend))
 
-    result = executor.call(
+    result = kit.call_skill(
         "celestial-position-calculator",
         target="火星",
         operation="altaz",
@@ -175,7 +186,19 @@ def test_skill_executor_applies_operation_policy_to_handler_runtime():
         datetime="今晚",
     )
 
-    assert result.success is False
+    assert result.success is True
     assert result.operation == "altaz"
-    assert result.data["error_code"] == "TOOL_GUARD_REJECTED"
-    assert backend.calls == []
+    assert result.expected_mcp_tools == ["get_altaz"]
+    assert result.allowed_child_tools == ["get_altaz"]
+    assert "get_planet_position" in result.forbidden_child_tools
+    assert backend.calls == [
+        (
+            "get_altaz",
+            {
+                "planet_name": "mars",
+                "observation_time": result.data["observation_time"],
+                "latitude": 39.9,
+                "longitude": 116.4,
+            },
+        )
+    ]

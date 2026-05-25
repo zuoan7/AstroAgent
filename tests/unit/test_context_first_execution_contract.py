@@ -14,16 +14,17 @@ from src.agent.execution.planned_executor import PlannedExecutor
 from src.agent.execution.react_executor import ReactExecutor
 from src.agent.execution.workflow_executor import WorkflowExecutor
 from src.agent.latency import LatencyTracker
-from src.agent.models.capability_decision import CapabilityDecision
+from src.capabilities.decision import CapabilityDecision
 from src.agent.models.execution_context import ExecutionContext
 from src.agent.models.execution_decision import ExecutionDecision
 from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.models.final_response import FinalResponse
 from src.agent.models.request_context import RequestContext
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.task_profile import TaskProfile
 from src.agent.models.workflow_graph import WorkflowGraph
 from src.agent.streaming_service import BaseStreamingGenerator
+from src.tools.results import ToolResult
 
 
 def _context(
@@ -52,12 +53,16 @@ class _DirectToolManager:
     def __init__(self) -> None:
         self.tool_calls: list[tuple[str, dict]] = []
 
-    def call_mcp_tool(self, tool_name: str, **params) -> str:
+    def call_tool(self, tool_name: str, **params) -> ToolResult:
         self.tool_calls.append((tool_name, params))
-        return '{"ok": true}'
+        return ToolResult(
+            ok=True,
+            tool_name=tool_name,
+            data={"ok": True},
+        )
 
 
-class _PlannedSkillManager:
+class _PlannedCapabilityKit:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
@@ -104,7 +109,7 @@ class _Synthesizer:
 async def test_direct_executor_run_context_uses_capability_decision_without_route():
     manager = _DirectToolManager()
     executor = DirectExecutor(
-        skill_manager=manager,
+        capability_kit=manager,
         rag_retriever=SimpleNamespace(),
         llm=SimpleNamespace(),
         synthesizer=_Synthesizer(),
@@ -132,9 +137,9 @@ async def test_direct_executor_run_context_uses_capability_decision_without_rout
 
 @pytest.mark.asyncio
 async def test_planned_executor_run_context_uses_profile_capability_hints():
-    manager = _PlannedSkillManager()
+    manager = _PlannedCapabilityKit()
     executor = PlannedExecutor(
-        skill_manager=manager,
+        capability_kit=manager,
         llm=SimpleNamespace(),
         synthesizer=_Synthesizer(),
     )
@@ -396,9 +401,7 @@ def test_legacy_route_api_usage_stays_on_allowlisted_boundaries():
 
 def test_legacy_runtime_fallback_symbols_are_not_in_online_initialization():
     root = Path(__file__).resolve().parents[2]
-    agent_init = (root / "src" / "agent" / "__init__.py").read_text(
-        encoding="utf-8"
-    )
+    agent_init = (root / "src" / "agent" / "__init__.py").read_text(encoding="utf-8")
     streaming = (root / "src" / "agent" / "streaming_service.py").read_text(
         encoding="utf-8"
     )

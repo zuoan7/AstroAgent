@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.skills.context import SkillContext
 from src.skills.inputs import WeatherLookupInput
 from src.skills.services.tool_results import (

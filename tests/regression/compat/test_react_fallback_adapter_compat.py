@@ -51,7 +51,7 @@ def test_react_trace_adapter_maps_skill_atomic_and_rag_tools():
     assert weather.capability_kind == "skill"
     assert weather.capability_name == "weather-lookup"
     assert weather.expected_mcp_tools == ["get_weather"]
-    assert weather.mcp_tools_used == ["get_weather"]
+    assert weather.mcp_tools_used == []
 
     assert search.logical_skill == "web_search"
     assert search.capability_kind == "tool"

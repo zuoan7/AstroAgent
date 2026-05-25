@@ -1,5 +1,4 @@
-"""Planned 路径规划器，按任务画像生成 ExecutionPlan/WorkflowGraph，并为 DAG 节点补齐技能或原子工具参数。
-"""
+"""Planned 路径规划器，按任务画像生成 ExecutionPlan/WorkflowGraph，并为 DAG 节点补齐技能或原子工具参数。"""
 
 from __future__ import annotations
 
@@ -7,15 +6,16 @@ import json
 import re
 from typing import Any, List, Optional
 
-from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+from src.agent.models.execution_plan import ExecutionPlan
+from src.capabilities.plan import PlanStep
 from src.agent.models.workflow_graph import WorkflowGraph
-from src.capabilities.registry import CapabilityRegistry
-from src.capabilities.param_builder import CapabilityParamBuilder
-from src.capabilities.plan_adapter import CapabilityPlanAdapter
 from src.agent.prompts import get_prompt_renderer
 from src.agent.skill_param_builder import SkillParamBuilder
+from src.capabilities.param_builder import CapabilityParamBuilder
+from src.capabilities.plan_adapter import CapabilityPlanAdapter
 from src.core.config import settings
 from src.skills import registry
+from src.tools.registry import get_default_tool_registry
 from src.tools.selector import ToolSelector
 
 
@@ -30,8 +30,9 @@ class Planner:
         """初始化 Planner 的依赖、配置和内部状态。"""
         self._llm = llm
         self._param_builder = SkillParamBuilder(None)
-        self._capabilities = CapabilityRegistry()
-        self._capability_plan_adapter = CapabilityPlanAdapter(self._capabilities)
+        self._skill_registry = registry.get_default_skill_registry()
+        self._tool_registry = get_default_tool_registry()
+        self._capability_plan_adapter = CapabilityPlanAdapter()
         self._tool_selector = ToolSelector()
 
     def plan(
@@ -437,7 +438,7 @@ class Planner:
 
         parallel_group = "generic_parallel" if len(capability_hints) > 1 else None
         for index, capability_name in enumerate(capability_hints, start=1):
-            if self._capabilities.has_skill(capability_name):
+            if self._skill_registry.has_skill(capability_name):
                 steps.append(
                     self._make_step(
                         query=query,
@@ -459,7 +460,7 @@ class Planner:
                 )
                 continue
 
-            if self._capabilities.has_tool(capability_name):
+            if self._tool_registry.has_tool(capability_name):
                 steps.append(
                     self._make_tool_step(
                         query=query,
@@ -516,10 +517,11 @@ class Planner:
         ):
             return None
 
-        skill_specs = registry.get_skill_specs()
-        allowed_skills = {spec.skill_name for spec in skill_specs}
+        skill_definitions = registry.get_skill_definitions()
+        allowed_skills = {definition.name for definition in skill_definitions}
         skills_text = "\n".join(
-            f"- {spec.skill_name}: {spec.summary}" for spec in skill_specs
+            f"- {definition.name}: {definition.summary}"
+            for definition in skill_definitions
         )
         prompt = get_prompt_renderer().render(
             "planned.workflow_planner",
@@ -753,32 +755,21 @@ class Planner:
         if not isinstance(params, dict):
             return {}
         try:
-            spec = registry.get_skill_spec(skill_name)
+            definition = registry.get_skill_definition(skill_name)
         except Exception:
             return {}
 
-        allowed = set(spec.param_names)
+        allowed = set(definition.input_field_names)
         candidate = {
             key: value
             for key, value in params.items()
             if key in allowed and value is not None
         }
-        if spec.special_handling:
-            candidate = spec.special_handling(candidate)
-
-        normalized: dict[str, Any] = {}
-        for name in spec.param_names:
-            value = candidate.get(name)
-            if value is None:
-                continue
-            converter = spec.type_conversions.get(name)
-            if converter is not None:
-                try:
-                    value = converter(value)
-                except Exception:
-                    continue
-            normalized[name] = value
-        return normalized
+        try:
+            payload = definition.input_model.model_validate(candidate)
+        except Exception:
+            return {}
+        return payload.model_dump(exclude_none=True)
 
     def _photography_weather_relevant(self, query: str, skill_set: set[str]) -> bool:
         """判断摄影建议是否需要补充天气条件。"""

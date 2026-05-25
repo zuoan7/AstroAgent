@@ -11,12 +11,12 @@ from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 sys.modules.pop("src.agent.streaming_service", None)
 
-from src.agent.models.final_response import FinalResponse
 from src.agent.models.execution_event import ExecutionEvent
+from src.agent.models.final_response import FinalResponse
 from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RequestRouter
 from src.agent.streaming_service import StreamingService
-from src.skills.mcp_client import MCPClient
+from src.transport.mcp.client import MCPClient
 
 
 class _MemoryStub:
@@ -56,7 +56,9 @@ class _MemoryStub:
         ),
     ],
 )
-def test_request_router_routes_expected_queries(query, expected_route, expected_task_type):
+def test_request_router_routes_expected_queries(
+    query, expected_route, expected_task_type
+):
     router = RequestRouter()
     profile = router.profile(query)
     assert profile.legacy_route == expected_route
@@ -77,7 +79,7 @@ def test_mcp_parallel_calls_are_truly_concurrent(monkeypatch):
     monkeypatch.setattr(client, "_dispatch_parallel_tool_call", fake_parallel_dispatch)
 
     started = time.perf_counter()
-    results = client.call_tools_parallel(
+    results = client.invoke_parallel(
         [
             {"tool_name": "tool_a", "kwargs": {"value": 1}},
             {"tool_name": "tool_b", "kwargs": {"value": 2}},
@@ -619,7 +621,9 @@ async def test_streaming_service_generate_events_uses_engine_stream_for_react():
         streamed["count"] += 1
         yield {
             "event": "on_llm_stream",
-            "data": {"chunk": SimpleNamespace(content="Final Answer: engine stream 答案")},
+            "data": {
+                "chunk": SimpleNamespace(content="Final Answer: engine stream 答案")
+            },
             "run_id": "react-engine-1",
         }
 
@@ -694,12 +698,23 @@ async def test_streaming_service_planned_events_use_engine_preview_plan():
         )
 
     from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+
     plan = ExecutionPlan(
         task_type="observation_recommendation",
         output_schema="observation_answer_v1",
         steps=[
-            PlanStep(id="weather_context", kind="tool", title="查询天气", skill="weather-lookup"),
-            PlanStep(id="observation_plan", kind="tool", title="生成观测计划", skill="observation-planner"),
+            PlanStep(
+                id="weather_context",
+                kind="tool",
+                title="查询天气",
+                skill="weather-lookup",
+            ),
+            PlanStep(
+                id="observation_plan",
+                kind="tool",
+                title="生成观测计划",
+                skill="observation-planner",
+            ),
         ],
     )
 
@@ -775,7 +790,13 @@ async def test_streaming_service_planned_events_use_engine_preview_plan():
     assert run_called["count"] == 1
     assert any(event["type"] == "route_decision" for event in events)
     assert any(event["type"] == "plan_update" for event in events)
-    assert any(event["type"] == "step_start" and event["step_id"] == "weather_context" for event in events)
-    assert any(event["type"] == "step_end" and event["step_id"] == "observation_plan" for event in events)
+    assert any(
+        event["type"] == "step_start" and event["step_id"] == "weather_context"
+        for event in events
+    )
+    assert any(
+        event["type"] == "step_end" and event["step_id"] == "observation_plan"
+        for event in events
+    )
     final_answer = next(event for event in events if event["type"] == "final_answer")
     assert "猎户座" in final_answer["final_answer"]

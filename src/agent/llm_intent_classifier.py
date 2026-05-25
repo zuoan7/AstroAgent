@@ -8,7 +8,6 @@ from typing import Any, Iterable, Optional
 from src.agent.prompts import get_prompt_renderer
 from src.skills import registry
 
-
 VALID_ROUTES = {"direct_task", "planned_task", "fallback_react"}
 VALID_TASK_TYPES = {
     "smalltalk",
@@ -47,8 +46,10 @@ class LLMIntentClassifier:
         min_accept_confidence: float = 0.55,
     ) -> None:
         self._llm = llm
-        self._skill_specs = list(skill_specs or registry.get_skill_specs())
-        self._allowed_skills = {spec.skill_name for spec in self._skill_specs}
+        self._skill_definitions = list(skill_specs or registry.get_skill_definitions())
+        self._allowed_skills = {
+            definition.name for definition in self._skill_definitions
+        }
         self._min_accept_confidence = float(min_accept_confidence)
 
     def classify(
@@ -70,7 +71,8 @@ class LLMIntentClassifier:
 
     def _build_prompt(self, query: str, *, rule_profile: Any = None) -> str:
         skills_text = "\n".join(
-            f"- {spec.skill_name}: {spec.summary}" for spec in self._skill_specs
+            f"- {definition.name}: {definition.summary}"
+            for definition in self._skill_definitions
         )
         rule_summary = ""
         if rule_profile is not None and hasattr(rule_profile, "to_dict"):

@@ -6,8 +6,8 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from src.agent.models.skill_result import SkillResult
-from src.agent.param_parser import ParamParser
+from src.skills.result import SkillResult
+from src.utils.param_parser import ParamParser
 from src.core.config import settings
 from src.skills import registry
 from src.skills.context import SkillContext

@@ -3,6 +3,7 @@
 目标：建立关键路径行为快照，为后续重构提供可回滚基准。
 本文件不测试任何新功能，只记录现有行为。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,19 +17,19 @@ from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 sys.modules.pop("src.agent.streaming_service", None)
 
-from src.agent.governance import AgentExecutionPolicy
 from src.agent.execution.engine import ExecutionEngine
+from src.agent.governance import AgentExecutionPolicy
 from src.agent.models.execution_decision import ExecutionDecision
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.final_response import FinalResponse
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RequestRouter, RouteDecision
 from src.agent.streaming_service import StreamingService
 from src.core.config import settings
 
-
 # ─── 共用 Stub ───────────────────────────────────────────────────────────────
+
 
 class _MemoryStub:
     session_id = "baseline_session"
@@ -53,7 +54,7 @@ class _LLMStub:
         return SimpleNamespace(content="stubbed_answer")
 
 
-class _SkillManagerStub:
+class _CapabilityKitStub:
     def call_skill(self, name, **params):
         return SkillResult(
             skill_name=name,
@@ -99,6 +100,7 @@ class _SynthesizerStub:
 
 # ─── Task 1: RequestRouter 路由分支覆盖 ──────────────────────────────────────
 
+
 class TestRequestRouterBaseline:
     """覆盖 RequestRouter 关键路由分支，记录现有行为。"""
 
@@ -139,7 +141,9 @@ class TestRequestRouterBaseline:
 
     def test_complex_single_skill_routes_to_planned_task(self):
         # 复杂问题（有分析/步骤词），即使只匹配一个 skill 也应升级为 planned_task
-        decision = self.router.route("请分析本周北京的天气对深空摄影有哪些影响，并给出详细方案")
+        decision = self.router.route(
+            "请分析本周北京的天气对深空摄影有哪些影响，并给出详细方案"
+        )
         assert decision.route == "planned_task"
 
     def test_open_ended_routes_to_fallback_react(self):
@@ -179,6 +183,7 @@ class TestRequestRouterBaseline:
 
 # ─── Task 2: AgentExecutionPolicy.choose_path 覆盖 ───────────────────────────
 
+
 class TestAgentExecutionPolicyBaseline:
     """覆盖 choose_path 关键分支。"""
 
@@ -195,11 +200,15 @@ class TestAgentExecutionPolicyBaseline:
         assert policy.choose_path("fallback_react") == "react"
 
     def test_fallback_react_with_flag_false_and_planner_enabled_returns_planned(self):
-        policy = AgentExecutionPolicy(mode="hybrid", enable_planner=True, enable_react_fallback=False)
+        policy = AgentExecutionPolicy(
+            mode="hybrid", enable_planner=True, enable_react_fallback=False
+        )
         assert policy.choose_path("fallback_react") == "planned"
 
     def test_fallback_react_with_flag_false_no_planner_returns_direct(self):
-        policy = AgentExecutionPolicy(mode="hybrid", enable_planner=False, enable_react_fallback=False)
+        policy = AgentExecutionPolicy(
+            mode="hybrid", enable_planner=False, enable_react_fallback=False
+        )
         assert policy.choose_path("fallback_react") == "direct"
 
     def test_react_mode_always_returns_react(self):
@@ -227,12 +236,13 @@ class TestAgentExecutionPolicyBaseline:
 
 # ─── Task 3: ExecutionEngine legacy adapter 覆盖 ─────────────────────────────
 
+
 class TestExecutionEngineBaseline:
     """覆盖 direct_task 和 planned_task 两条路径。"""
 
     def setup_method(self):
         self.engine = ExecutionEngine(
-            skill_manager=_SkillManagerStub(),
+            capability_kit=_CapabilityKitStub(),
             rag_retriever=_RagStub(),
             llm=_LLMStub(),
             synthesizer=_SynthesizerStub(),
@@ -363,10 +373,13 @@ class TestExecutionEngineBaseline:
 
 # ─── Task 4: StreamingService 最小集成测试 ─────────────────────────────────────
 
+
 class TestStreamingServiceBaseline:
     """验证 route_decision 事件与 planned 路径的 plan_update 事件。"""
 
-    def _make_service(self, decision: RouteDecision, plan: ExecutionPlan) -> StreamingService:
+    def _make_service(
+        self, decision: RouteDecision, plan: ExecutionPlan
+    ) -> StreamingService:
         profile = TaskProfile.from_legacy_route(
             route=decision.route,
             task_type=decision.task_type,
@@ -482,6 +495,7 @@ class TestStreamingServiceBaseline:
 
 # ─── Task 5: 最小行为基线快照 ───────────────────────────────────────────────────
 
+
 class TestMinimalBehaviorBaseline:
     """记录关键数据结构的最小字段约束，作为重构不可破坏的基线。"""
 
@@ -518,13 +532,22 @@ class TestMinimalBehaviorBaseline:
             confidence=0.98,
         )
         d = resp.to_dict()
-        required_keys = {"answer", "summary", "sources", "tools_used", "confidence", "route", "task_type"}
+        required_keys = {
+            "answer",
+            "summary",
+            "sources",
+            "tools_used",
+            "confidence",
+            "route",
+            "task_type",
+        }
         assert required_keys.issubset(set(d.keys()))
         assert d["answer"] == "test answer"
         assert d["route"] == "direct_task"
 
     def test_execution_trace_step_has_required_keys(self):
         from src.agent.executor import StepExecutionResult
+
         step = StepExecutionResult(
             step_id="s1",
             title="step 1",
@@ -563,12 +586,16 @@ class TestMinimalBehaviorBaseline:
 
     def test_route_decision_schema_from_task_type_mapping(self):
         from src.agent.request_router import TASK_TYPE_TO_OUTPUT_SCHEMA
+
         router = RequestRouter()
         d = router.route("你好")
-        assert d.expected_output_schema == TASK_TYPE_TO_OUTPUT_SCHEMA.get("smalltalk", "generic_answer_v1")
+        assert d.expected_output_schema == TASK_TYPE_TO_OUTPUT_SCHEMA.get(
+            "smalltalk", "generic_answer_v1"
+        )
 
 
 # ─── Task 6: feature flags 默认值验证 ─────────────────────────────────────────
+
 
 class TestFeatureFlagsDefaults:
     """验证 DAG 重构配置位的默认值与收敛语义。"""

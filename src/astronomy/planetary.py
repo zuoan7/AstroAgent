@@ -14,7 +14,7 @@ from .base import EphemerisManager
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler
 from src.core.logger import logger
-from src.agent.param_parser import ParamParser
+from src.utils.param_parser import ParamParser
 
 
 class PlanetaryCalculator:
@@ -239,7 +239,7 @@ class PlanetaryCalculator:
                     raise ValueError("无效的输入格式，需要包含ra和dec键")
 
             elif isinstance(ra, str):
-                from src.agent.param_parser import ParamParser
+                from src.utils.param_parser import ParamParser
                 coords = ParamParser.extract_key_value_pairs(ra, ['ra', 'dec'])
                 if 'ra' in coords and 'dec' in coords:
                     ra = coords['ra']

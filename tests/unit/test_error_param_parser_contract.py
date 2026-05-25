@@ -19,8 +19,18 @@ AgentError = errors_module.AgentError
 ErrorHandler = errors_module.ErrorHandler
 ErrorCode = errors_module.ErrorCode
 
-# 加载 agent.param_parser
-param_parser_module = load_module('src.agent.param_parser', os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'agent', 'param_parser.py'))
+# 加载 utils.param_parser
+param_parser_module = load_module(
+    'src.utils.param_parser',
+    os.path.join(
+        os.path.dirname(__file__),
+        '..',
+        '..',
+        'src',
+        'utils',
+        'param_parser.py',
+    ),
+)
 ParamParser = param_parser_module.ParamParser
 
 

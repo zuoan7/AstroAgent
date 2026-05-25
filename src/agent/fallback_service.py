@@ -1,10 +1,10 @@
 import json
 from typing import Any, Optional
-from src.agent.policies.fallback_policy import FallbackDecision, FallbackPolicy
-from src.core.logger import logger
-from src.core.errors import ErrorCode, ErrorHandler
-from src.core.mcp_protocol import is_tool_error, parse_tool_response
 
+from src.agent.policies.fallback_policy import FallbackDecision, FallbackPolicy
+from src.agent.tool_observation import normalize_observation
+from src.core.errors import ErrorCode, ErrorHandler
+from src.core.logger import logger
 
 _FALLBACK_ERROR_CODES = {
     ErrorCode.TOOL_CALL_FAILED.value,
@@ -35,30 +35,26 @@ _LOW_CONFIDENCE_PHRASES = [
 
 
 class FallbackService:
-    def __init__(self, skill_manager: Any):
-        self._skill_manager = skill_manager
+    def __init__(self, capability_kit: Any = None):
+        self._capability_kit = capability_kit
         self._policy = FallbackPolicy()
 
     def should_use_fallback(self, output: Any) -> bool:
         if not output:
             return True
 
+        normalized = normalize_observation(output)
+        if normalized.is_error:
+            if normalized.error_code and normalized.error_code in _FALLBACK_ERROR_CODES:
+                return True
+
         if isinstance(output, dict):
-            if ErrorHandler.is_error_response(output):
-                code = ErrorHandler.extract_error_code(output)
-                if code and code in _FALLBACK_ERROR_CODES:
-                    return True
             return False
 
         if isinstance(output, str):
             condensed = output.strip()
             if not condensed:
                 return True
-            if is_tool_error(condensed):
-                parsed = parse_tool_response(condensed)
-                code = parsed.error.code if parsed is not None else None
-                if code and code in _FALLBACK_ERROR_CODES:
-                    return True
             for kw in _FALLBACK_ERROR_KEYWORDS:
                 if kw in condensed:
                     return True
@@ -80,7 +76,17 @@ class FallbackService:
     def try_web_search_fallback(self, query: str) -> str:
         logger.warning("检测到工具调用可能失败，尝试使用联网搜索...")
         try:
-            search_result = self._skill_manager.call_mcp_tool("web_search", query=query, max_results=5)
+            result = self._capability_kit.call_tool(
+                "web_search",
+                query=query,
+                max_results=5,
+            )
+            normalized = normalize_observation(result)
+            search_result = (
+                normalized.text
+                if normalized.text
+                else json.dumps(normalized.data, ensure_ascii=False)
+            )
             logger.info("联网搜索降级方案执行成功")
             return search_result
         except Exception as e:
@@ -97,12 +103,23 @@ class FallbackService:
 
     def format_fallback_response(self, query: str, search_result: str) -> str:
         try:
-            envelope = parse_tool_response(search_result)
-            result_data = envelope.data if envelope and envelope.ok else json.loads(search_result)
+            normalized = normalize_observation(search_result)
+            result_data = normalized.data
+            if isinstance(result_data, str):
+                try:
+                    result_data = json.loads(result_data)
+                except (json.JSONDecodeError, TypeError):
+                    result_data = {"answer": result_data}
 
-            if ErrorHandler.is_error_response(result_data):
-                msg = result_data.get("message", str(result_data))
+            if normalized.is_error or ErrorHandler.is_error_response(result_data):
+                msg = normalized.error_message or result_data.get(
+                    "message",
+                    str(result_data),
+                )
                 return f"抱歉，我在处理您的查询「{query}」时遇到了问题：{msg}。请稍后再试或尝试其他问题。"
+
+            if not isinstance(result_data, dict):
+                result_data = {"answer": str(result_data)}
 
             answer = result_data.get("answer", "")
             results = result_data.get("results", [])
@@ -129,5 +146,6 @@ class FallbackService:
             return f"抱歉，处理搜索结果时出现问题。请稍后再试。"
 
     def extract_image_url(self, text: str) -> Optional[str]:
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
+
         return ParamParser.extract_image_url(text)

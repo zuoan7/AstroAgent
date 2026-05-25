@@ -8,9 +8,9 @@ from unittest import mock
 
 import pytest
 
+from src.agent.prompts import get_prompt_renderer
 from src.memory.long_term_memory.extractor import MemoryExtractor
 from src.memory.long_term_memory.models import ExtractionResult, MemoryType, SourceType
-from src.agent.prompts import get_prompt_renderer
 
 
 @pytest.fixture
@@ -47,9 +47,9 @@ GENERAL_ASTRONOMY_QUESTIONS = [
 def test_general_astronomy_does_not_trigger(extractor, question):
     """测试 general astronomy does not trigger 场景。"""
 
-    assert extractor.should_attempt_extraction(question) is False, (
-        f"普通天文问题不应触发抽取: {question}"
-    )
+    assert (
+        extractor.should_attempt_extraction(question) is False
+    ), f"普通天文问题不应触发抽取: {question}"
 
 
 ONE_OFF_STYLE_REQUESTS = [
@@ -67,9 +67,9 @@ ONE_OFF_STYLE_REQUESTS = [
 def test_one_off_style_request_does_not_trigger(extractor, question):
     """测试 one off style request does not trigger 场景。"""
 
-    assert extractor.should_attempt_extraction(question) is False, (
-        f"无长期信号的本轮风格请求不应触发抽取: {question}"
-    )
+    assert (
+        extractor.should_attempt_extraction(question) is False
+    ), f"无长期信号的本轮风格请求不应触发抽取: {question}"
 
 
 LONG_TERM_STYLE_REQUESTS = [
@@ -88,9 +88,9 @@ LONG_TERM_STYLE_REQUESTS = [
 def test_long_term_style_request_does_trigger(extractor, question):
     """测试 long term style request does trigger 场景。"""
 
-    assert extractor.should_attempt_extraction(question) is True, (
-        f"长期风格偏好应触发抽取: {question}"
-    )
+    assert (
+        extractor.should_attempt_extraction(question) is True
+    ), f"长期风格偏好应触发抽取: {question}"
 
 
 @pytest.mark.parametrize("question", GENERAL_ASTRONOMY_QUESTIONS)
@@ -133,14 +133,13 @@ EXPLICIT_PREFERENCE_MESSAGES = [
 ]
 
 
-
 @pytest.mark.parametrize("question", EXPLICIT_PREFERENCE_MESSAGES)
 def test_explicit_preference_triggers_extraction(extractor, question):
     """测试 explicit preference triggers extraction 场景。"""
 
-    assert extractor.should_attempt_extraction(question) is True, (
-        f"明确偏好表达应触发抽取: {question}"
-    )
+    assert (
+        extractor.should_attempt_extraction(question) is True
+    ), f"明确偏好表达应触发抽取: {question}"
 
 
 # ---------------------------------------------------------------------------
@@ -171,14 +170,15 @@ EXPLICIT_EQUIPMENT_LOCATION_MESSAGES = [
 def test_explicit_equipment_location_triggers(extractor, question):
     """测试 explicit equipment location triggers 场景。"""
 
-    assert extractor.should_attempt_extraction(question) is True, (
-        f"明确设备/地点/技能表达应触发抽取: {question}"
-    )
+    assert (
+        extractor.should_attempt_extraction(question) is True
+    ), f"明确设备/地点/技能表达应触发抽取: {question}"
 
 
 # ---------------------------------------------------------------------------
 # 4. Disable total switch (LTM_EXTRACT_ENABLED = False)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "user_msg,assistant_msg",
@@ -197,14 +197,13 @@ def test_ltm_extract_disabled_returns_empty(
         "src.memory.long_term_memory.extractor.settings.LTM_EXTRACT_ENABLED", False
     )
     result = extractor.extract_from_conversation(user_msg, assistant_msg)
-    assert result == [], (
-        f"LTM_EXTRACT_ENABLED=False 时应返回 []: {user_msg}"
-    )
+    assert result == [], f"LTM_EXTRACT_ENABLED=False 时应返回 []: {user_msg}"
 
 
 # ---------------------------------------------------------------------------
 # 5. Disable LLM extraction (LTM_LLM_EXTRACT_ENABLED = False)
 # ---------------------------------------------------------------------------
+
 
 def test_llm_extract_disabled_does_not_call_llm(extractor, monkeypatch):
     """测试 llm extract disabled does not call llm 场景。"""
@@ -222,9 +221,7 @@ def test_llm_extract_disabled_does_not_call_llm(extractor, monkeypatch):
     with mock.patch.object(
         extractor, "extract_with_llm", wraps=extractor.extract_with_llm
     ) as spy:
-        result = extractor.extract_from_conversation(
-            "我喜欢简短的回答", "好的助手回复"
-        )
+        result = extractor.extract_from_conversation("我喜欢简短的回答", "好的助手回复")
         spy.assert_not_called()
 
     # Fallback should return conservative results for explicit preference
@@ -249,6 +246,7 @@ def test_llm_disabled_general_astronomy_returns_empty(extractor, monkeypatch):
 # ---------------------------------------------------------------------------
 # 6. LLM config: lightweight model, timeout, retries
 # ---------------------------------------------------------------------------
+
 
 def test_extract_with_llm_uses_ltm_config(extractor, monkeypatch):
     """测试 extract with llm uses ltm config 场景。"""
@@ -280,15 +278,15 @@ def test_extract_with_llm_uses_ltm_config(extractor, monkeypatch):
         extractor.extract_with_llm("测试消息", "助手回复")
 
         call_kwargs = mock_build.call_args.kwargs
-        assert call_kwargs["model"] == "qwen-plus", (
-            f"应使用 LTM_EXTRACT_MODEL_NAME(qwen-plus)，实际: {call_kwargs['model']}"
-        )
-        assert call_kwargs["request_timeout"] == 6.0, (
-            f"应使用 LTM_EXTRACT_TIMEOUT_SECONDS(6.0)，实际: {call_kwargs['request_timeout']}"
-        )
-        assert call_kwargs["max_retries"] == 0, (
-            f"应使用 LTM_EXTRACT_MAX_RETRIES(0)，实际: {call_kwargs['max_retries']}"
-        )
+        assert (
+            call_kwargs["model"] == "qwen-plus"
+        ), f"应使用 LTM_EXTRACT_MODEL_NAME(qwen-plus)，实际: {call_kwargs['model']}"
+        assert (
+            call_kwargs["request_timeout"] == 6.0
+        ), f"应使用 LTM_EXTRACT_TIMEOUT_SECONDS(6.0)，实际: {call_kwargs['request_timeout']}"
+        assert (
+            call_kwargs["max_retries"] == 0
+        ), f"应使用 LTM_EXTRACT_MAX_RETRIES(0)，实际: {call_kwargs['max_retries']}"
 
 
 def test_extract_with_llm_falls_back_to_small_model(extractor, monkeypatch):
@@ -316,14 +314,15 @@ def test_extract_with_llm_falls_back_to_small_model(extractor, monkeypatch):
         extractor.extract_with_llm("测试消息", "助手回复")
 
         call_kwargs = mock_build.call_args.kwargs
-        assert call_kwargs["model"] == "qwen-plus", (
-            f"LTM_EXTRACT_MODEL_NAME 为空时应 fallback 到 SMALL_MODEL_NAME"
-        )
+        assert (
+            call_kwargs["model"] == "qwen-plus"
+        ), f"LTM_EXTRACT_MODEL_NAME 为空时应 fallback 到 SMALL_MODEL_NAME"
 
 
 # ---------------------------------------------------------------------------
 # 7. Fallback does NOT generate frequent_topics from general astronomy
 # ---------------------------------------------------------------------------
+
 
 def test_fallback_no_frequent_topics_from_astronomy(extractor):
     """普通天文主题不应在 fallback 中生成 frequent_topics habit."""
@@ -331,12 +330,13 @@ def test_fallback_no_frequent_topics_from_astronomy(extractor):
         "我想看看火星和木星", "火星和木星是太阳系行星"
     )
     frequent_topic_results = [
-        r for r in result
+        r
+        for r in result
         if r.memory_type == MemoryType.HABIT and r.key == "frequent_topics"
     ]
-    assert len(frequent_topic_results) == 0, (
-        "fallback 不应从普通天文主题生成 frequent_topics"
-    )
+    assert (
+        len(frequent_topic_results) == 0
+    ), "fallback 不应从普通天文主题生成 frequent_topics"
 
 
 def test_fallback_no_observation_type_from_keywords(extractor):
@@ -344,12 +344,13 @@ def test_fallback_no_observation_type_from_keywords(extractor):
     for msg in ["我想拍深空天体", "行星观测有什么技巧", "怎么拍摄星空"]:
         result = extractor._fallback_keyword_extraction(msg, "助手回复")
         obs_type_results = [
-            r for r in result
+            r
+            for r in result
             if r.memory_type == MemoryType.HABIT and r.key == "observation_type"
         ]
-        assert len(obs_type_results) == 0, (
-            f"fallback 不应从 '{msg}' 自动生成 observation_type"
-        )
+        assert (
+            len(obs_type_results) == 0
+        ), f"fallback 不应从 '{msg}' 自动生成 observation_type"
 
 
 def test_fallback_still_extracts_explicit_signals(extractor):
@@ -374,12 +375,12 @@ def test_fallback_still_extracts_explicit_signals(extractor):
 def test_fallback_extracts_device_with_ownership(extractor):
     """Fallback 应在用户明确声明拥有设备时提取."""
     result = extractor._fallback_keyword_extraction("我用星特朗8SE望远镜", "")
-    assert any(r.key == "device_info" for r in result), (
-        "fallback 应提取明确声明的设备信息"
-    )
+    assert any(
+        r.key == "device_info" for r in result
+    ), "fallback 应提取明确声明的设备信息"
 
 
-def test_fallback_extracts_location_with_context(extractor):
+def test_fallback_extracts_location_from_context(extractor):
     """Fallback 应在用户声明观测地点时提取."""
     result = extractor._fallback_keyword_extraction("我在北京观测", "")
     assert any(
@@ -387,9 +388,7 @@ def test_fallback_extracts_location_with_context(extractor):
         and r.category == "location"
         and r.key == "location"
         for r in result
-    ), (
-        "fallback 应提取明确声明的观测位置"
-    )
+    ), "fallback 应提取明确声明的观测位置"
 
 
 def test_fallback_extracts_binocular_equipment_and_location_as_background(extractor):
@@ -418,6 +417,7 @@ def test_bare_change_plan_does_not_trigger_revoke(extractor):
 # ---------------------------------------------------------------------------
 # 8. Edge cases
 # ---------------------------------------------------------------------------
+
 
 def test_empty_message_does_not_trigger(extractor):
     """测试 empty message does not trigger 场景。"""
@@ -487,8 +487,7 @@ def test_window_aggregation_triggers_repeated_equipment(extractor, monkeypatch):
     )
 
     assert any(
-        r.key == "device_info" and r.extraction_grade == "tentative"
-        for r in results
+        r.key == "device_info" and r.extraction_grade == "tentative" for r in results
     )
     assert any("window_repeated_signal" in r.gate_reason for r in results)
 

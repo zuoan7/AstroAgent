@@ -12,7 +12,7 @@ from skyfield.api import wgs84
 from .base import EphemerisManager
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode
-from src.agent.param_parser import ParamParser
+from src.utils.param_parser import ParamParser
 
 from src.core.logger import logger
 

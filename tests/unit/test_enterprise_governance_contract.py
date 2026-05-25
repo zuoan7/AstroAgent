@@ -14,9 +14,14 @@ from src.agent.audit import RequestAuditLogger
 from src.agent.execution.planned_executor import PlannedExecutor
 from src.agent.models.execution_context import ExecutionContext
 from src.agent.models.final_response import FinalResponse
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.task_profile import TaskProfile
-from src.agent.policies import BudgetExceededError, ModelPolicy, RequestBudget, RequestBudgetTracker
+from src.agent.policies import (
+    BudgetExceededError,
+    ModelPolicy,
+    RequestBudget,
+    RequestBudgetTracker,
+)
 from src.agent.request_router import RouteDecision
 from src.agent.streaming_service import StreamingService
 
@@ -58,8 +63,12 @@ def test_budget_tracker_enforces_limits():
 
 
 def test_model_policy_selects_small_model_for_router(monkeypatch):
-    monkeypatch.setattr("src.agent.policies.model_policy.settings.SMALL_MODEL_PROVIDER", "dashscope")
-    monkeypatch.setattr("src.agent.policies.model_policy.settings.SMALL_MODEL_NAME", "qwen-plus")
+    monkeypatch.setattr(
+        "src.agent.policies.model_policy.settings.SMALL_MODEL_PROVIDER", "dashscope"
+    )
+    monkeypatch.setattr(
+        "src.agent.policies.model_policy.settings.SMALL_MODEL_NAME", "qwen-plus"
+    )
     policy = ModelPolicy()
 
     selected = policy.select("router")
@@ -70,7 +79,7 @@ def test_model_policy_selects_small_model_for_router(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_planned_executor_response_contains_enterprise_metadata():
-    class _SkillManagerStub:
+    class _CapabilityKitStub:
         def call_skill(self, name, **params):
             return SkillResult(
                 skill_name=name,
@@ -102,7 +111,7 @@ async def test_planned_executor_response_contains_enterprise_metadata():
             )
 
     executor = PlannedExecutor(
-        skill_manager=_SkillManagerStub(),
+        capability_kit=_CapabilityKitStub(),
         llm=_LLMStub(),
         synthesizer=_SynthesizerStub(),
     )
@@ -205,7 +214,10 @@ async def test_streaming_service_writes_audit_log(tmp_path):
         events.append(event)
 
     assert any(event["type"] == "final_answer" for event in events)
-    records = [json.loads(line) for line in Path(audit_path).read_text(encoding="utf-8").splitlines()]
+    records = [
+        json.loads(line)
+        for line in Path(audit_path).read_text(encoding="utf-8").splitlines()
+    ]
     assert len(records) == 1
     assert records[0]["route_decision"]["route"] == "planned_task"
     assert "final_response" in records[0]

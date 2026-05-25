@@ -3,25 +3,27 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from src.skills.mcp_client import (  # noqa: F401
-    MCPClient as LegacyMCPClient,
-    _AsyncBridge as LegacyAsyncBridge,
-    _parse_sse_response,
-)
 from src.transport.mcp.client import MCPClient, _AsyncBridge
 from src.transport.mcp.sse import parse_sse_response
 
 
-def test_legacy_mcp_client_import_points_to_transport_impl():
-    assert LegacyMCPClient is MCPClient
-    assert LegacyAsyncBridge is _AsyncBridge
-    assert _parse_sse_response is parse_sse_response
+def test_mcp_client_symbols_live_in_transport_layer():
+    assert MCPClient.__module__ == "src.transport.mcp.client"
+    assert _AsyncBridge.__module__ == "src.transport.mcp.client"
+
+
+def test_mcp_client_exposes_invoke_backend_contract():
+    client = MCPClient()
+
+    assert callable(client.invoke)
+    assert callable(client.ainvoke)
+    assert callable(client.invoke_parallel)
+    assert callable(client.ainvoke_parallel)
 
 
 def test_parse_sse_response_reads_first_json_data_line():
     payload = parse_sse_response(
-        'event: message\n'
-        'data: {"jsonrpc": "2.0", "result": {"status": "ok"}}\n\n'
+        "event: message\n" 'data: {"jsonrpc": "2.0", "result": {"status": "ok"}}\n\n'
     )
 
     assert payload == {"jsonrpc": "2.0", "result": {"status": "ok"}}
@@ -50,4 +52,3 @@ def test_transport_mcp_does_not_import_upper_layers():
             for module in imported_modules
             if module.startswith(forbidden_prefixes)
         ], f"{path} imports forbidden upper-layer modules"
-

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
-from src.agent.models.capability_decision import CapabilityDecision
+from src.capabilities.decision import CapabilityDecision
 from src.agent.models.task_profile import TaskProfile
 from src.agent.models.request_context import RequestContext
 

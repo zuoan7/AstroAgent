@@ -1,5 +1,4 @@
-"""请求路由主模块，通过规则、LLM fallback 和工具必要性门控生成 TaskProfile 与兼容路由元信息。
-"""
+"""请求路由主模块，通过规则、LLM fallback 和工具必要性门控生成 TaskProfile 与兼容路由元信息。"""
 
 from __future__ import annotations
 
@@ -7,11 +6,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.core.config import settings
-from src.skills.registry import get_skill_specs
 from src.agent.models.task_profile import TaskProfile
 from src.agent.tool_necessity_gate import ToolNecessityDecision, ToolNecessityGate
-
+from src.core.config import settings
+from src.skills.registry import get_skill_definitions
 
 SMALLTALK_PATTERNS = (
     r"^\s*(你好|您好|嗨|hello|hi|thanks|thank you|谢谢|辛苦了|在吗)[!！。.\s]*$",
@@ -250,6 +248,7 @@ class RouteDecision:
     - 所有外部调用方迁移到 TaskProfile/ExecutionDecision
     - 基线/兼容测试完成退场
     """
+
     route: str
     task_type: str
     confidence: float
@@ -344,6 +343,7 @@ class RouteDecision:
 
 class RequestRouter:
     """请求路由器，生成 TaskProfile 并附带工具必要性与兼容路由信息。"""
+
     def __init__(
         self,
         llm_intent_classifier: Optional[Any] = None,
@@ -353,7 +353,7 @@ class RequestRouter:
         tool_necessity_gate: Optional[ToolNecessityGate] = None,
     ) -> None:
         """初始化 RequestRouter 的依赖、配置和内部状态。"""
-        self._skill_specs = get_skill_specs()
+        self._skill_definitions = get_skill_definitions()
         self._llm_intent_classifier = llm_intent_classifier
         self._tool_necessity_gate = tool_necessity_gate or ToolNecessityGate()
         self._enable_llm_fallback = (
@@ -561,9 +561,8 @@ class RequestRouter:
                     capability_hints=capability_hints,
                 )
 
-            if (
-                len(capability_hints) == 1
-                and self._should_keep_single_skill_direct(capability_hints[0], text)
+            if len(capability_hints) == 1 and self._should_keep_single_skill_direct(
+                capability_hints[0], text
             ):
                 return self._profile(
                     task_type="single_tool_lookup",
@@ -776,7 +775,9 @@ class RequestRouter:
 
     def _is_smalltalk(self, text: str) -> bool:
         """判断查询是否属于寒暄闲聊。"""
-        if any(re.search(pattern, text, re.IGNORECASE) for pattern in SMALLTALK_PATTERNS):
+        if any(
+            re.search(pattern, text, re.IGNORECASE) for pattern in SMALLTALK_PATTERNS
+        ):
             return True
 
         lowered = text.lower().strip()
@@ -809,7 +810,8 @@ class RequestRouter:
         """根据文本和技能提示推断任务类型。"""
         skill_set = set(capability_hints)
         if "observation-planner" in skill_set and any(
-            token in text for token in ("计划", "安排", "推荐", "观测顺序", "看什么", "先看")
+            token in text
+            for token in ("计划", "安排", "推荐", "观测顺序", "看什么", "先看")
         ):
             return "observation_recommendation"
         if "astrophotography-calculator" in skill_set or "摄影" in text:
@@ -857,17 +859,17 @@ class RequestRouter:
     def _match_skills(self, text: str, lowered: str) -> List[str]:
         """根据技能注册表和关键词匹配高层技能。"""
         matched: List[str] = []
-        for spec in self._skill_specs:
+        for definition in self._skill_definitions:
             tokens = [
-                spec.skill_name,
-                spec.langchain_tool_name.lower(),
-                spec.summary.lower(),
+                definition.name,
+                definition.display_name.lower(),
+                definition.summary.lower(),
             ]
             if any(token and token in lowered for token in tokens):
-                matched.append(spec.skill_name)
+                matched.append(definition.name)
                 continue
 
-            skill_name = spec.skill_name
+            skill_name = definition.name
             if skill_name == "weather-lookup" and self._is_weather_intent(text):
                 matched.append(skill_name)
             elif (
@@ -879,9 +881,8 @@ class RequestRouter:
                 word in text for word in CELESTIAL_EVENT_HINTS
             ):
                 matched.append(skill_name)
-            elif (
-                skill_name == "deep-sky-observing-guide"
-                and self._is_deep_sky_intent(text)
+            elif skill_name == "deep-sky-observing-guide" and self._is_deep_sky_intent(
+                text
             ):
                 matched.append(skill_name)
             elif skill_name == "neo-tracker" and any(
@@ -905,13 +906,46 @@ class RequestRouter:
         """判断查询是否需要天气工具。"""
         if not any(word in text for word in WEATHER_HINTS):
             return False
-        if any(token in text for token in ("预报说", "天气晴但", "湿度很高", "视宁度不好")):
+        if any(
+            token in text for token in ("预报说", "天气晴但", "湿度很高", "视宁度不好")
+        ):
             return False
-        has_city = any(city in text for city in ("北京", "上海", "广州", "深圳", "杭州", "成都", "南京", "武汉", "西安", "重庆", "天津"))
-        has_time = any(token in text for token in ("今晚", "明晚", "今天", "明天", "当前", "现在"))
-        asks_lookup = any(token in text for token in ("云多吗", "云少", "会不会下雨", "适合架望远镜", "适合出门观星", "适合观星", "观测条件"))
+        has_city = any(
+            city in text
+            for city in (
+                "北京",
+                "上海",
+                "广州",
+                "深圳",
+                "杭州",
+                "成都",
+                "南京",
+                "武汉",
+                "西安",
+                "重庆",
+                "天津",
+            )
+        )
+        has_time = any(
+            token in text for token in ("今晚", "明晚", "今天", "明天", "当前", "现在")
+        )
+        asks_lookup = any(
+            token in text
+            for token in (
+                "云多吗",
+                "云少",
+                "会不会下雨",
+                "适合架望远镜",
+                "适合出门观星",
+                "适合观星",
+                "观测条件",
+            )
+        )
         if has_city and (
-            any(token in text for token in ("天气怎么样", "查天气", "天气如何", "今天天气"))
+            any(
+                token in text
+                for token in ("天气怎么样", "查天气", "天气如何", "今天天气")
+            )
             or ("查" in text and "天气" in text)
         ):
             return True
@@ -963,14 +997,28 @@ class RequestRouter:
 
     def _is_deep_sky_intent(self, text: str) -> bool:
         """判断查询是否需要深空目标指导。"""
-        if any(token in text for token in ("区别", "是不是一个", "同一个", "为什么更适合", "会不会影响", "应该先选", "基本没戏", "帮助大吗")):
+        if any(
+            token in text
+            for token in (
+                "区别",
+                "是不是一个",
+                "同一个",
+                "为什么更适合",
+                "会不会影响",
+                "应该先选",
+                "基本没戏",
+                "帮助大吗",
+            )
+        ):
             return False
         has_catalog = bool(
             re.search(r"\b(M\d{1,3}|NGC\s?\d{1,5}|IC\s?\d{1,5})\b", text, re.IGNORECASE)
         )
         if has_catalog:
             return True
-        if any(word in text for word in ("仙女座星系", "猎户座大星云", "昴星团", "银河系")):
+        if any(
+            word in text for word in ("仙女座星系", "猎户座大星云", "昴星团", "银河系")
+        ):
             return True
         if any(word in text for word in DEEP_SKY_HINTS):
             return any(
@@ -996,10 +1044,37 @@ class RequestRouter:
 
     def _is_astrophotography_intent(self, text: str) -> bool:
         """判断查询是否需要天文摄影参数建议。"""
-        if any(token in text for token in ("怎么避免", "直接拍单张", "规则现在", "怎么对焦", "有必要买吗", "一定要拍", "可能是哪一步", "分别是干什么")):
+        if any(
+            token in text
+            for token in (
+                "怎么避免",
+                "直接拍单张",
+                "规则现在",
+                "怎么对焦",
+                "有必要买吗",
+                "一定要拍",
+                "可能是哪一步",
+                "分别是干什么",
+            )
+        ):
             return False
         if any(word in text for word in ASTROPHOTOGRAPHY_HINTS):
-            if any(token in text for token in ("曝光", "增益", "单张", "累计", "流程", "安排", "计划", "架机", "收片", "参数", "快门")):
+            if any(
+                token in text
+                for token in (
+                    "曝光",
+                    "增益",
+                    "单张",
+                    "累计",
+                    "流程",
+                    "安排",
+                    "计划",
+                    "架机",
+                    "收片",
+                    "参数",
+                    "快门",
+                )
+            ):
                 return True
             if re.search(r"\d{1,4}\s*(?:mm|毫米)", text):
                 return True
@@ -1015,11 +1090,17 @@ class RequestRouter:
 
     def _is_position_intent(self, text: str) -> bool:
         """判断查询是否需要天体位置或可见性计算。"""
-        if self._is_current_sky_intent(text) or self._is_coordinate_transform_intent(text):
+        if self._is_current_sky_intent(text) or self._is_coordinate_transform_intent(
+            text
+        ):
             return True
-        if any(token in text for token in ("怎么理解", "这是赤经赤纬吗", "只有 12 度高度")):
+        if any(
+            token in text for token in ("怎么理解", "这是赤经赤纬吗", "只有 12 度高度")
+        ):
             return False
-        return self._has_celestial_target(text) and any(word in text for word in POSITION_HINTS)
+        return self._has_celestial_target(text) and any(
+            word in text for word in POSITION_HINTS
+        )
 
     def _has_celestial_target(self, text: str) -> bool:
         """判断文本中是否包含天体或深空目标。"""
@@ -1056,7 +1137,8 @@ class RequestRouter:
         if not has_apod_reference:
             return False
         has_lookup_context = any(
-            token in text for token in ("今天", "今日", "昨天", "日期", "查", "查询", "图片")
+            token in text
+            for token in ("今天", "今日", "昨天", "日期", "查", "查询", "图片")
         ) or bool(re.search(r"\d{4}-\d{2}-\d{2}", text))
         if any(token in text for token in ("什么意思", "怎么理解")):
             return False
@@ -1069,21 +1151,32 @@ class RequestRouter:
         """判断查询是否需要联网搜索原子工具。"""
         if any(token in text for token in ("天象", "流星雨", "月食", "日食", "合月")):
             return False
-        return any(token in text for token in ("最近", "最新", "新闻", "新结果", "新发现")) and any(
-            token in text for token in ("天文", "韦布", "JWST", "发现", "结果")
-        )
+        return any(
+            token in text for token in ("最近", "最新", "新闻", "新结果", "新发现")
+        ) and any(token in text for token in ("天文", "韦布", "JWST", "发现", "结果"))
 
     @staticmethod
     def _is_current_sky_intent(text: str) -> bool:
         """判断查询是否在询问当前可见天体。"""
-        return any(token in text for token in ("天上有什么", "能看到哪些", "能看哪些", "哪些亮星", "亮星或行星")) and any(
-            token in text for token in ("现在", "今晚", "当前")
-        )
+        return any(
+            token in text
+            for token in (
+                "天上有什么",
+                "能看到哪些",
+                "能看哪些",
+                "哪些亮星",
+                "亮星或行星",
+            )
+        ) and any(token in text for token in ("现在", "今晚", "当前"))
 
     @staticmethod
     def _is_coordinate_transform_intent(text: str) -> bool:
         """判断查询是否涉及赤经赤纬到可见位置的转换。"""
-        return ("赤经" in text and "赤纬" in text and any(token in text for token in ("哪里", "在哪里", "位置", "大概"))) or bool(
+        return (
+            "赤经" in text
+            and "赤纬" in text
+            and any(token in text for token in ("哪里", "在哪里", "位置", "大概"))
+        ) or bool(
             re.search(r"\bRA\b.*\bDec\b", text, re.IGNORECASE)
             and any(token in text for token in ("哪里", "在哪里", "位置"))
         )
@@ -1091,11 +1184,24 @@ class RequestRouter:
     @staticmethod
     def _is_observation_ordering_intent(text: str) -> bool:
         """判断查询是否在比较多个目标的观测顺序。"""
-        has_order_word = any(token in text for token in ("先看", "先观测", "优先看", "先看哪个"))
+        has_order_word = any(
+            token in text for token in ("先看", "先观测", "优先看", "先看哪个")
+        )
         has_choice = "还是" in text or "哪个" in text
         target_count = sum(
             1
-            for target in ("月亮", "月球", "木星", "土星", "火星", "金星", "深空", "星云", "星团", "星系")
+            for target in (
+                "月亮",
+                "月球",
+                "木星",
+                "土星",
+                "火星",
+                "金星",
+                "深空",
+                "星云",
+                "星团",
+                "星系",
+            )
             if target in text
         )
         return has_order_word and has_choice and target_count >= 2
@@ -1116,7 +1222,16 @@ class RequestRouter:
             return False
         if any(
             word in text
-            for word in ("方案", "计划", "分析", "步骤", "分阶段", "同时", "并且", "对比")
+            for word in (
+                "方案",
+                "计划",
+                "分析",
+                "步骤",
+                "分阶段",
+                "同时",
+                "并且",
+                "对比",
+            )
         ):
             return False
         if "比较" in text and not any(

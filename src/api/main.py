@@ -1,5 +1,4 @@
-"""FastAPI 服务入口，负责会话管理、模型切换、文本/图片/语音问答和记忆接口，并把请求转交 AstroAgent 主链路。
-"""
+"""FastAPI 服务入口，负责会话管理、模型切换、文本/图片/语音问答和记忆接口，并把请求转交 AstroAgent 主链路。"""
 
 import asyncio
 import json
@@ -164,6 +163,7 @@ def get_agent():
 
 class SessionData:
     """保存单个用户会话的模型选择、记忆服务和流式运行时。"""
+
     def __init__(self, user_id: str, session_id: str, agent: AstroAgent):
         """初始化 SessionData 的依赖、配置和内部状态。"""
         self.user_id = user_id
@@ -230,8 +230,8 @@ class SessionData:
                 request_router=getattr(self._base_agent, "__dict__", {}).get(
                     "request_router"
                 ),
-                skill_manager=getattr(self._base_agent, "__dict__", {}).get(
-                    "skill_manager"
+                capability_kit=getattr(self._base_agent, "__dict__", {}).get(
+                    "capability_kit"
                 ),
                 rag_retriever=getattr(self._base_agent, "__dict__", {}).get("rag"),
                 execution_engine=getattr(self._base_agent, "__dict__", {}).get(
@@ -271,6 +271,7 @@ class SessionData:
 
 class SessionManager:
     """管理多用户会话生命周期，按访问时间清理过期会话。"""
+
     def __init__(self, max_age: int = None, cleanup_interval: int = None):
         """初始化 SessionManager 的依赖、配置和内部状态。"""
         self._sessions: Dict[str, SessionData] = {}
@@ -382,7 +383,7 @@ async def startup_warmup():
     """应用启动后按配置预热 Agent 和 MCP 会话。"""
     try:
         agent = await asyncio.to_thread(get_agent)
-        await asyncio.to_thread(agent.skill_manager.prewarm)
+        await asyncio.to_thread(agent.capability_kit.prewarm)
         logger.info("✅ 启动预热完成：Agent 与 MCP 已预热")
     except Exception as e:
         logger.warning(f"启动预热失败，将在请求时懒加载: {e}")
@@ -390,6 +391,7 @@ async def startup_warmup():
 
 class QueryRequest(BaseModel):
     """文本问答接口的请求体模型。"""
+
     query: str
     user_id: Optional[str] = None
     session_id: Optional[str] = None
@@ -400,6 +402,7 @@ class QueryRequest(BaseModel):
 
 class ModelSwitchRequest(BaseModel):
     """会话模型切换接口的请求体模型。"""
+
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     model_provider: str
@@ -408,12 +411,14 @@ class ModelSwitchRequest(BaseModel):
 
 class KnowledgeRequest(BaseModel):
     """人工知识写入接口的请求体模型。"""
+
     knowledge: list[str]
     user_id: Optional[str] = None
 
 
 class UserProfileRequest(BaseModel):
     """用户画像更新接口的请求体模型。"""
+
     user_id: Optional[str] = None
 
 
@@ -743,6 +748,7 @@ async def set_session_model_endpoint(request: Request, body: ModelSwitchRequest)
 
 class MemoryCreateRequest(BaseModel):
     """长期记忆创建接口的请求体模型。"""
+
     user_id: Optional[str] = None
     memory_type: str
     category: str
@@ -756,6 +762,7 @@ class MemoryCreateRequest(BaseModel):
 
 class MemoryUpdateRequest(BaseModel):
     """长期记忆更新接口的请求体模型。"""
+
     user_id: Optional[str] = None
     value: Optional[Any] = None
     confidence: Optional[float] = None
@@ -767,6 +774,7 @@ class MemoryUpdateRequest(BaseModel):
 
 class MemoryQueryRequest(BaseModel):
     """长期记忆检索接口的请求体模型。"""
+
     user_id: Optional[str] = None
     memory_type: Optional[str] = None
     category: Optional[str] = None
@@ -784,12 +792,14 @@ class MemoryQueryRequest(BaseModel):
 
 class ConfirmationResolveRequest(BaseModel):
     """长期记忆确认项处理接口的请求体模型。"""
+
     status: str
     confirmation_ids: Optional[List[str]] = None
 
 
 class BatchConfirmRequest(BaseModel):
     """长期记忆确认项批量处理接口的请求体模型。"""
+
     user_id: Optional[str] = None
     confirmation_ids: List[str]
     status: str

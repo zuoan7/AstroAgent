@@ -1,10 +1,8 @@
-"""Direct 执行器，处理闲聊、简单问答、无需工具回答和单工具查询等低复杂度路径。
-"""
+"""Direct 执行器，处理闲聊、简单问答、无需工具回答和单工具查询等低复杂度路径。"""
 
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any, Dict, Optional
 
 from src.agent.executor import _extract_mcp_tools_from_sources
@@ -13,9 +11,9 @@ from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.final_response import FinalResponse
 from src.agent.prompts import get_prompt_renderer
 from src.agent.skill_param_builder import SkillParamBuilder
+from src.agent.tool_result_adapter import tool_result_to_skill_result
 from src.capabilities.param_builder import CapabilityParamBuilder
 from src.core.config import settings
-from src.core.mcp_protocol import is_tool_error, parse_tool_response
 
 
 class DirectExecutor:
@@ -23,17 +21,17 @@ class DirectExecutor:
 
     def __init__(
         self,
-        skill_manager: Any,
-        rag_retriever: Any,
-        llm: Any,
-        synthesizer: Any,
+        capability_kit: Any = None,
+        rag_retriever: Any = None,
+        llm: Any = None,
+        synthesizer: Any = None,
     ) -> None:
         """初始化 DirectExecutor 的依赖、配置和内部状态。"""
-        self._skill_manager = skill_manager
+        self._capability_kit = capability_kit
         self._rag = rag_retriever
         self._llm = llm
         self._synthesizer = synthesizer
-        self._param_builder = SkillParamBuilder(skill_manager)
+        self._param_builder = SkillParamBuilder(capability_kit)
 
     async def run_context(
         self,
@@ -141,7 +139,7 @@ class DirectExecutor:
         context: Any,
     ) -> FinalResponse:
         """执行 direct 单工具或单技能查询。"""
-        from src.agent.models.skill_result import SkillResult
+        from src.skills.result import SkillResult
 
         profile = context.profile
         query = context.query
@@ -180,7 +178,7 @@ class DirectExecutor:
                 user_profile=user_profile,
             )
             result: SkillResult = await asyncio.to_thread(
-                self._skill_manager.call_skill,
+                self._capability_kit.call_skill,
                 skill_name,
                 **params,
             )
@@ -379,7 +377,6 @@ class DirectExecutor:
         )
         response.execution_events = events
 
-
     def _invoke_llm(self, prompt: str) -> str:
         """同步调用底层 LLM 并抽取文本内容。"""
         result = self._llm.invoke(prompt)
@@ -441,56 +438,10 @@ class DirectExecutor:
         params: Dict[str, Any],
     ) -> "SkillResult":
         """调用原子 MCP 工具并包装为 SkillResult。"""
-        from src.agent.models.skill_result import SkillResult
+        if not hasattr(self._capability_kit, "call_tool"):
+            raise ValueError(f"capability kit does not support tool calls: {tool_name}")
 
-        if not hasattr(self._skill_manager, "call_mcp_tool"):
-            raise ValueError(
-                f"skill manager does not support atomic tool calls: {tool_name}"
-            )
-
-        raw = self._skill_manager.call_mcp_tool(tool_name, **params)
-        if is_tool_error(raw):
-            envelope = parse_tool_response(raw)
-            error_msg = ""
-            if envelope is not None and hasattr(envelope, "error"):
-                error_msg = getattr(envelope.error, "message", "")
-            result = SkillResult.from_error(
-                skill_name=tool_name,
-                error_code="TOOL_CALL_FAILED",
-                error_message=error_msg or str(raw)[:500],
-            )
-            result.logical_skill = tool_name
-            result.expected_mcp_tools = [tool_name]
-            result.allowed_child_tools = [tool_name]
-            result.sources = [
-                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
-            ]
-            return result
-
-        envelope = parse_tool_response(raw)
-        if envelope is not None and hasattr(envelope, "data"):
-            payload = envelope.data
-        else:
-            try:
-                payload = json.loads(raw)
-            except Exception:
-                payload = raw
-
-        data = payload if isinstance(payload, dict) else {"raw": payload}
-        summary = (
-            payload
-            if isinstance(payload, str)
-            else json.dumps(payload, ensure_ascii=False)
-        )
-        return SkillResult(
+        return tool_result_to_skill_result(
+            self._capability_kit.call_tool(tool_name, **params),
             skill_name=tool_name,
-            success=True,
-            data=data,
-            summary=summary,
-            sources=[
-                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
-            ],
-            logical_skill=tool_name,
-            expected_mcp_tools=[tool_name],
-            allowed_child_tools=[tool_name],
         )

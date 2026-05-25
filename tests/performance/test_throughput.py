@@ -57,7 +57,7 @@ class TestAstronomyDataProcessingThroughput:
             for planet in planets:
                 perf_timer.start()
                 with patch(
-                    "src.agent.param_parser.ParamParser.parse_mixed_input",
+                    "src.utils.param_parser.ParamParser.parse_mixed_input",
                     return_value={},
                 ):
                     with patch("src.astronomy.planetary.load.timescale") as mock_ts:
@@ -125,7 +125,7 @@ class TestAstronomyDataProcessingThroughput:
         assert report["avg_ms"] < 10, f"日期解析平均 {report['avg_ms']}ms 超过10ms阈值"
 
     def test_param_parser_throughput(self, perf_timer):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         test_inputs = [
             '{"city": "北京", "extensions": "all"}',
@@ -383,7 +383,7 @@ class TestResourceUtilization:
         assert db_size_mb < 10, f"数据库大小 {db_size_mb:.2f}MB 超过10MB阈值"
 
     def test_param_parser_memory_usage(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         tracemalloc.start()
 
@@ -535,7 +535,7 @@ class TestConcurrentUserSimulation:
         assert len(memory.get_all_messages()) == 500
 
     def test_concurrent_param_parsing(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         errors = []
         results = []

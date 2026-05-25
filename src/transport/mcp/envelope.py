@@ -2,8 +2,7 @@
 MCP tool response envelope helpers.
 
 This module owns the transport-level response envelope shape. Tool input/output
-schema registries remain in ``src.core.mcp_protocol`` until the ToolDefinition
-stage of the refactor.
+schema helpers live in ``src.tools.protocol``.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ import json
 from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
 
 SCHEMA_VERSION = "1.0"
 
@@ -97,4 +95,3 @@ def extract_tool_data(payload: Any) -> Any:
     if isinstance(envelope, MCPToolErrorEnvelope):
         return None
     return payload
-

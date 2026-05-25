@@ -2,28 +2,28 @@
 # -*- coding: utf-8 -*-
 # streamable_mcp_server.py - Streamable HTTP MCP服务器
 # 使用FastMCP框架，完整支持标准MCP协议和HTTP传输
-"""FastMCP 天文工具服务入口，注册天文计算、数据查询、天气、搜索和天象事件工具。
-"""
+"""FastMCP 天文工具服务入口，注册天文计算、数据查询、天气、搜索和天象事件工具。"""
 
+import json
 import os
 import sys
-import json
 from typing import Optional, Union
 
 from fastmcp import FastMCP
+
+from src.utils.param_parser import ParamParser
 from src.astronomy import (
-    EphemerisManager,
-    PlanetaryCalculator,
     CelestialDatabaseService,
-    NASAAPIService,
-    WeatherService,
-    SearchService,
+    EphemerisManager,
     EventsPredictor,
+    NASAAPIService,
+    PlanetaryCalculator,
+    SearchService,
+    WeatherService,
 )
-from src.agent.param_parser import ParamParser
 from src.core.config import settings
 from src.core.errors import AgentError, ErrorCode, ErrorHandler, safe_tool_call
-from src.core.mcp_protocol import validate_tool_input
+from src.tools.protocol import validate_tool_input
 
 print("🚀 正在初始化天文工具...")
 ephemeris = None
@@ -92,7 +92,7 @@ def _require_planetary():
     if planetary is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
-            message=f"PlanetaryCalculator 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
+            message=f"PlanetaryCalculator 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在",
         )
 
 
@@ -100,8 +100,7 @@ def _require_celestial_db():
     """确保天体数据库服务已初始化。"""
     if celestial_db is None:
         raise AgentError(
-            code=ErrorCode.TOOL_CALL_FAILED,
-            message="CelestialDatabaseService 未初始化"
+            code=ErrorCode.TOOL_CALL_FAILED, message="CelestialDatabaseService 未初始化"
         )
 
 
@@ -109,8 +108,7 @@ def _require_nasa_api():
     """确保 NASA API 服务已初始化。"""
     if nasa_api is None:
         raise AgentError(
-            code=ErrorCode.TOOL_CALL_FAILED,
-            message="NASAAPIService 未初始化"
+            code=ErrorCode.TOOL_CALL_FAILED, message="NASAAPIService 未初始化"
         )
 
 
@@ -118,8 +116,7 @@ def _require_weather():
     """确保天气服务已初始化。"""
     if weather is None:
         raise AgentError(
-            code=ErrorCode.TOOL_CALL_FAILED,
-            message="WeatherService 未初始化"
+            code=ErrorCode.TOOL_CALL_FAILED, message="WeatherService 未初始化"
         )
 
 
@@ -127,8 +124,7 @@ def _require_search():
     """确保搜索服务已初始化。"""
     if search is None:
         raise AgentError(
-            code=ErrorCode.TOOL_CALL_FAILED,
-            message="SearchService 未初始化"
+            code=ErrorCode.TOOL_CALL_FAILED, message="SearchService 未初始化"
         )
 
 
@@ -137,14 +133,18 @@ def _require_events_predictor():
     if events_predictor is None:
         raise AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
-            message=f"EventsPredictor 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在"
+            message=f"EventsPredictor 未初始化，请检查星历数据文件 {settings.EPHEMERIS_FILE} 是否存在",
         )
 
 
 @mcp.tool()
 @safe_tool_call
-def get_planet_position(planet_name: str, observation_time: str = None,
-                       latitude: float = None, longitude: float = None) -> str:
+def get_planet_position(
+    planet_name: str,
+    observation_time: str = None,
+    latitude: float = None,
+    longitude: float = None,
+) -> str:
     """查询指定行星在给定时间地点的赤道坐标。"""
     params = validate_tool_input(
         "get_planet_position",
@@ -166,8 +166,12 @@ def get_planet_position(planet_name: str, observation_time: str = None,
 
 @mcp.tool()
 @safe_tool_call
-def get_altaz(planet_name: str, observation_time: str = None,
-              latitude: float = None, longitude: float = None) -> str:
+def get_altaz(
+    planet_name: str,
+    observation_time: str = None,
+    latitude: float = None,
+    longitude: float = None,
+) -> str:
     """查询指定行星在给定时间地点的高度角和方位角。"""
     params = validate_tool_input(
         "get_altaz",
@@ -189,7 +193,9 @@ def get_altaz(planet_name: str, observation_time: str = None,
 
 @mcp.tool()
 @safe_tool_call
-def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5") -> str:
+def coordinate_transformation(
+    ra: float, dec: float, epoch: str = "J2000", target_system: str = "fk5"
+) -> str:
     """执行赤经赤纬坐标到目标坐标系统的转换。"""
     params = validate_tool_input(
         "coordinate_transformation",
@@ -211,7 +217,9 @@ def coordinate_transformation(ra: float, dec: float, epoch: str = "J2000", targe
 
 @mcp.tool()
 @safe_tool_call
-def get_rise_set_times(body_name: str, latitude: float, longitude: float, date: str = None) -> str:
+def get_rise_set_times(
+    body_name: str, latitude: float, longitude: float, date: str = None
+) -> str:
     """计算天体在指定地点和日期的升起、落下时间。"""
     params = validate_tool_input(
         "get_rise_set_times",
@@ -346,8 +354,7 @@ def get_tonight_best() -> str:
 def get_weekly_events(start_date: Optional[str] = None) -> str:
     """查询从指定日期开始的一周天象事件。"""
     params = ParamParser.parse_tool_input(
-        start_date,
-        expected_params={"start_date": None}
+        start_date, expected_params={"start_date": None}
     )
     processed_start_date = ParamParser.normalize_date(params.get("start_date"))
 
@@ -365,12 +372,13 @@ def get_weekly_events(start_date: Optional[str] = None) -> str:
 
 @mcp.tool()
 @safe_tool_call
-def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
-                       month: Optional[Union[int, str]] = None) -> str:
+def get_monthly_events(
+    year: Optional[Union[int, str, dict]] = None,
+    month: Optional[Union[int, str]] = None,
+) -> str:
     """查询指定年月的月度天象事件。"""
     params = ParamParser.parse_tool_input(
-        {"year": year, "month": month},
-        expected_params={"year": None, "month": None}
+        {"year": year, "month": month}, expected_params={"year": None, "month": None}
     )
 
     validated = validate_tool_input(
@@ -388,11 +396,10 @@ def get_monthly_events(year: Optional[Union[int, str, dict]] = None,
 @mcp.resource("status://server")
 def get_server_status() -> str:
     """返回 MCP server 当前运行状态。"""
-    return json.dumps({
-        "status": "running",
-        "mode": "streamable-http",
-        "version": "1.0.0"
-    }, ensure_ascii=False)
+    return json.dumps(
+        {"status": "running", "mode": "streamable-http", "version": "1.0.0"},
+        ensure_ascii=False,
+    )
 
 
 @mcp.prompt()
@@ -433,9 +440,9 @@ def observation_guide(target: str) -> str:
 
 def main():
     """启动 Streamable HTTP 模式的 FastMCP 服务。"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🌌 天文MCP服务器 - Streamable HTTP模式")
-    print("="*60)
+    print("=" * 60)
 
     host = os.environ.get("FASTMCP_HOST", "0.0.0.0")
     port = int(os.environ.get("FASTMCP_PORT", "8001"))
@@ -443,7 +450,7 @@ def main():
     print(f"📡 监听地址: http://{host}:{port}/mcp/")
     print(f"📦 已注册工具: 13个")
     print(f"💡 按 Ctrl+C 停止服务器")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     try:
         mcp.run(transport="streamable-http", host=host, port=port)
@@ -452,6 +459,7 @@ def main():
     except Exception as e:
         print(f"❌ 服务器启动失败: {e}")
         import traceback
+
         traceback.print_exc()
 
 

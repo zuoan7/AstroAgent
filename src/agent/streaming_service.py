@@ -1,5 +1,4 @@
-"""Agent 流式主链路，负责上下文组装、路由决策、执行引擎调用、前端事件适配和记忆写入。
-"""
+"""Agent 流式主链路，负责上下文组装、路由决策、执行引擎调用、前端事件适配和记忆写入。"""
 
 import asyncio
 import json
@@ -10,18 +9,18 @@ import uuid
 from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
 
+from src.agent.frontend_event_adapter import FrontendExecutionEventAdapter
 from src.agent.governance import (
     AgentExecutionPolicy,
     GovernanceMetricsRegistry,
     RequestObservation,
 )
-from src.agent.frontend_event_adapter import FrontendExecutionEventAdapter
+from src.agent.latency import LatencyTracker
 from src.agent.models.execution_event import ExecutionEvent
 from src.agent.models.execution_plan import ExecutionPlan
 from src.agent.models.final_response import FinalResponse
 from src.agent.output_parser import extract_final_answer_text
 from src.agent.policies.budget_policy import BudgetExceededError
-from src.agent.latency import LatencyTracker
 from src.agent.streaming_events import (
     FrontendJsonEventAdapter,
     PlainTextStreamAdapter,
@@ -31,11 +30,11 @@ from src.agent.streaming_events import (
     StreamEventProcessor,
     apply_event_processors,
 )
+from src.agent.tool_observation import normalize_observation
 from src.capabilities.selector import CapabilitySelector
-from src.core.errors import ErrorHandler
 from src.core.config import settings
+from src.core.errors import ErrorHandler
 from src.core.logger import logger
-from src.core.mcp_protocol import extract_tool_data, is_tool_error
 from src.memory.api.dto import (
     AppendMessageRequest,
     AppendToolCallRequest,
@@ -51,6 +50,7 @@ FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS = 500
 
 class BaseStreamingGenerator:
     """流式服务基类，封装上下文构建、路由执行、事件生成和记忆落库。"""
+
     def __init__(
         self,
         agent_executor: Any,
@@ -60,7 +60,7 @@ class BaseStreamingGenerator:
         fallback_service: Optional[Any] = None,
         request_router: Optional[Any] = None,
         task_orchestrator: Optional[Any] = None,
-        skill_manager: Optional[Any] = None,
+        capability_kit: Optional[Any] = None,
         rag_retriever: Optional[Any] = None,
         event_processors: Optional[list[StreamEventProcessor]] = None,
         execution_policy: Optional[AgentExecutionPolicy] = None,
@@ -78,7 +78,7 @@ class BaseStreamingGenerator:
         self._fallback_service = fallback_service
         self._request_router = request_router
         self._task_orchestrator = task_orchestrator
-        self._skill_manager = skill_manager
+        self._capability_kit = capability_kit
         self._rag_retriever = rag_retriever
         self._tool_runs: Dict[str, Dict[str, Any]] = {}
         self._current_request_id: Optional[str] = None
@@ -87,7 +87,9 @@ class BaseStreamingGenerator:
         self._action_history: OrderedDict[str, list] = OrderedDict()
         self._max_same_action_count = 2
         self._event_processors = list(event_processors or [])
-        self._execution_policy = execution_policy or AgentExecutionPolicy.from_settings()
+        self._execution_policy = (
+            execution_policy or AgentExecutionPolicy.from_settings()
+        )
         self._frontend_event_adapter = FrontendExecutionEventAdapter()
         self._capability_selector = CapabilitySelector()
         self._governance_metrics = governance_metrics
@@ -160,7 +162,9 @@ class BaseStreamingGenerator:
             context_text = context.get("context_text", "") if context else ""
             return context_text or "无历史对话"
         except Exception as e:
-            logger.warning(f"format chat_history失败，使用空历史: {type(e).__name__}: {e}")
+            logger.warning(
+                f"format chat_history失败，使用空历史: {type(e).__name__}: {e}"
+            )
             return "无历史对话"
 
     def _selected_task_state_from_context(
@@ -200,7 +204,9 @@ class BaseStreamingGenerator:
         if not isinstance(state, dict):
             return None
         try:
-            return int(state.get("version")) if state.get("version") is not None else None
+            return (
+                int(state.get("version")) if state.get("version") is not None else None
+            )
         except (TypeError, ValueError):
             return None
 
@@ -305,7 +311,9 @@ class BaseStreamingGenerator:
                 exc,
             )
 
-    def _get_task_state_debug(self, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def _get_task_state_debug(
+        self, session_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """读取当前任务状态调试快照。"""
         if not hasattr(self._memory, "get_task_state"):
             return None
@@ -355,7 +363,8 @@ class BaseStreamingGenerator:
             tools_used=list(tool_timeline or []),
             confidence=0.4,
             route=route,
-            task_type=task_type or ("open_domain_reasoning" if execution_path == "react" else ""),
+            task_type=task_type
+            or ("open_domain_reasoning" if execution_path == "react" else ""),
             execution_trace=trace,
             fallback_path=fallback_path,
         )
@@ -549,10 +558,11 @@ class BaseStreamingGenerator:
                 tool_name = getattr(action, "tool", "unknown")
                 tool_input = getattr(action, "tool_input", "")
                 if observation and not ErrorHandler.is_error_response(observation):
-                    if is_tool_error(observation):
+                    normalized = normalize_observation(observation)
+                    if normalized.is_error:
                         continue
                     try:
-                        obs_data = extract_tool_data(str(observation))
+                        obs_data = normalized.data
                         if isinstance(obs_data, str):
                             obs_data = json.loads(obs_data)
                         if isinstance(obs_data, dict) and obs_data.get("error"):
@@ -564,7 +574,8 @@ class BaseStreamingGenerator:
                             "tool": tool_name,
                             "input": self._preview_text(tool_input, 100),
                             "output": self._preview_text(
-                                observation, FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS
+                                normalized.text or observation,
+                                FALLBACK_TOOL_OUTPUT_PREVIEW_CHARS,
                             ),
                         }
                     )
@@ -873,7 +884,7 @@ class BaseStreamingGenerator:
         if not extracted_url and self._fallback_service:
             extracted_url = self._fallback_service.extract_image_url(tool_output_str)
         elif not extracted_url:
-            from src.agent.param_parser import ParamParser
+            from src.utils.param_parser import ParamParser
 
             extracted_url = ParamParser.extract_image_url(tool_output_str)
 
@@ -953,7 +964,9 @@ class BaseStreamingGenerator:
                 {
                     "user_message": "",
                     "assistant_message": "",
-                    "conversation_id": None if str(turn_id).startswith("loose_") else turn_id,
+                    "conversation_id": (
+                        None if str(turn_id).startswith("loose_") else turn_id
+                    ),
                 },
             )
             if role == "user":
@@ -968,14 +981,17 @@ class BaseStreamingGenerator:
         raw_messages: List[Dict[str, Any]] = []
         try:
             if hasattr(self._memory, "get_all_messages"):
-                raw_messages = list(self._memory.get_all_messages(self._memory_session_id()))
+                raw_messages = list(
+                    self._memory.get_all_messages(self._memory_session_id())
+                )
             elif isinstance(getattr(self._memory, "messages", None), list):
                 raw_messages = list(getattr(self._memory, "messages"))
         except Exception:
             raw_messages = []
 
         messages = [
-            msg for msg in raw_messages
+            msg
+            for msg in raw_messages
             if isinstance(msg, dict) and msg.get("role") in ("user", "assistant")
         ]
         messages.sort(key=lambda msg: float(msg.get("timestamp") or 0.0))
@@ -1002,9 +1018,9 @@ class BaseStreamingGenerator:
                     }
                 else:
                     pending["assistant_message"] = content
-                    pending["conversation_id"] = (
-                        pending.get("conversation_id") or message.get("turn_id")
-                    )
+                    pending["conversation_id"] = pending.get(
+                        "conversation_id"
+                    ) or message.get("turn_id")
                     turns.append(pending)
                     pending = None
         if pending:
@@ -1166,7 +1182,9 @@ class BaseStreamingGenerator:
         from src.agent.models.request_context import RequestContext
         from src.agent.models.task_profile import TaskProfile
 
-        policy = getattr(self, "_execution_policy", AgentExecutionPolicy.from_settings())
+        policy = getattr(
+            self, "_execution_policy", AgentExecutionPolicy.from_settings()
+        )
 
         router = getattr(self, "_request_router", None)
 
@@ -1174,10 +1192,14 @@ class BaseStreamingGenerator:
             profile = precomputed_profile
         elif router and hasattr(router, "profile"):
             profile = router.profile(query)
-        elif legacy_decision and isinstance(getattr(legacy_decision, "route", None), str):
+        elif legacy_decision and isinstance(
+            getattr(legacy_decision, "route", None), str
+        ):
             profile = TaskProfile.from_legacy_route(
                 route=legacy_decision.route,
-                task_type=getattr(legacy_decision, "task_type", "open_domain_reasoning"),
+                task_type=getattr(
+                    legacy_decision, "task_type", "open_domain_reasoning"
+                ),
                 confidence=getattr(legacy_decision, "confidence", 0.0),
                 matched_skills=getattr(legacy_decision, "matched_skills", []),
                 capability_hints=getattr(legacy_decision, "capability_hints", None),
@@ -1188,7 +1210,9 @@ class BaseStreamingGenerator:
             )
         else:
             # 即使缺少 router/legacy route，也构造兼容画像并统一走 decide()。
-            effective_mode = getattr(policy, "effective_mode", getattr(policy, "mode", "hybrid"))
+            effective_mode = getattr(
+                policy, "effective_mode", getattr(policy, "mode", "hybrid")
+            )
             if effective_mode == "react":
                 fallback_route = "fallback_react"
                 fallback_task_type = "open_domain_reasoning"
@@ -1387,11 +1411,11 @@ class BaseStreamingGenerator:
         """读取 MCP 和 RAG 当前运行时指标。"""
         mcp = {}
         rag = {}
-        if self._skill_manager and hasattr(
-            self._skill_manager, "get_runtime_metrics_snapshot"
+        if self._capability_kit and hasattr(
+            self._capability_kit, "get_runtime_metrics_snapshot"
         ):
             try:
-                mcp = self._skill_manager.get_runtime_metrics_snapshot()
+                mcp = self._capability_kit.get_runtime_metrics_snapshot()
             except Exception:
                 mcp = {}
         if self._rag_retriever and hasattr(
@@ -1604,7 +1628,9 @@ class BaseStreamingGenerator:
             effective_query = self._build_effective_query(query, memory_context)
             if effective_query != query:
                 latency.set_meta("effective_query_used", True)
-                latency.set_meta("effective_query_preview", self._preview_text(effective_query, 240))
+                latency.set_meta(
+                    "effective_query_preview", self._preview_text(effective_query, 240)
+                )
                 effective_profile = self._profile_query(effective_query)
             else:
                 effective_profile = original_profile
@@ -1690,13 +1716,15 @@ class BaseStreamingGenerator:
                         precomputed_profile=precomputed_profile,
                     )
 
-            execution_decision, profile, _exec_context = self._resolve_execution_decision(
-                effective_query,
-                decision,
-                use_long_term_memory=use_long_term_memory,
-                chat_history=request_context.chat_history,
-                user_profile=request_context.user_profile,
-                precomputed_profile=precomputed_profile,
+            execution_decision, profile, _exec_context = (
+                self._resolve_execution_decision(
+                    effective_query,
+                    decision,
+                    use_long_term_memory=use_long_term_memory,
+                    chat_history=request_context.chat_history,
+                    user_profile=request_context.user_profile,
+                    precomputed_profile=precomputed_profile,
+                )
             )
             execution_path = execution_decision.mode
             fallback_used = False
@@ -1719,7 +1747,9 @@ class BaseStreamingGenerator:
                     "feature_flags",
                     self._execution_policy.to_dict(),
                 )
-                async for processed in self._frontend_event_adapter.emit_execution_event(
+                async for (
+                    processed
+                ) in self._frontend_event_adapter.emit_execution_event(
                     ExecutionEvent(
                         type="route_decided",
                         payload=decision.to_meta(),
@@ -1745,7 +1775,9 @@ class BaseStreamingGenerator:
                         use_long_term_memory=use_long_term_memory,
                         execution_plan=actual_plan,
                     )
-                    async for processed in self._frontend_event_adapter.emit_execution_event(
+                    async for (
+                        processed
+                    ) in self._frontend_event_adapter.emit_execution_event(
                         ExecutionEvent(
                             type="plan_built",
                             payload={"steps": plan_steps},
@@ -1800,7 +1832,9 @@ class BaseStreamingGenerator:
                 direct_answer = final_resp.answer
                 response_chunks.append(direct_answer)
                 if final_resp.execution_events:
-                    async for processed in self._frontend_event_adapter.emit_response_execution_events(
+                    async for (
+                        processed
+                    ) in self._frontend_event_adapter.emit_response_execution_events(
                         final_resp,
                         plan_steps=plan_steps,
                         evidence_items=evidence_items,
@@ -1811,7 +1845,9 @@ class BaseStreamingGenerator:
                         yield processed
                 elif execution_path == "planned":
                     for trace in final_resp.execution_trace:
-                        async for processed in self._frontend_event_adapter.emit_trace_events(
+                        async for (
+                            processed
+                        ) in self._frontend_event_adapter.emit_trace_events(
                             trace,
                             plan_steps=plan_steps,
                             evidence_items=evidence_items,
@@ -1885,7 +1921,9 @@ class BaseStreamingGenerator:
                             "" if data.get("input") is None else str(data.get("input"))
                         )
                         tool_data = {**data, "name": tool_name, "input": tool_input}
-                        async for processed in self._frontend_event_adapter.emit_execution_event(
+                        async for (
+                            processed
+                        ) in self._frontend_event_adapter.emit_execution_event(
                             ExecutionEvent(
                                 type="tool_called",
                                 payload={
@@ -1941,7 +1979,9 @@ class BaseStreamingGenerator:
                             or data.get("tool")
                             or "unknown_tool"
                         )
-                        async for processed in self._frontend_event_adapter.emit_execution_event(
+                        async for (
+                            processed
+                        ) in self._frontend_event_adapter.emit_execution_event(
                             ExecutionEvent(
                                 type="tool_returned",
                                 payload={
@@ -2106,7 +2146,10 @@ class BaseStreamingGenerator:
                 next_event(
                     "error",
                     content=fallback,
-                    meta={"error_type": type(e).__name__, "fallback_strategy": "partial_answer"},
+                    meta={
+                        "error_type": type(e).__name__,
+                        "fallback_strategy": "partial_answer",
+                    },
                 )
             ):
                 yield processed
@@ -2185,12 +2228,15 @@ class BaseStreamingGenerator:
                 output_schema_parse_success = bool(final_response.strip()) and (
                     output_schema_parse_success or final_answer_extracted
                 )
-            completion_response = final_resp_obj or self._final_response_from_stream_state(
-                answer=final_response,
-                execution_path=execution_path,
-                decision=decision,
-                tool_timeline=tool_timeline,
-                fallback_used=fallback_used,
+            completion_response = (
+                final_resp_obj
+                or self._final_response_from_stream_state(
+                    answer=final_response,
+                    execution_path=execution_path,
+                    decision=decision,
+                    tool_timeline=tool_timeline,
+                    fallback_used=fallback_used,
+                )
             )
             task_state_completed = self._apply_task_state_turn_completed(
                 session_id=self._memory_session_id(),
@@ -2248,7 +2294,11 @@ class BaseStreamingGenerator:
                 async for processed in emit(
                     next_event(
                         "step_end",
-                        content={"step_id": "tools", "title": "调用工具", "status": "done"},
+                        content={
+                            "step_id": "tools",
+                            "title": "调用工具",
+                            "status": "done",
+                        },
                     )
                 ):
                     yield processed
@@ -2386,7 +2436,8 @@ class BaseStreamingGenerator:
                             "fallback_path": (
                                 final_resp_obj.fallback_path if final_resp_obj else []
                             ),
-                            "task_state": task_state_debug or self._get_task_state_debug(),
+                            "task_state": task_state_debug
+                            or self._get_task_state_debug(),
                         }
                     )
                 except Exception as audit_error:
@@ -2406,12 +2457,15 @@ class BaseStreamingGenerator:
             if not response_saved and response_chunks:
                 final_text = "".join(response_chunks)
                 if not completion_state_written:
-                    completion_response = final_resp_obj or self._final_response_from_stream_state(
-                        answer=final_text,
-                        execution_path=execution_path,
-                        decision=decision,
-                        tool_timeline=tool_timeline,
-                        fallback_used=fallback_used,
+                    completion_response = (
+                        final_resp_obj
+                        or self._final_response_from_stream_state(
+                            answer=final_text,
+                            execution_path=execution_path,
+                            decision=decision,
+                            tool_timeline=tool_timeline,
+                            fallback_used=fallback_used,
+                        )
                     )
                     task_state_completed = self._apply_task_state_turn_completed(
                         session_id=self._memory_session_id(),
@@ -2448,6 +2502,7 @@ class BaseStreamingGenerator:
 
 class _nullcontext:
     """无操作上下文管理器，用于统一可选延迟测量分支。"""
+
     def __enter__(self):
         """进入无操作上下文。"""
         return None
@@ -2459,6 +2514,7 @@ class _nullcontext:
 
 class StreamingService(BaseStreamingGenerator):
     """对外流式服务门面，提供纯文本、JSON 事件和 SSE 三种输出形式。"""
+
     def generate_response(self, query: str) -> Generator[str, None, None]:
         """同步生成完整文本响应。"""
         logger.info(f"\n=== 处理用户查询：{query} ===")
@@ -2494,13 +2550,15 @@ class StreamingService(BaseStreamingGenerator):
                 task_context_profile=effective_profile,
             )
 
-            execution_decision, profile, exec_context = self._resolve_execution_decision(
-                effective_query,
-                decision,
-                use_long_term_memory=True,
-                chat_history=chat_history,
-                user_profile=user_profile,
-                precomputed_profile=precomputed_profile,
+            execution_decision, profile, exec_context = (
+                self._resolve_execution_decision(
+                    effective_query,
+                    decision,
+                    use_long_term_memory=True,
+                    chat_history=chat_history,
+                    user_profile=user_profile,
+                    precomputed_profile=precomputed_profile,
+                )
             )
             if decision is None:
                 decision = self._resolve_legacy_route_decision(
@@ -2519,8 +2577,7 @@ class StreamingService(BaseStreamingGenerator):
                 selected_task_state=selected_task_state,
             )
             if decision and (
-                execution_path in ("direct", "planned")
-                or execution_path == "react"
+                execution_path in ("direct", "planned") or execution_path == "react"
             ):
                 final_resp = asyncio.run(
                     self._run_orchestrated_path(
@@ -2651,7 +2708,9 @@ class StreamingService(BaseStreamingGenerator):
                         execution_decision=locals().get("execution_decision"),
                         error=e,
                         fallback_message=fallback_response,
-                        expected_version=getattr(locals().get("task_state_started"), "version", None),
+                        expected_version=getattr(
+                            locals().get("task_state_started"), "version", None
+                        ),
                     )
                     self._save_to_memory(
                         query,
@@ -2685,7 +2744,9 @@ class StreamingService(BaseStreamingGenerator):
                 execution_decision=locals().get("execution_decision"),
                 error=e,
                 fallback_message=default_response,
-                expected_version=getattr(locals().get("task_state_started"), "version", None),
+                expected_version=getattr(
+                    locals().get("task_state_started"), "version", None
+                ),
             )
             self._save_to_memory(
                 query,

@@ -5,8 +5,8 @@ from __future__ import annotations
 import datetime as dt_mod
 import time
 
-from src.agent.models.skill_result import SkillResult
-from src.agent.param_parser import ParamParser
+from src.skills.result import SkillResult
+from src.utils.param_parser import ParamParser
 from src.skills import registry
 from src.skills.context import SkillContext
 from src.skills.inputs import CelestialPositionCalculatorInput
@@ -55,7 +55,7 @@ def celestial_position_calculator_handler(
         operation=operation_name,
         allowed_tools=list(operation_spec.allowed_child_tools),
         forbidden_tools=list(operation_spec.forbidden_child_tools),
-        required_params=list(operation_spec.required_params),
+        required_params=[],
     )
 
     obs_time = (

@@ -1,13 +1,14 @@
 """Unit tests for DirectExecutor prompt budget integration — Phase 2."""
 
-import pytest
 from types import SimpleNamespace
 from unittest import mock
+
+import pytest
 
 from src.agent.execution.direct_executor import DirectExecutor
 
 
-class _FakeSkillManager:
+class _FakeCapabilityKit:
     def call_skill(self, name, **params):
         return SimpleNamespace(
             skill_name=name,
@@ -15,7 +16,10 @@ class _FakeSkillManager:
             success=True,
             data=None,
             sources=[],
-            to_tool_timeline_entry=lambda: {"tool": name, "summary": f"result for {name}"},
+            to_tool_timeline_entry=lambda: {
+                "tool": name,
+                "summary": f"result for {name}",
+            },
         )
 
 
@@ -32,6 +36,7 @@ class _FakeLLM:
 class _FakeSynthesizer:
     def synthesize_qa(self, **kwargs):
         from src.agent.models.final_response import FinalResponse
+
         return FinalResponse(
             answer="测试回答",
             summary="测试回答",
@@ -41,6 +46,7 @@ class _FakeSynthesizer:
 
     def synthesize_smalltalk(self, answer):
         from src.agent.models.final_response import FinalResponse
+
         return FinalResponse(
             answer=answer,
             summary=answer,
@@ -50,6 +56,7 @@ class _FakeSynthesizer:
 
     def synthesize_direct(self, **kwargs):
         from src.agent.models.final_response import FinalResponse
+
         return FinalResponse(
             answer="direct answer",
             summary="direct answer",
@@ -61,7 +68,7 @@ class _FakeSynthesizer:
 @pytest.fixture
 def executor():
     return DirectExecutor(
-        skill_manager=_FakeSkillManager(),
+        capability_kit=_FakeCapabilityKit(),
         rag_retriever=_FakeRAG(),
         llm=_FakeLLM(),
         synthesizer=_FakeSynthesizer(),
@@ -71,6 +78,7 @@ def executor():
 # ---------------------------------------------------------------------------
 # 1. Long RAG context is capped
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_long_rag_context_not_crash(monkeypatch):
@@ -86,7 +94,7 @@ async def test_long_rag_context_not_crash(monkeypatch):
             return {"context": "天文知识 " * 3000, "sources": []}
 
     executor = DirectExecutor(
-        skill_manager=_FakeSkillManager(),
+        capability_kit=_FakeCapabilityKit(),
         rag_retriever=_HugeRAG(),
         llm=_FakeLLM(),
         synthesizer=_FakeSynthesizer(),
@@ -104,13 +112,14 @@ async def test_long_rag_context_not_crash(monkeypatch):
 # 2. Current query is preserved
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_query_preserved(monkeypatch):
     monkeypatch.setattr(
         "src.agent.execution.direct_executor.settings.PROMPT_BUDGET_ENABLED", True
     )
     executor = DirectExecutor(
-        skill_manager=_FakeSkillManager(),
+        capability_kit=_FakeCapabilityKit(),
         rag_retriever=_FakeRAG(),
         llm=_FakeLLM(),
         synthesizer=_FakeSynthesizer(),
@@ -128,6 +137,7 @@ async def test_query_preserved(monkeypatch):
 # 3. user_profile / chat_history are budget-controlled
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_long_profile_and_history_not_crash(monkeypatch):
     monkeypatch.setattr(
@@ -138,7 +148,7 @@ async def test_long_profile_and_history_not_crash(monkeypatch):
     )
 
     executor = DirectExecutor(
-        skill_manager=_FakeSkillManager(),
+        capability_kit=_FakeCapabilityKit(),
         rag_retriever=_FakeRAG(),
         llm=_FakeLLM(),
         synthesizer=_FakeSynthesizer(),
@@ -155,6 +165,7 @@ async def test_long_profile_and_history_not_crash(monkeypatch):
 # 4. PROMPT_BUDGET_ENABLED=False — legacy behavior
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_budget_disabled_falls_back_to_legacy(monkeypatch):
     monkeypatch.setattr(
@@ -162,7 +173,7 @@ async def test_budget_disabled_falls_back_to_legacy(monkeypatch):
     )
 
     executor = DirectExecutor(
-        skill_manager=_FakeSkillManager(),
+        capability_kit=_FakeCapabilityKit(),
         rag_retriever=_FakeRAG(),
         llm=_FakeLLM(),
         synthesizer=_FakeSynthesizer(),

@@ -36,9 +36,3 @@ class ToolDefinition:
     cost_class: ToolCostClass = ToolCostClass.NORMAL
     side_effect: bool = False
     tags: tuple[str, ...] = field(default_factory=tuple)
-
-    @property
-    def param_names(self) -> list[str]:
-        """Return input field names for legacy callers."""
-        return list(self.input_model.model_fields.keys())
-

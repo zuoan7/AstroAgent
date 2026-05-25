@@ -1,4 +1,5 @@
 """SkillParamBuilder — 技能参数构建工具。"""
+
 from __future__ import annotations
 
 import re
@@ -7,7 +8,6 @@ from typing import Any, Dict, List, Optional
 
 from src.agent.fast_answers import extract_latest_location, extract_latest_target
 from src.skills import registry
-
 
 DEFAULT_OBSERVER_CITY = "北京"
 
@@ -32,8 +32,8 @@ KNOWN_CITIES = (
 class SkillParamBuilder:
     """根据 skill_name 和自然语言 query 构建调用参数。"""
 
-    def __init__(self, skill_manager: Any) -> None:
-        self._skill_manager = skill_manager
+    def __init__(self, capability_provider: Any) -> None:
+        self._capability_provider = capability_provider
 
     def build(
         self,
@@ -43,7 +43,7 @@ class SkillParamBuilder:
         chat_history: str = "",
         user_profile: str = "",
     ) -> Dict[str, Any]:
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         context_text = self._context_text(chat_history, user_profile)
         query_location = self._extract_location(query)
@@ -67,7 +67,9 @@ class SkillParamBuilder:
             return self._finalize(
                 skill_name,
                 {
-                    "location": query_location or context_location or DEFAULT_OBSERVER_CITY,
+                    "location": query_location
+                    or context_location
+                    or DEFAULT_OBSERVER_CITY,
                     "date": self._extract_date(query),
                 },
             )
@@ -86,7 +88,8 @@ class SkillParamBuilder:
             return self._finalize(
                 skill_name,
                 {
-                    "time_range": self._extract_date(query) or self._extract_neo_time_range(query),
+                    "time_range": self._extract_date(query)
+                    or self._extract_neo_time_range(query),
                     "min_size": min_size,
                     "max_distance": max_distance,
                 },
@@ -99,7 +102,9 @@ class SkillParamBuilder:
                     "event_type": self._extract_event_type(query),
                     "start_date": start_date,
                     "end_date": end_date,
-                    "operation": self._extract_event_operation(query, start_date, end_date),
+                    "operation": self._extract_event_operation(
+                        query, start_date, end_date
+                    ),
                 },
             )
         if skill_name == "astrophotography-calculator":
@@ -125,23 +130,24 @@ class SkillParamBuilder:
                 skill_name,
                 {
                     "target": query_target or context_target or query.strip(),
-                    "location": query_location or context_location or DEFAULT_OBSERVER_CITY,
+                    "location": query_location
+                    or context_location
+                    or DEFAULT_OBSERVER_CITY,
                     "datetime": self._extract_datetime(query),
                     "output_format": self._extract_output_format(query),
                     "operation": self._extract_position_operation(query),
                     "ra": ra,
                     "dec": dec,
                     "epoch": "J2000" if ra is not None and dec is not None else None,
-                    "target_system": "fk5" if ra is not None and dec is not None else None,
+                    "target_system": (
+                        "fk5" if ra is not None and dec is not None else None
+                    ),
                 },
             )
 
-        spec = registry.get_skill_spec(skill_name)
-        fallback = (
-            {spec.param_names[0]: query.strip()}
-            if len(spec.param_names) == 1
-            else {}
-        )
+        definition = registry.get_skill_definition(skill_name)
+        fields = definition.input_field_names
+        fallback = {fields[0]: query.strip()} if len(fields) == 1 else {}
         return self._finalize(skill_name, fallback)
 
     @staticmethod
@@ -156,16 +162,9 @@ class SkillParamBuilder:
         return str(parsed.get("query", "")).strip() != query.strip()
 
     def _finalize(self, skill_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        spec = registry.get_skill_spec(skill_name)
-        normalized = dict(spec.defaults or {})
-        candidate = dict(params or {})
-        if spec.special_handling:
-            candidate = spec.special_handling(candidate)
-        for name in spec.param_names:
-            value = candidate.get(name)
-            if value is not None:
-                normalized[name] = value
-        return normalized
+        definition = registry.get_skill_definition(skill_name)
+        payload = definition.input_model.model_validate(params or {})
+        return payload.model_dump(exclude_none=True)
 
     def _extract_location(self, query: str) -> Optional[str]:
         coord_match = re.search(
@@ -237,7 +236,17 @@ class SkillParamBuilder:
         return None
 
     def _extract_date(self, query: str) -> Optional[str]:
-        for token in ("今晚", "明晚", "今天", "明天", "本周末", "这个周末", "这周末", "周末", "下周一"):
+        for token in (
+            "今晚",
+            "明晚",
+            "今天",
+            "明天",
+            "本周末",
+            "这个周末",
+            "这周末",
+            "周末",
+            "下周一",
+        ):
             if token in query:
                 if token in {"这个周末", "这周末", "周末"}:
                     return "本周末"
@@ -260,25 +269,34 @@ class SkillParamBuilder:
             today = datetime.now()
             start = today.replace(day=1)
             if start.month == 12:
-                end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
+                end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(
+                    days=1
+                )
             else:
                 end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
             return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
         if "今年" in query:
             today = datetime.now()
-            return today.strftime("%Y-%m-%d"), datetime(today.year, 12, 31).strftime("%Y-%m-%d")
+            return today.strftime("%Y-%m-%d"), datetime(today.year, 12, 31).strftime(
+                "%Y-%m-%d"
+            )
 
         if any(token in query for token in ("适合普通人", "带朋友看天象", "月内天象")):
             today = datetime.now()
             start = today.replace(day=1)
             if start.month == 12:
-                end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(days=1)
+                end = start.replace(year=start.year + 1, month=1, day=1) - timedelta(
+                    days=1
+                )
             else:
                 end = start.replace(month=start.month + 1, day=1) - timedelta(days=1)
             return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
-        if any(token in query for token in ("未来一周", "未来7天", "本周天象", "这周天象", "一周天象")):
+        if any(
+            token in query
+            for token in ("未来一周", "未来7天", "本周天象", "这周天象", "一周天象")
+        ):
             start = datetime.now()
             end = start + timedelta(days=7)
             return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
@@ -301,7 +319,15 @@ class SkillParamBuilder:
         return None
 
     def _extract_equipment(self, query: str) -> Optional[str]:
-        for equipment in ("双筒望远镜", "双筒", "小折射镜", "8寸望远镜", "赤道仪", "固定三脚架", "三脚架"):
+        for equipment in (
+            "双筒望远镜",
+            "双筒",
+            "小折射镜",
+            "8寸望远镜",
+            "赤道仪",
+            "固定三脚架",
+            "三脚架",
+        ):
             if equipment in query:
                 return equipment
         return None
@@ -422,7 +448,9 @@ class SkillParamBuilder:
             return "monthly"
         if any(token in query for token in ("本月", "这个月", "适合普通人", "带朋友")):
             return "monthly"
-        if any(token in query for token in ("未来一周", "未来7天", "本周", "这周", "一周")):
+        if any(
+            token in query for token in ("未来一周", "未来7天", "本周", "这周", "一周")
+        ):
             return "weekly"
         return None
 

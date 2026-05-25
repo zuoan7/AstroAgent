@@ -44,7 +44,7 @@ class TestAstronomyModuleIntegration:
         mock_ephemeris.planets.__getitem__ = MagicMock(return_value=mock_planet)
 
         with patch(
-            "src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}
+            "src.utils.param_parser.ParamParser.parse_mixed_input", return_value={}
         ):
             with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                 mock_t = MagicMock()
@@ -470,26 +470,26 @@ class TestParamParserIntegration:
     """测试参数解析器在模块间的集成"""
 
     def test_parse_json_string_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse('{"city": "北京", "extensions": "all"}')
         assert result["city"] == "北京"
         assert result["extensions"] == "all"
 
     def test_parse_dict_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse({"city": "上海"})
         assert result["city"] == "上海"
 
     def test_parse_plain_string_with_primary_param(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse("北京", primary_param="city")
         assert result["city"] == "北京"
 
     def test_parse_tool_input_with_defaults(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse_tool_input(
             '{"city": "北京"}',
@@ -500,13 +500,13 @@ class TestParamParserIntegration:
         assert result["timeout"] == 30
 
     def test_normalize_date_today(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.normalize_date("今天")
         assert result == datetime.now().strftime("%Y-%m-%d")
 
     def test_normalize_date_tomorrow(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.normalize_date("明天")
         expected = (datetime.now() + __import__("datetime").timedelta(days=1)).strftime(
@@ -515,33 +515,33 @@ class TestParamParserIntegration:
         assert result == expected
 
     def test_normalize_date_iso_format(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.normalize_date("2026-04-08")
         assert result == "2026-04-08"
 
     def test_safe_int_conversion(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         assert ParamParser.safe_int("42") == 42
         assert ParamParser.safe_int("invalid", default=0) == 0
         assert ParamParser.safe_int(None, default=-1) == -1
 
     def test_safe_float_conversion(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         assert ParamParser.safe_float("3.14") == 3.14
         assert ParamParser.safe_float("invalid", default=0.0) == 0.0
         assert ParamParser.safe_float(None, default=-1.0) == -1.0
 
     def test_normalize_location_dict(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.normalize_location({"city": "上海", "location": "浦东"})
         assert result == "浦东"
 
     def test_normalize_location_json_string(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.normalize_location('{"city": "广州"}')
         assert result == "广州"
@@ -554,7 +554,7 @@ class TestFallbackServiceIntegration:
         from src.agent.fallback_service import FallbackService
 
         mock_sm = MagicMock()
-        service = FallbackService(skill_manager=mock_sm)
+        service = FallbackService(capability_kit=mock_sm)
 
         assert service.should_use_fallback("") is True
         assert service.should_use_fallback(None) is True
@@ -563,7 +563,7 @@ class TestFallbackServiceIntegration:
         from src.agent.fallback_service import FallbackService
 
         mock_sm = MagicMock()
-        service = FallbackService(skill_manager=mock_sm)
+        service = FallbackService(capability_kit=mock_sm)
 
         assert service.should_use_fallback("这是一个正常的回答") is False
 
@@ -571,7 +571,7 @@ class TestFallbackServiceIntegration:
         from src.agent.fallback_service import FallbackService
 
         mock_sm = MagicMock()
-        service = FallbackService(skill_manager=mock_sm)
+        service = FallbackService(capability_kit=mock_sm)
 
         assert service.should_use_fallback("工具调用错误，请重试") is True
         assert service.should_use_fallback("无法连接到MCP服务器") is True
@@ -580,7 +580,7 @@ class TestFallbackServiceIntegration:
         from src.agent.fallback_service import FallbackService
 
         mock_sm = MagicMock()
-        service = FallbackService(skill_manager=mock_sm)
+        service = FallbackService(capability_kit=mock_sm)
 
         search_data = json.dumps(
             {
@@ -603,7 +603,7 @@ class TestFallbackServiceIntegration:
         from src.agent.fallback_service import FallbackService
 
         mock_sm = MagicMock()
-        service = FallbackService(skill_manager=mock_sm)
+        service = FallbackService(capability_kit=mock_sm)
 
         error_data = json.dumps(
             {

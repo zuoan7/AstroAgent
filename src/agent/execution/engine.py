@@ -1,5 +1,4 @@
-"""统一执行引擎，根据 ExecutionDecision 分发 direct、planned、react 路径，并处理 planned 恢复策略。
-"""
+"""统一执行引擎，根据 ExecutionDecision 分发 direct、planned、react 路径，并处理 planned 恢复策略。"""
 
 from __future__ import annotations
 
@@ -27,9 +26,9 @@ class ExecutionEngine:
 
     def __init__(
         self,
-        skill_manager: Any,
-        rag_retriever: Any,
-        llm: Any,
+        capability_kit: Any = None,
+        rag_retriever: Any = None,
+        llm: Any = None,
         *,
         synthesizer: Optional[ResponseSynthesizer] = None,
         planner: Optional[Planner] = None,
@@ -41,13 +40,13 @@ class ExecutionEngine:
         _synthesizer = synthesizer or ResponseSynthesizer(llm=llm)
 
         self._direct = DirectExecutor(
-            skill_manager=skill_manager,
+            capability_kit=capability_kit,
             rag_retriever=rag_retriever,
             llm=llm,
             synthesizer=_synthesizer,
         )
         self._planned = PlannedExecutor(
-            skill_manager=skill_manager,
+            capability_kit=capability_kit,
             llm=llm,
             synthesizer=_synthesizer,
             planner=planner,

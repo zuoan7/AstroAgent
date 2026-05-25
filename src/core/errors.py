@@ -3,11 +3,11 @@
 提供标准化的错误码、错误信息和错误处理
 """
 
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, Type
-import json
 import functools
+import json
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, Optional, Type
 
 
 class ErrorCode(Enum):
@@ -51,6 +51,7 @@ def register_exception_mapping(exc_type: Type[Exception], code: ErrorCode):
 def _init_default_exception_map():
     try:
         import httpx
+
         register_exception_mapping(httpx.TimeoutException, ErrorCode.MCP_TIMEOUT_ERROR)
         register_exception_mapping(httpx.ConnectError, ErrorCode.MCP_CONNECTION_ERROR)
     except ImportError:
@@ -63,12 +64,14 @@ def _init_default_exception_map():
 
     try:
         import sqlite3
+
         register_exception_mapping(sqlite3.Error, ErrorCode.MEMORY_ERROR)
     except ImportError:
         pass
 
     try:
         import requests
+
         register_exception_mapping(requests.Timeout, ErrorCode.API_ERROR)
         register_exception_mapping(requests.ConnectionError, ErrorCode.API_ERROR)
     except ImportError:
@@ -104,7 +107,7 @@ class AgentError(Exception):
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
     def to_envelope_dict(self, tool_name: str = "unknown") -> Dict[str, Any]:
-        from src.core.mcp_protocol import error_envelope
+        from src.transport.mcp.envelope import error_envelope
 
         return error_envelope(
             tool_name=tool_name,
@@ -114,7 +117,7 @@ class AgentError(Exception):
         ).model_dump(mode="json")
 
     def to_envelope_json(self, tool_name: str = "unknown") -> str:
-        from src.core.mcp_protocol import serialize_envelope
+        from src.transport.mcp.envelope import serialize_envelope
 
         return serialize_envelope(self.to_envelope_dict(tool_name))
 
@@ -129,7 +132,9 @@ class ErrorHandler:
     """统一错误处理器"""
 
     @staticmethod
-    def handle(error: Exception, context: Optional[Dict[str, Any]] = None) -> AgentError:
+    def handle(
+        error: Exception, context: Optional[Dict[str, Any]] = None
+    ) -> AgentError:
         context = context or {}
 
         if isinstance(error, AgentError):
@@ -138,46 +143,53 @@ class ErrorHandler:
         for exc_type, code in _EXCEPTION_MAP.items():
             if isinstance(error, exc_type):
                 return AgentError(
-                    code=code,
-                    message=str(error),
-                    details=context,
-                    original_error=error
+                    code=code, message=str(error), details=context, original_error=error
                 )
 
         return AgentError(
             code=ErrorCode.UNKNOWN_ERROR,
             message=str(error),
             details=context,
-            original_error=error
+            original_error=error,
         )
 
     @staticmethod
-    def create_tool_error(tool_name: str, error_message: str, details: Optional[Dict] = None) -> AgentError:
+    def create_tool_error(
+        tool_name: str, error_message: str, details: Optional[Dict] = None
+    ) -> AgentError:
         return AgentError(
             code=ErrorCode.TOOL_CALL_FAILED,
             message=f"工具 '{tool_name}' 调用失败: {error_message}",
-            details={"tool_name": tool_name, **(details or {})}
+            details={"tool_name": tool_name, **(details or {})},
         )
 
     @staticmethod
-    def create_param_error(param_name: str, error_message: str, details: Optional[Dict] = None) -> AgentError:
+    def create_param_error(
+        param_name: str, error_message: str, details: Optional[Dict] = None
+    ) -> AgentError:
         return AgentError(
             code=ErrorCode.PARAM_PARSE_ERROR,
             message=f"参数 '{param_name}' 解析失败: {error_message}",
-            details={"param_name": param_name, **(details or {})}
+            details={"param_name": param_name, **(details or {})},
         )
 
     @staticmethod
-    def create_api_error(api_name: str, error_message: str, details: Optional[Dict] = None) -> AgentError:
+    def create_api_error(
+        api_name: str, error_message: str, details: Optional[Dict] = None
+    ) -> AgentError:
         return AgentError(
             code=ErrorCode.API_ERROR,
             message=f"API '{api_name}' 调用失败: {error_message}",
-            details={"api_name": api_name, **(details or {})}
+            details={"api_name": api_name, **(details or {})},
         )
 
     @staticmethod
     def is_error_response(data: Any) -> bool:
-        if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), dict):
+        if (
+            isinstance(data, dict)
+            and data.get("ok") is False
+            and isinstance(data.get("error"), dict)
+        ):
             return True
         if isinstance(data, dict):
             return data.get("error") is True or "error" in data
@@ -189,7 +201,11 @@ class ErrorHandler:
     def extract_error_code(data: Any) -> Optional[str]:
         if isinstance(data, AgentError):
             return data.code.value
-        if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), dict):
+        if (
+            isinstance(data, dict)
+            and data.get("ok") is False
+            and isinstance(data.get("error"), dict)
+        ):
             return data["error"].get("code")
         if isinstance(data, dict) and "code" in data:
             return data["code"]
@@ -209,10 +225,11 @@ def safe_tool_call(func=None, *, error_code: ErrorCode = ErrorCode.TOOL_CALL_FAI
         def describe_image(path: str) -> dict:
             pass
     """
+
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
-            from src.core.mcp_protocol import wrap_tool_result
+            from src.tools.protocol import wrap_tool_result
 
             try:
                 result = fn(*args, **kwargs)
@@ -226,9 +243,10 @@ def safe_tool_call(func=None, *, error_code: ErrorCode = ErrorCode.TOOL_CALL_FAI
                         code=error_code,
                         message=str(e),
                         details={"function": fn.__name__},
-                        original_error=e
+                        original_error=e,
                     )
                 return wrap_tool_result(error, fn.__name__)
+
         return wrapper
 
     if func is not None:

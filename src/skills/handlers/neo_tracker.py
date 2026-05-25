@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.skills.context import SkillContext
 from src.skills.inputs import NeoTrackerInput
 from src.skills.services.lookup import parse_time_range

@@ -1,5 +1,4 @@
-"""MCP 客户端，负责 Streamable HTTP 会话初始化、SSE 响应解析和工具调用。
-"""
+"""MCP 客户端，负责 Streamable HTTP 会话初始化、SSE 响应解析和工具调用。"""
 
 from __future__ import annotations
 
@@ -12,9 +11,9 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from src.core.logger import logger
-from src.core.errors import ErrorHandler, ErrorCode
 from src.core.config import settings
+from src.core.errors import ErrorCode, ErrorHandler
+from src.core.logger import logger
 from src.transport.mcp.envelope import (
     error_envelope,
     parse_tool_response,
@@ -117,11 +116,11 @@ class MCPClient:
                 self._init_lock = asyncio.Lock()
         return self._init_lock
 
-    def call_tool(self, tool_name: str, **kwargs) -> str:
+    def invoke(self, tool_name: str, **kwargs) -> str:
         """从同步上下文调用单个 MCP 工具。"""
         return self._async_bridge.run(self._async_call_tool(tool_name, **kwargs))
 
-    def call_tools_parallel(self, calls: list[dict]) -> list[str]:
+    def invoke_parallel(self, calls: list[dict]) -> list[str]:
         """
         使用独立会话批量并行调用 MCP 工具。
 
@@ -151,10 +150,7 @@ class MCPClient:
             # 废弃主会话，避免沿用潜在坏状态
             self._initialized = False
             self._session_id = None
-            return [
-                self.call_tool(c["tool_name"], **c.get("kwargs", {}))
-                for c in calls
-            ]
+            return [self.invoke(c["tool_name"], **c.get("kwargs", {})) for c in calls]
 
         final = []
         for i, r in enumerate(results):
@@ -186,9 +182,42 @@ class MCPClient:
         """
         return await self._async_call_tool_isolated(tool_name, **kwargs)
 
-    async def async_call_tool(self, tool_name: str, **kwargs) -> str:
+    async def ainvoke(self, tool_name: str, **kwargs) -> str:
         """从异步上下文调用单个 MCP 工具。"""
         return await self._async_call_tool(tool_name, **kwargs)
+
+    async def ainvoke_parallel(self, calls: list[dict]) -> list[str]:
+        """从异步上下文批量并行调用 MCP 工具。"""
+        tasks = [
+            self._dispatch_parallel_tool_call(
+                call["tool_name"],
+                **call.get("kwargs", {}),
+            )
+            for call in calls
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        final = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                tool_name = calls[i].get("tool_name", "parallel_call")
+                error = ErrorHandler.handle(
+                    result,
+                    {"parallel_call": True, "tool_name": tool_name},
+                )
+                final.append(
+                    serialize_envelope(
+                        error_envelope(
+                            tool_name=tool_name,
+                            code=error.code.value,
+                            message=error.message,
+                            details=error.details,
+                        )
+                    )
+                )
+            else:
+                final.append(result)
+        return final
 
     def shutdown(self) -> None:
         """关闭异步桥和 HTTP 客户端。"""
@@ -321,7 +350,9 @@ class MCPClient:
                 },
             )
             if notif_resp.status_code not in (200, 202):
-                logger.warning(f"initialized通知返回非预期状态: {notif_resp.status_code}")
+                logger.warning(
+                    f"initialized通知返回非预期状态: {notif_resp.status_code}"
+                )
 
             logger.info("获取工具列表...")
             list_request = {
@@ -767,4 +798,3 @@ class MCPClient:
 
         logger.warning(f"未知响应格式: {result}")
         return str(result)
-

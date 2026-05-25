@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
-from src.agent.param_parser import ParamParser
+from src.utils.param_parser import ParamParser
 from src.tools.results import ToolResult
 
 
@@ -61,8 +61,7 @@ def tool_source_entry(
     text = snippet_text
     if text is None:
         _, text = tool_payload_and_text(result)
-    raw = result.raw_envelope if result.raw_envelope is not None else result.data
-    snippet = ParamParser.shorten_text(text or str(raw), 240)
+    snippet = ParamParser.shorten_text(text or str(result.data), 240)
     return {"kind": "tool_output", "tool": result.tool_name, "snippet": snippet}
 
 

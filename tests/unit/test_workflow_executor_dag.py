@@ -9,12 +9,13 @@ mock_heavy_dependencies()
 
 from src.agent.execution.workflow_executor import WorkflowExecutor
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.workflow_graph import WorkflowGraph
 from src.agent.policies.budget_policy import RequestBudget, RequestBudgetTracker
+from src.tools.results import ToolResult
 
 
-class _SkillManagerStub:
+class _CapabilityKitStub:
     def __init__(
         self,
         *,
@@ -61,9 +62,13 @@ class _SkillManagerStub:
             ],
         )
 
-    def call_mcp_tool(self, tool_name: str, **kwargs):
+    def call_tool(self, tool_name: str, **kwargs):
         self.tool_calls.append((tool_name, kwargs))
-        return '{"ok": true, "tool": "%s"}' % tool_name
+        return ToolResult(
+            ok=True,
+            tool_name=tool_name,
+            data={"tool": tool_name},
+        )
 
 
 def _params(skill_name: str, query: str) -> dict:
@@ -111,8 +116,8 @@ def test_workflow_executor_runs_ready_dag_nodes_concurrently():
         ],
     )
     graph = WorkflowGraph.from_execution_plan(plan)
-    manager = _SkillManagerStub(delays={"left-tool": 0.12, "right-tool": 0.12})
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub(delays={"left-tool": 0.12, "right-tool": 0.12})
+    executor = WorkflowExecutor(capability_kit=manager)
 
     started = time.perf_counter()
     outcome = asyncio.run(
@@ -153,8 +158,8 @@ def test_workflow_executor_retries_failed_step_before_success():
             )
         ],
     )
-    manager = _SkillManagerStub(fail_first={"event-tool"})
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub(fail_first={"event-tool"})
+    executor = WorkflowExecutor(capability_kit=manager)
 
     outcome = asyncio.run(
         executor.execute(
@@ -185,8 +190,8 @@ def test_workflow_executor_uses_capability_name_when_skill_field_is_absent():
             )
         ],
     )
-    manager = _SkillManagerStub()
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub()
+    executor = WorkflowExecutor(capability_kit=manager)
 
     outcome = asyncio.run(
         executor.execute(
@@ -233,8 +238,8 @@ def test_workflow_executor_does_not_infer_executable_from_node_skill():
             )
         ],
     )
-    manager = _SkillManagerStub()
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub()
+    executor = WorkflowExecutor(capability_kit=manager)
 
     outcome = asyncio.run(
         executor.execute(
@@ -267,8 +272,8 @@ def test_workflow_executor_runs_tool_only_plan_step():
             )
         ],
     )
-    manager = _SkillManagerStub()
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub()
+    executor = WorkflowExecutor(capability_kit=manager)
 
     outcome = asyncio.run(
         executor.execute(
@@ -315,8 +320,8 @@ def test_workflow_executor_runs_mixed_skill_and_tool_plan():
             ),
         ],
     )
-    manager = _SkillManagerStub()
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub()
+    executor = WorkflowExecutor(capability_kit=manager)
 
     outcome = asyncio.run(
         executor.execute(
@@ -359,8 +364,8 @@ def test_optional_failure_does_not_block_dependent_continue_strategy():
             ),
         ],
     )
-    manager = _SkillManagerStub(always_fail={"weather-tool"})
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub(always_fail={"weather-tool"})
+    executor = WorkflowExecutor(capability_kit=manager)
 
     outcome = asyncio.run(
         executor.execute(
@@ -403,8 +408,8 @@ def test_skip_dependents_failure_strategy_skips_downstream_branch():
             ),
         ],
     )
-    manager = _SkillManagerStub(always_fail={"bad-tool"})
-    executor = WorkflowExecutor(skill_manager=manager)
+    manager = _CapabilityKitStub(always_fail={"bad-tool"})
+    executor = WorkflowExecutor(capability_kit=manager)
 
     outcome = asyncio.run(
         executor.execute(

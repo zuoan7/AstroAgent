@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 工具函数模块 - 向后兼容层
-所有功能已迁移至 src.agent.param_parser.ParamParser
+所有功能已迁移至 src.utils.param_parser.ParamParser
 本模块保留函数签名以保持向后兼容性
 """
 
-from src.agent.param_parser import ParamParser
+from src.utils.param_parser import ParamParser
 
 
 def parse_mixed_input(value, expected_params=None):

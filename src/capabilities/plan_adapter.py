@@ -1,12 +1,12 @@
-"""能力计划适配器，把技能或原子工具能力转换为 planned 路径 PlanStep。
-"""
+"""能力计划适配器，把技能或原子工具能力转换为 planned 路径 PlanStep。"""
 
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from src.agent.models.execution_plan import PlanStep
-from src.capabilities.registry import CapabilityRegistry, get_default_capability_registry
+from src.capabilities.plan import PlanStep
+from src.skills.registry import SkillRegistry, get_default_skill_registry
+from src.tools.registry import ToolRegistry, get_default_tool_registry
 
 
 class CapabilityPlanAdapter:
@@ -16,9 +16,14 @@ class CapabilityPlanAdapter:
     capability_kind 和 capability_name。
     """
 
-    def __init__(self, registry: Optional[CapabilityRegistry] = None) -> None:
-        """初始化能力注册表依赖。"""
-        self._registry = registry or get_default_capability_registry()
+    def __init__(
+        self,
+        skill_registry: Optional[SkillRegistry] = None,
+        tool_registry: Optional[ToolRegistry] = None,
+    ) -> None:
+        """初始化技能和工具注册表依赖。"""
+        self._skill_registry = skill_registry or get_default_skill_registry()
+        self._tool_registry = tool_registry or get_default_tool_registry()
 
     def make_skill_step(
         self,
@@ -41,7 +46,7 @@ class CapabilityPlanAdapter:
         timeout_ms: Optional[int] = None,
     ) -> PlanStep:
         """根据高层技能能力创建 planned 路径步骤。"""
-        spec = self._registry.get_skill(skill_name)
+        definition = self._skill_registry.get(skill_name)
         return PlanStep(
             id=id,
             kind="tool",
@@ -51,7 +56,7 @@ class CapabilityPlanAdapter:
             capability_kind="skill",
             capability_name=skill_name,
             operation=operation,
-            allowed_tools=list(spec.allowed_tools),
+            allowed_tools=list(definition.allowed_tools),
             params=dict(params or {}),
             purpose=purpose,
             success_criteria=success_criteria,
@@ -85,7 +90,7 @@ class CapabilityPlanAdapter:
         timeout_ms: Optional[int] = None,
     ) -> PlanStep:
         """根据原子工具能力创建 planned 路径步骤。"""
-        self._registry.get_tool(tool_name)
+        self._tool_registry.get_tool(tool_name)
         return PlanStep(
             id=id,
             kind="tool",

@@ -2,6 +2,7 @@ import json
 import os
 import time
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -155,8 +156,8 @@ class TestAPIEndpointsIntegration:
         assert data["model_name"] == "qwen3.6-plus"
 
 
-class TestSkillManagerIntegration:
-    """测试SkillManager与Router的集成"""
+class TestCapabilityKitIntegration:
+    """测试 CapabilityKit 集成边界"""
 
     @pytest.fixture
     def mock_rag(self):
@@ -165,78 +166,65 @@ class TestSkillManagerIntegration:
         return rag
 
     @pytest.fixture
-    def skill_manager(self, mock_rag):
-        with patch("src.agent.skill_manager.AstronomySkillRouter") as MockRouter:
-            mock_router = MagicMock()
-            mock_router.list_skills.return_value = {
-                "weather-lookup": "查询天气",
-                "observation-planner": "生成观测计划",
-                "celestial-events-forecast": "查询天象事件",
-                "deep-sky-observing-guide": "深空观测指导",
-                "neo-tracker": "近地天体追踪",
-                "astrophotography-calculator": "天文摄影参数",
-                "celestial-position-calculator": "天体位置计算",
-            }
-            mock_router.call.return_value = "测试结果"
-            mock_router.call_mcp_tool.return_value = "MCP工具结果"
-            MockRouter.return_value = mock_router
+    def capability_kit(self, mock_rag):
+        mock_kit = MagicMock()
+        mock_kit.rag_retriever = mock_rag
+        mock_kit.list_skills.return_value = [
+            SimpleNamespace(name="weather-lookup", summary="查询天气"),
+            SimpleNamespace(name="observation-planner", summary="生成观测计划"),
+            SimpleNamespace(
+                name="celestial-events-forecast",
+                summary="查询天象事件",
+            ),
+            SimpleNamespace(name="deep-sky-observing-guide", summary="深空观测指导"),
+            SimpleNamespace(name="neo-tracker", summary="近地天体追踪"),
+            SimpleNamespace(
+                name="astrophotography-calculator",
+                summary="天文摄影参数",
+            ),
+            SimpleNamespace(
+                name="celestial-position-calculator",
+                summary="天体位置计算",
+            ),
+        ]
+        mock_kit.call_skill.return_value = "测试结果"
+        mock_tool_result = SimpleNamespace(ok=True, data={"result": "MCP工具结果"})
+        mock_kit.call_tool.return_value = mock_tool_result
+        mock_kit.to_langchain_tools.return_value = [SimpleNamespace(name="RAGRetrieve")]
+        return mock_kit
 
-            from src.agent.skill_manager import SkillManager
+    def test_list_skills(self, capability_kit):
+        skills = capability_kit.list_skills()
+        assert isinstance(skills, list)
+        assert any(skill.name == "weather-lookup" for skill in skills)
 
-            sm = SkillManager(rag_retriever=mock_rag)
-            return sm, mock_router
-
-    def test_list_skills(self, skill_manager):
-        sm, _ = skill_manager
-        skills = sm.list_skills()
-        assert isinstance(skills, dict)
-        assert "weather-lookup" in skills
-
-    def test_call_skill(self, skill_manager):
-        sm, mock_router = skill_manager
-        result = sm.call_skill("weather-lookup", city="北京")
+    def test_call_skill(self, capability_kit):
+        result = capability_kit.call_skill("weather-lookup", city="北京")
         assert result == "测试结果"
+        capability_kit.call_skill.assert_called_once_with("weather-lookup", city="北京")
 
-    def test_call_mcp_tool(self, skill_manager):
-        sm, mock_router = skill_manager
-        result = sm.call_mcp_tool("get_weather", city="北京")
-        assert result == "MCP工具结果"
+    def test_call_tool(self, capability_kit):
+        result = capability_kit.call_tool("get_weather", city="北京")
+        assert result.data == {"result": "MCP工具结果"}
+        capability_kit.call_tool.assert_called_once_with("get_weather", city="北京")
 
-    def test_get_langchain_tools(self, skill_manager):
-        sm, _ = skill_manager
-        tools = sm.get_langchain_tools()
+    def test_get_langchain_tools(self, capability_kit):
+        tools = capability_kit.to_langchain_tools()
         assert isinstance(tools, list)
         assert len(tools) > 0
 
-    def test_rag_tool_function(self, skill_manager):
-        sm, _ = skill_manager
-        mock_rag = sm._rag
+    def test_rag_tool_function(self, capability_kit):
+        mock_rag = capability_kit.rag_retriever
 
         mock_rag.get_relevant_context.return_value = "火星是太阳系第四颗行星"
         result = mock_rag.get_relevant_context("火星")
         assert "火星" in result
 
-    def test_weather_param_handler(self):
-        from src.agent.skill_manager import SkillManager
+    def test_weather_input_merges_location_into_city(self):
+        from src.skills.inputs import WeatherLookupInput
 
-        result = SkillManager._weather_param_handler(
-            {"city": "北京", "location": "北京"}
-        )
-        assert result["city"] == "北京"
-        assert "location" not in result
-
-    def test_safe_convert_bool(self):
-        from src.agent.skill_manager import SkillManager
-
-        assert SkillManager._safe_convert("true", bool) is True
-        assert SkillManager._safe_convert("false", bool) is False
-        assert SkillManager._safe_convert("1", bool) is True
-
-    def test_safe_convert_float(self):
-        from src.agent.skill_manager import SkillManager
-
-        assert SkillManager._safe_convert("3.14", float) == 3.14
-        assert SkillManager._safe_convert("invalid", float) == "invalid"
+        result = WeatherLookupInput.model_validate({"location": "北京"})
+        assert result.city == "北京"
 
 
 class TestStreamingServiceIntegration:

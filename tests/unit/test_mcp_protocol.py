@@ -8,14 +8,12 @@ from tests.mock_deps import mock_heavy_dependencies
 mock_heavy_dependencies()
 
 from src.core.errors import ErrorCode, safe_tool_call
-from src.core.mcp_protocol import (
-    TOOL_INPUT_MODELS,
-    TOOL_OUTPUT_MODELS,
+from src.tools.registry import get_default_tool_registry
+from src.transport.mcp.envelope import (
     extract_tool_data,
     is_tool_error,
     parse_tool_response,
 )
-
 
 EXPECTED_MCP_TOOLS = {
     "get_planet_position",
@@ -40,13 +38,21 @@ class _FakePlanetary:
         return {"ra_hours": 10.5, "ra_degrees": 157.5, "dec": 20.3, "distance_au": 1.5}
 
     def get_altaz(self, *args, **kwargs):
-        return {"planet": "mars", "altitude": 35.2, "azimuth": 180.1, "distance_au": 1.2}
+        return {
+            "planet": "mars",
+            "altitude": 35.2,
+            "azimuth": 180.1,
+            "distance_au": 1.2,
+        }
 
     def coordinate_transformation(self, *args, **kwargs):
         return {"ra_hours": 10.5, "ra_degrees": 157.5, "dec": 20.3}
 
     def get_rise_set_times(self, *args, **kwargs):
-        return {"rise_time": "2026-04-16T06:00:00+08:00", "set_time": "2026-04-16T18:00:00+08:00"}
+        return {
+            "rise_time": "2026-04-16T06:00:00+08:00",
+            "set_time": "2026-04-16T18:00:00+08:00",
+        }
 
     def get_current_sky_objects(self, *args, **kwargs):
         return {"mars": {"altitude": 35.2}, "sun": {"rise_time": "06:00"}}
@@ -75,7 +81,10 @@ class _FakeWeather:
 
 class _FakeSearch:
     def search(self, *args, **kwargs):
-        return {"answer": "test", "results": [{"title": "A", "url": "https://example.com"}]}
+        return {
+            "answer": "test",
+            "results": [{"title": "A", "url": "https://example.com"}],
+        }
 
 
 class _FakeEventsPredictor:
@@ -97,16 +106,19 @@ def _load_mcp_server():
         def tool(self):
             def decorator(fn):
                 return fn
+
             return decorator
 
         def resource(self, *args, **kwargs):
             def decorator(fn):
                 return fn
+
             return decorator
 
         def prompt(self):
             def decorator(fn):
                 return fn
+
             return decorator
 
     sys.modules["fastmcp"] = types.SimpleNamespace(FastMCP=_FakeFastMCP)
@@ -122,8 +134,12 @@ def _load_mcp_server():
 
 
 def test_protocol_registry_covers_all_tools():
-    assert EXPECTED_MCP_TOOLS <= set(TOOL_INPUT_MODELS.keys())
-    assert EXPECTED_MCP_TOOLS <= set(TOOL_OUTPUT_MODELS.keys())
+    registry = get_default_tool_registry()
+    assert EXPECTED_MCP_TOOLS <= set(registry.list_names())
+    for tool_name in EXPECTED_MCP_TOOLS:
+        definition = registry.get_tool(tool_name)
+        assert definition.input_model is not None
+        assert definition.output_model is not None
 
 
 def test_safe_tool_call_wraps_success_and_failure_into_envelopes():
@@ -165,11 +181,21 @@ def test_mcp_server_tools_return_success_envelopes():
 
     calls = {
         "get_planet_position": lambda: mcp_server.get_planet_position("mars"),
-        "get_altaz": lambda: mcp_server.get_altaz("mars", latitude=39.9, longitude=116.4),
-        "coordinate_transformation": lambda: mcp_server.coordinate_transformation(10.5, 20.3),
-        "get_rise_set_times": lambda: mcp_server.get_rise_set_times("sun", 39.9, 116.4, "2026-04-16"),
-        "get_current_sky_objects": lambda: mcp_server.get_current_sky_objects(39.9, 116.4, "2026-04-16"),
-        "get_astrophysical_object_info": lambda: mcp_server.get_astrophysical_object_info("M31"),
+        "get_altaz": lambda: mcp_server.get_altaz(
+            "mars", latitude=39.9, longitude=116.4
+        ),
+        "coordinate_transformation": lambda: mcp_server.coordinate_transformation(
+            10.5, 20.3
+        ),
+        "get_rise_set_times": lambda: mcp_server.get_rise_set_times(
+            "sun", 39.9, 116.4, "2026-04-16"
+        ),
+        "get_current_sky_objects": lambda: mcp_server.get_current_sky_objects(
+            39.9, 116.4, "2026-04-16"
+        ),
+        "get_astrophysical_object_info": lambda: mcp_server.get_astrophysical_object_info(
+            "M31"
+        ),
         "get_galaxy_data": lambda: mcp_server.get_galaxy_data("M31"),
         "get_nasa_apod": lambda: mcp_server.get_nasa_apod("2026-04-16"),
         "get_neo_data": lambda: mcp_server.get_neo_data("2026-04-16", "2026-04-17", 5),

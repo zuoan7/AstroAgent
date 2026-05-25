@@ -76,26 +76,6 @@ class ToolKit:
             ),
         )
 
-    def with_context(
-        self,
-        *,
-        logical_skill: Optional[str] = None,
-        operation: Optional[str] = None,
-        allowed_tools: Optional[List[str]] = None,
-        forbidden_tools: Optional[List[str]] = None,
-        required_params: Optional[List[str]] = None,
-        enforce_allowed_tools: Optional[bool] = None,
-    ) -> "ToolKit":
-        """Legacy alias for with_policy()."""
-        return self.with_policy(
-            logical_skill=logical_skill,
-            operation=operation,
-            allowed_tools=allowed_tools,
-            forbidden_tools=forbidden_tools,
-            required_params=required_params,
-            enforce_allowed_tools=enforce_allowed_tools,
-        )
-
     def invoke(self, tool_name: str, **kwargs: Any) -> ToolResult:
         """Validate and synchronously invoke one atomic tool."""
         started = time.perf_counter()
@@ -109,7 +89,7 @@ class ToolKit:
                 latency_ms=self._elapsed_ms(started),
             )
 
-        raw = self._backend.call_tool(tool_name, **kwargs)
+        raw = self._backend.invoke(tool_name, **kwargs)
         return ToolResult.from_raw(
             tool_name,
             raw,
@@ -130,10 +110,10 @@ class ToolKit:
                 latency_ms=self._elapsed_ms(started),
             )
 
-        if hasattr(self._backend, "async_call_tool"):
-            raw = await self._backend.async_call_tool(tool_name, **kwargs)
+        if hasattr(self._backend, "ainvoke"):
+            raw = await self._backend.ainvoke(tool_name, **kwargs)
         else:
-            raw = await asyncio.to_thread(self._backend.call_tool, tool_name, **kwargs)
+            raw = await asyncio.to_thread(self._backend.invoke, tool_name, **kwargs)
         return ToolResult.from_raw(
             tool_name,
             raw,
@@ -192,27 +172,12 @@ class ToolKit:
             for index, result in enumerate(results)
         ]
 
-    def call_tool(self, tool_name: str, **kwargs: Any) -> str:
-        """Legacy sync API returning raw envelope strings."""
-        violation = self._validate(tool_name, kwargs)
-        if violation is not None:
-            return self._guard_error(tool_name, violation)
-        return self._backend.call_tool(tool_name, **kwargs)
-
-    async def async_call_tool(self, tool_name: str, **kwargs: Any) -> str:
-        """Legacy async API returning raw envelope strings."""
-        violation = self._validate(tool_name, kwargs)
-        if violation is not None:
-            return self._guard_error(tool_name, violation)
-        if hasattr(self._backend, "async_call_tool"):
-            return await self._backend.async_call_tool(tool_name, **kwargs)
-        return await asyncio.to_thread(self._backend.call_tool, tool_name, **kwargs)
-
-    def call_tools_parallel(self, calls: List[Dict[str, Any]]) -> List[str]:
-        """Legacy batch API returning raw envelope strings."""
+    async def ainvoke_parallel(self, calls: List[Dict[str, Any]]) -> List[ToolResult]:
+        """Validate and asynchronously invoke a batch of atomic tools."""
         if not calls:
             return []
 
+        started_by_index = [time.perf_counter() for _ in calls]
         violations: Dict[int, ToolGuardViolation] = {}
         valid_calls: List[Dict[str, Any]] = []
         valid_indices: List[int] = []
@@ -226,17 +191,37 @@ class ToolKit:
             valid_calls.append(call)
             valid_indices.append(index)
 
-        results: List[Optional[str]] = [None] * len(calls)
+        results: List[Optional[ToolResult]] = [None] * len(calls)
         if valid_calls:
-            raw_results = self._call_backend_parallel(valid_calls)
+            raw_results = await self._acall_backend_parallel(valid_calls)
             for index, raw in zip(valid_indices, raw_results):
-                results[index] = raw
+                tool_name = str(calls[index].get("tool_name", "unknown_tool"))
+                results[index] = ToolResult.from_raw(
+                    tool_name,
+                    raw,
+                    output_model=self._output_model(tool_name),
+                    latency_ms=self._elapsed_ms(started_by_index[index]),
+                )
 
         for index, violation in violations.items():
             tool_name = str(calls[index].get("tool_name", "unknown_tool"))
-            results[index] = self._guard_error(tool_name, violation)
+            raw = self._guard_error(tool_name, violation)
+            results[index] = ToolResult.from_raw(
+                tool_name,
+                raw,
+                output_model=self._output_model(tool_name),
+                latency_ms=self._elapsed_ms(started_by_index[index]),
+            )
 
-        return [result or "" for result in results]
+        return [
+            result
+            or ToolResult.from_error(
+                str(calls[index].get("tool_name", "unknown_tool")),
+                code="TOOL_RESULT_MISSING",
+                message="Tool result missing",
+            )
+            for index, result in enumerate(results)
+        ]
 
     def prewarm(self) -> bool:
         """Prewarm the backend connection if supported."""
@@ -256,15 +241,41 @@ class ToolKit:
             self._backend.shutdown()
 
     def _call_backend_parallel(self, calls: List[Dict[str, Any]]) -> List[str]:
-        if hasattr(self._backend, "call_tools_parallel"):
-            return self._backend.call_tools_parallel(calls)
+        if hasattr(self._backend, "invoke_parallel"):
+            return self._backend.invoke_parallel(calls)
         return [
-            self._backend.call_tool(
+            self._backend.invoke(
                 call["tool_name"],
                 **call.get("kwargs", {}),
             )
             for call in calls
         ]
+
+    async def _acall_backend_parallel(self, calls: List[Dict[str, Any]]) -> List[str]:
+        if hasattr(self._backend, "ainvoke_parallel"):
+            return await self._backend.ainvoke_parallel(calls)
+        if hasattr(self._backend, "invoke_parallel"):
+            return await asyncio.to_thread(self._backend.invoke_parallel, calls)
+        if hasattr(self._backend, "ainvoke"):
+            return await asyncio.gather(
+                *[
+                    self._backend.ainvoke(
+                        call["tool_name"],
+                        **call.get("kwargs", {}),
+                    )
+                    for call in calls
+                ]
+            )
+        return await asyncio.gather(
+            *[
+                asyncio.to_thread(
+                    self._backend.invoke,
+                    call["tool_name"],
+                    **call.get("kwargs", {}),
+                )
+                for call in calls
+            ]
+        )
 
     def _validate(
         self,
@@ -326,7 +337,3 @@ class ToolKit:
     @staticmethod
     def _elapsed_ms(started: float) -> float:
         return round((time.perf_counter() - started) * 1000.0, 2)
-
-
-class ToolRuntime(ToolKit):
-    """Backward-compatible name for ToolKit."""

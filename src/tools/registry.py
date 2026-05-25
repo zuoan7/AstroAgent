@@ -1,126 +1,32 @@
-"""Canonical registry for atomic tool definitions and schemas."""
+"""Canonical registry for atomic tool definitions."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional, Type
-
-from pydantic import BaseModel, ConfigDict, RootModel
+from typing import Dict, Iterable, Optional
 
 from src.tools.definition import ToolCostClass, ToolDefinition
-
-
-class PlanetPositionInput(BaseModel):
-    planet_name: str
-    observation_time: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-
-
-class AltAzInput(PlanetPositionInput):
-    latitude: float
-    longitude: float
-
-
-class CoordinateTransformationInput(BaseModel):
-    ra: float
-    dec: float
-    epoch: str = "J2000"
-    target_system: str = "fk5"
-
-
-class RiseSetTimesInput(BaseModel):
-    body_name: str
-    latitude: float
-    longitude: float
-    date: Optional[str] = None
-
-
-class CurrentSkyObjectsInput(BaseModel):
-    latitude: float
-    longitude: float
-    date: Optional[str] = None
-
-
-class AstrophysicalObjectInfoInput(BaseModel):
-    object_name: str
-
-
-class GalaxyDataInput(BaseModel):
-    galaxy_name: str
-
-
-class NASAApodInput(BaseModel):
-    date: Optional[str] = None
-    hd: bool = False
-
-
-class NeoDataInput(BaseModel):
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    limit: int = 10
-
-
-class WeatherInput(BaseModel):
-    city: Optional[str] = None
-    extensions: str = "base"
-
-
-class WebSearchInput(BaseModel):
-    query: str
-    max_results: int = 5
-
-
-class TonightBestInput(BaseModel):
-    pass
-
-
-class WeeklyEventsInput(BaseModel):
-    start_date: Optional[str] = None
-
-
-class MonthlyEventsInput(BaseModel):
-    year: Optional[int] = None
-    month: Optional[int] = None
-
-
-class PlanetPositionData(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    ra_hours: Optional[float] = None
-    ra_degrees: Optional[float] = None
-    dec: Optional[float] = None
-    distance_au: Optional[float] = None
-    altitude: Optional[float] = None
-    azimuth: Optional[float] = None
-
-
-class AltAzData(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    planet: str
-    altitude: float
-    azimuth: float
-    distance_au: float
-
-
-class CoordinateTransformationData(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    ra_hours: float
-    ra_degrees: float
-    dec: float
-
-
-class RiseSetTimesData(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    rise_time: Any = None
-    set_time: Any = None
-
-
-class JsonObjectData(RootModel[Dict[str, Any]]):
-    pass
-
+from src.tools.schemas.astronomy import (
+    AltAzData,
+    AltAzInput,
+    AstrophysicalObjectInfoInput,
+    CoordinateTransformationData,
+    CoordinateTransformationInput,
+    CurrentSkyObjectsInput,
+    GalaxyDataInput,
+    PlanetPositionData,
+    PlanetPositionInput,
+    RiseSetTimesData,
+    RiseSetTimesInput,
+)
+from src.tools.schemas.common import JsonObjectData
+from src.tools.schemas.events import (
+    MonthlyEventsInput,
+    TonightBestInput,
+    WeeklyEventsInput,
+)
+from src.tools.schemas.nasa import NASAApodInput, NeoDataInput
+from src.tools.schemas.search import WebSearchInput
+from src.tools.schemas.weather import WeatherInput
 
 _TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
@@ -248,16 +154,3 @@ class ToolRegistry:
 def get_default_tool_registry() -> ToolRegistry:
     """Construct the default atomic tool registry."""
     return ToolRegistry()
-
-
-TOOL_INPUT_MODELS: Dict[str, Type[BaseModel]] = {
-    definition.name: definition.input_model
-    for definition in _TOOL_DEFINITIONS
-}
-
-
-TOOL_OUTPUT_MODELS: Dict[str, Any] = {
-    definition.name: definition.output_model
-    for definition in _TOOL_DEFINITIONS
-}
-

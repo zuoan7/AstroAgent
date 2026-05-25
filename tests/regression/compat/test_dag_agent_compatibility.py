@@ -9,35 +9,36 @@
 6. StreamingService._run_orchestrated_path 在新主路径下能正常返回 FinalResponse
 7. 旧 orchestrator / StepExecutor 已删除
 """
+
 from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from tests.mock_deps import mock_heavy_dependencies
 
 mock_heavy_dependencies()
 
-from src.agent.execution.engine import ExecutionEngine
 from src.agent.execution.direct_executor import DirectExecutor
+from src.agent.execution.engine import ExecutionEngine
 from src.agent.execution.planned_executor import PlannedExecutor
 from src.agent.governance import AgentExecutionPolicy
 from src.agent.models.execution_context import ExecutionContext
 from src.agent.models.execution_decision import ExecutionDecision
-from src.agent.models.final_response import FinalResponse
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
+from src.agent.models.final_response import FinalResponse
 from src.agent.models.request_context import RequestContext
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.task_profile import TaskProfile
-from src.agent.request_router import RouteDecision
-from src.agent.request_router import RequestRouter
-
+from src.agent.request_router import RequestRouter, RouteDecision
 
 # ─────────────────────────────────────────────────────────────────
 # 辅助工厂
 # ─────────────────────────────────────────────────────────────────
+
 
 def _make_final_response(answer: str = "测试答案") -> FinalResponse:
     return FinalResponse(
@@ -48,7 +49,9 @@ def _make_final_response(answer: str = "测试答案") -> FinalResponse:
     )
 
 
-def _route_decision(route: str = "direct_task", task_type: str = "smalltalk") -> RouteDecision:
+def _route_decision(
+    route: str = "direct_task", task_type: str = "smalltalk"
+) -> RouteDecision:
     return RouteDecision(
         route=route,
         task_type=task_type,
@@ -73,7 +76,7 @@ def _ok_skill_result(name: str = "weather-lookup") -> SkillResult:
     return SkillResult(skill_name=name, success=True, summary=f"{name} ok", data={})
 
 
-def _skill_manager_mock() -> MagicMock:
+def _capability_kit_mock() -> MagicMock:
     mgr = MagicMock()
     mgr.call_skill.return_value = _ok_skill_result()
     return mgr
@@ -83,14 +86,17 @@ def _skill_manager_mock() -> MagicMock:
 # 1. config flags 默认值
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestPhase8FlagsDefault:
 
     def test_enable_unified_execution_engine_flag_removed(self):
         from src.core.config import settings
+
         assert not hasattr(settings, "ENABLE_UNIFIED_EXECUTION_ENGINE")
 
     def test_deprecated_non_branching_flags_are_removed(self):
         from src.core.config import settings
+
         removed = {
             "ENABLE_TASK_PROFILE",
             "ENABLE_EXECUTION_CONTEXT",
@@ -107,20 +113,21 @@ class TestPhase8FlagsDefault:
 # 2. ExecutionEngine 直接调用测试（direct / planned）
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestExecutionEngineNewPaths:
 
     def _make_engine(self) -> ExecutionEngine:
-        skill_mgr = _skill_manager_mock()
+        capability_kit = _capability_kit_mock()
         synth = _mock_synthesizer()
         engine = ExecutionEngine.__new__(ExecutionEngine)
         engine._direct = DirectExecutor(
-            skill_manager=skill_mgr,
+            capability_kit=capability_kit,
             rag_retriever=MagicMock(),
             llm=MagicMock(),
             synthesizer=synth,
         )
         engine._planned = PlannedExecutor(
-            skill_manager=skill_mgr,
+            capability_kit=capability_kit,
             llm=MagicMock(),
             synthesizer=synth,
         )
@@ -151,13 +158,17 @@ class TestExecutionEngineNewPaths:
         with patch.object(engine._planned, "_planner") as mock_planner:
             mock_planner.plan.return_value = plan
             result = asyncio.run(
-                engine.run(decision, route_decision, "今晚北京天气", execution_plan=plan)
+                engine.run(
+                    decision, route_decision, "今晚北京天气", execution_plan=plan
+                )
             )
         assert isinstance(result, FinalResponse)
 
     def test_engine_react_mode(self):
         engine = self._make_engine()
-        engine._react.run_context = AsyncMock(return_value=_make_final_response("react 答案"))
+        engine._react.run_context = AsyncMock(
+            return_value=_make_final_response("react 答案")
+        )
         decision = ExecutionDecision(mode="react", reason="test")
         route_decision = _route_decision()
 
@@ -355,7 +366,9 @@ class TestExecutionEngineNewPaths:
             steps=[PlanStep(id="fixed", kind="tool", skill="weather-lookup")],
         )
         engine._planned = MagicMock()
-        engine._planned.run_context = AsyncMock(side_effect=[failed_response, repaired_response])
+        engine._planned.run_context = AsyncMock(
+            side_effect=[failed_response, repaired_response]
+        )
         engine._planned.repair_plan_context.return_value = repaired_plan
         engine._react = MagicMock()
         engine._react.run_context = AsyncMock()
@@ -374,18 +387,22 @@ class TestExecutionEngineNewPaths:
         assert result.fallback_path[0]["strategy"] == "plan_repair"
         assert result.fallback_path[0]["metadata"]["executed"] is True
         assert result.fallback_path[0]["metadata"]["recovery_mode"] == "plan_repair"
-        assert any(event["type"] == "plan_repaired" for event in result.execution_events)
+        assert any(
+            event["type"] == "plan_repaired" for event in result.execution_events
+        )
 
 
 # ─────────────────────────────────────────────────────────────────
 # 3. StreamingService._run_orchestrated_path engine requirement
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestOrchestratedPathBranching:
     """验证 _run_orchestrated_path 只接受 ExecutionEngine 主路径。"""
 
     def _make_service(self, with_engine: bool):
         from src.agent.streaming_service import BaseStreamingGenerator
+
         svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
         svc._event_processors = []
         svc._long_term_memory = None
@@ -395,17 +412,17 @@ class TestOrchestratedPathBranching:
         svc._user_id = "test_user"
 
         if with_engine:
-            skill_mgr = _skill_manager_mock()
+            capability_kit = _capability_kit_mock()
             synth = _mock_synthesizer()
             engine = ExecutionEngine.__new__(ExecutionEngine)
             engine._direct = DirectExecutor(
-                skill_manager=skill_mgr,
+                capability_kit=capability_kit,
                 rag_retriever=MagicMock(),
                 llm=MagicMock(),
                 synthesizer=synth,
             )
             engine._planned = PlannedExecutor(
-                skill_manager=skill_mgr,
+                capability_kit=capability_kit,
                 llm=MagicMock(),
                 synthesizer=synth,
             )
@@ -472,7 +489,11 @@ class TestDeprecatedRefactorFlagsCompatibility:
         ("query", "expected_mode", "expected_route"),
         [
             ("你好", "direct", "direct_task"),
-            ("帮我看下北京今晚观测条件，同时查查有没有天象活动", "planned", "planned_task"),
+            (
+                "帮我看下北京今晚观测条件，同时查查有没有天象活动",
+                "planned",
+                "planned_task",
+            ),
             ("帮我写一篇关于宇宙的科幻小说", "react", "fallback_react"),
         ],
     )
@@ -533,7 +554,9 @@ class TestDeprecatedRefactorFlagsCompatibility:
         assert "task_profile" in event_types
         assert "execution_decision" in event_types
 
-    def test_streaming_service_resolve_execution_decision_does_not_call_choose_path(self):
+    def test_streaming_service_resolve_execution_decision_does_not_call_choose_path(
+        self,
+    ):
         from src.agent.streaming_service import BaseStreamingGenerator
 
         svc = BaseStreamingGenerator.__new__(BaseStreamingGenerator)
@@ -568,13 +591,14 @@ class TestDeprecatedRefactorFlagsCompatibility:
 # 4. PlannedExecutor WorkflowExecutor branch
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestPlannedExecutorWorkflowBranch:
 
     def _make_executor(self) -> PlannedExecutor:
-        skill_mgr = _skill_manager_mock()
+        capability_kit = _capability_kit_mock()
         synth = _mock_synthesizer()
         return PlannedExecutor(
-            skill_manager=skill_mgr,
+            capability_kit=capability_kit,
             llm=MagicMock(),
             synthesizer=synth,
         )
@@ -607,9 +631,7 @@ class TestPlannedExecutorWorkflowBranch:
         )
         executor._workflow_executor = wf_executor
         context = ExecutionContext.from_legacy_decision(decision, "今晚天气")
-        result = asyncio.run(
-            executor.run_context(context, execution_plan=plan)
-        )
+        result = asyncio.run(executor.run_context(context, execution_plan=plan))
         wf_executor.execute.assert_called_once()
         assert isinstance(result, FinalResponse)
 
@@ -669,6 +691,7 @@ class TestPlannedRecoveryPolicy:
 # ─────────────────────────────────────────────────────────────────
 # 5. Legacy boundary compatibility
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestLegacyBoundaryCompatibility:
     """仅保留明确的外部兼容壳。"""

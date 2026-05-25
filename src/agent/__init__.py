@@ -1,5 +1,4 @@
-"""AstroAgent 应用门面，统一初始化 LLM、RAG、记忆、技能、执行引擎和流式服务，并为 API 会话创建运行时。
-"""
+"""AstroAgent 应用门面，统一初始化 LLM、RAG、记忆、技能、执行引擎和流式服务，并为 API 会话创建运行时。"""
 
 import traceback
 from typing import List, Optional
@@ -7,8 +6,11 @@ from typing import List, Optional
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 
-from src.agent.fallback_service import FallbackService
+from src.agent.adapters.langchain_adapter import to_langchain_tools
+from src.agent.audit import RequestAuditLogger
+from src.agent.capability_kit import CapabilityKit
 from src.agent.execution.engine import ExecutionEngine
+from src.agent.fallback_service import FallbackService
 from src.agent.governance import (
     AgentExecutionPolicy,
     GovernanceMetricsRegistry,
@@ -16,14 +18,12 @@ from src.agent.governance import (
     load_phase0_benchmark_cases,
 )
 from src.agent.llm_intent_classifier import LLMIntentClassifier
-from src.agent.audit import RequestAuditLogger
 from src.agent.output_parser import LenientReActSingleInputOutputParser
 from src.agent.planner import Planner
 from src.agent.policies import FallbackPolicy, ModelPolicy
 from src.agent.prompts import PromptRenderError, get_prompt_renderer
 from src.agent.request_router import RequestRouter
 from src.agent.response_synthesizer import ResponseSynthesizer
-from src.agent.skill_manager import SkillManager
 from src.agent.speech_service import SpeechService
 from src.agent.streaming_service import StreamingService
 from src.agent.vision_service import VisionService
@@ -37,6 +37,7 @@ from src.rag.online_retriever import OnlineRetriever
 
 class AstroAgent:
     """AstroAgent 总入口，聚合模型、RAG、记忆、技能和执行引擎能力。"""
+
     def __init__(
         self,
         user_id: Optional[str] = None,
@@ -63,9 +64,9 @@ class AstroAgent:
 
         self.long_term_memory = LongTermMemoryService(settings.LONG_TERM_MEMORY_PATH)
 
-        self.skill_manager = SkillManager(rag_retriever=self.rag)
+        self.capability_kit = CapabilityKit(rag_retriever=self.rag)
         self.request_router = RequestRouter()
-        self.fallback_service = FallbackService(skill_manager=self.skill_manager)
+        self.fallback_service = FallbackService(capability_kit=self.capability_kit)
         self.execution_policy = AgentExecutionPolicy.from_settings()
         self.governance_metrics = GovernanceMetricsRegistry()
         self.model_policy = ModelPolicy()
@@ -87,7 +88,7 @@ class AstroAgent:
         self.model_name = runtime["model_name"]
         self.model_label = runtime["model_label"]
 
-        logger.info("✅ AstroAgent初始化完成，使用统一的SkillManager")
+        logger.info("✅ AstroAgent初始化完成，使用 CapabilityKit")
 
     def _init_llm(
         self, model_provider: Optional[str] = None, model_name: Optional[str] = None
@@ -119,7 +120,7 @@ class AstroAgent:
 
         prompt = PromptTemplate.from_template(template)
 
-        tools = self.skill_manager.get_langchain_tools()
+        tools = to_langchain_tools(self.capability_kit)
 
         agent = create_react_agent(
             llm=llm or self.llm,
@@ -200,9 +201,11 @@ class AstroAgent:
         response_synthesizer = ResponseSynthesizer(llm=synth_llm)
         planner = Planner(llm=planner_llm)
         fallback_policy = FallbackPolicy()
-        agent_executor_factory = lambda: self._get_or_create_agent_executor(llm=main_llm)
+        agent_executor_factory = lambda: self._get_or_create_agent_executor(
+            llm=main_llm
+        )
         execution_engine = ExecutionEngine(
-            skill_manager=self.skill_manager,
+            capability_kit=self.capability_kit,
             rag_retriever=self.rag,
             llm=main_llm,
             synthesizer=response_synthesizer,
@@ -217,7 +220,7 @@ class AstroAgent:
             user_id=user_id,
             fallback_service=self.fallback_service,
             request_router=self.request_router,
-            skill_manager=self.skill_manager,
+            capability_kit=self.capability_kit,
             rag_retriever=self.rag,
             execution_policy=self.execution_policy,
             governance_metrics=self.governance_metrics,
@@ -305,10 +308,8 @@ class AstroAgent:
     def __del__(self):
         """对象销毁时释放内部持有的外部连接或后台资源。"""
         try:
-            if hasattr(self, "skill_manager") and self.skill_manager:
-                router = getattr(self.skill_manager, "_skill_router", None)
-                if router and hasattr(router, "shutdown"):
-                    router.shutdown()
-                    logger.info("✅ MCP Router已关闭")
+            if hasattr(self, "capability_kit") and self.capability_kit:
+                self.capability_kit.shutdown()
+                logger.info("✅ CapabilityKit已关闭")
         except Exception:
             pass

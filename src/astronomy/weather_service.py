@@ -4,7 +4,7 @@ from pybreaker import CircuitBreaker
 
 from src.core.config import settings
 from src.core.errors import ErrorHandler, ErrorCode
-from src.agent.param_parser import ParamParser
+from src.utils.param_parser import ParamParser
 from src.core.logger import logger
 from src.astronomy.base_api_service import BaseAPIService
 

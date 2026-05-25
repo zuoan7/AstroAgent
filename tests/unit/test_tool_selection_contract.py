@@ -5,13 +5,14 @@ from types import SimpleNamespace
 import pytest
 
 from src.agent.execution.direct_executor import DirectExecutor
-from src.agent.models.capability_decision import CapabilityDecision
+from src.capabilities.decision import CapabilityDecision
 from src.agent.models.execution_context import ExecutionContext
 from src.agent.models.final_response import FinalResponse
 from src.agent.models.request_context import RequestContext
 from src.agent.models.task_profile import TaskProfile
 from src.capabilities.param_builder import CapabilityParamBuilder
 from src.capabilities.selector import CapabilitySelector
+from src.tools.results import ToolResult
 from src.tools.selector import ToolSelector
 
 
@@ -136,9 +137,13 @@ class _DirectToolManager:
     def __init__(self) -> None:
         self.tool_calls: list[tuple[str, dict]] = []
 
-    def call_mcp_tool(self, tool_name: str, **params) -> str:
+    def call_tool(self, tool_name: str, **params) -> ToolResult:
         self.tool_calls.append((tool_name, params))
-        return '{"ok": true}'
+        return ToolResult(
+            ok=True,
+            tool_name=tool_name,
+            data={"ok": True},
+        )
 
 
 class _DirectSynthesizer:
@@ -155,7 +160,7 @@ class _DirectSynthesizer:
 async def test_direct_executor_tool_decision_calls_mcp_tool_with_capability_audit():
     manager = _DirectToolManager()
     executor = DirectExecutor(
-        skill_manager=manager,
+        capability_kit=manager,
         rag_retriever=SimpleNamespace(),
         llm=SimpleNamespace(),
         synthesizer=_DirectSynthesizer(),

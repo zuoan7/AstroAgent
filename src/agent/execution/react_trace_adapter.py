@@ -5,11 +5,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional
 
 from src.agent.models.execution_trace_entry import ExecutionTraceEntry
-from src.capabilities.registry import (
-    CapabilityRegistry,
-    get_default_capability_registry,
-)
 from src.skills import registry as skill_registry
+from src.skills.definition import SkillDefinition
+from src.tools.registry import ToolRegistry, get_default_tool_registry
 
 
 @dataclass(frozen=True)
@@ -28,10 +26,10 @@ class ReactToolTraceAdapter:
 
     def __init__(
         self,
-        capability_registry: Optional[CapabilityRegistry] = None,
+        tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
-        self._capabilities = capability_registry or get_default_capability_registry()
-        self._specs = list(skill_registry.get_skill_specs())
+        self._tool_registry = tool_registry or get_default_tool_registry()
+        self._skill_definitions = list(skill_registry.get_skill_definitions())
 
     def build_entry(
         self,
@@ -87,35 +85,18 @@ class ReactToolTraceAdapter:
                 capability_reason="react_rag_tool",
             )
 
-        spec = self._skill_spec_for_tool_name(name)
-        if spec is not None:
-            expected = self._expected_mcp_tools_for_skill(spec.skill_name)
-            actual = (spec.mcp_tool_name,) if spec.mcp_tool_name else ()
-            if (
-                spec.mcp_tool_name
-                and spec.skill_name == spec.mcp_tool_name
-                and self._capabilities.has_tool(spec.mcp_tool_name)
-            ):
-                return ReactToolMapping(
-                    langchain_tool_name=name,
-                    logical_skill=spec.skill_name,
-                    capability_kind="tool",
-                    capability_name=spec.mcp_tool_name,
-                    capability_reason="react_atomic_tool_mapping",
-                    expected_mcp_tools=tuple(expected),
-                    mcp_tools_used=actual,
-                )
+        definition = self._skill_definition_for_tool_name(name)
+        if definition is not None:
             return ReactToolMapping(
                 langchain_tool_name=name,
-                logical_skill=spec.skill_name,
+                logical_skill=definition.name,
                 capability_kind="skill",
-                capability_name=spec.skill_name,
+                capability_name=definition.name,
                 capability_reason="react_skill_mapping",
-                expected_mcp_tools=tuple(expected),
-                mcp_tools_used=actual,
+                expected_mcp_tools=tuple(definition.allowed_tools),
             )
 
-        if self._capabilities.has_tool(name):
+        if self._tool_registry.has_tool(name):
             return ReactToolMapping(
                 langchain_tool_name=name,
                 logical_skill=name,
@@ -180,24 +161,24 @@ class ReactToolTraceAdapter:
                 return str(value)
         return str(value)
 
-    def _skill_spec_for_tool_name(self, tool_name: str) -> Optional[Any]:
+    def _skill_definition_for_tool_name(
+        self, tool_name: str
+    ) -> Optional[SkillDefinition]:
         lowered = tool_name.lower()
-        for spec in self._specs:
-            if tool_name in {spec.langchain_tool_name, spec.skill_name}:
-                return spec
-            if lowered in {spec.langchain_tool_name.lower(), spec.skill_name.lower()}:
-                return spec
+        for definition in self._skill_definitions:
+            if tool_name in {definition.display_name, definition.name}:
+                return definition
+            if lowered in {definition.display_name.lower(), definition.name.lower()}:
+                return definition
         return None
 
     def _expected_mcp_tools_for_skill(self, skill_name: str) -> list[str]:
         try:
-            if self._capabilities.has_skill(skill_name):
-                return list(self._capabilities.get_skill(skill_name).allowed_tools)
-            if self._capabilities.has_tool(skill_name):
-                return list(self._capabilities.get_tool(skill_name).allowed_tools)
+            if self._tool_registry.has_tool(skill_name):
+                return [skill_name]
+            return list(skill_registry.get_skill_definition(skill_name).allowed_tools)
         except Exception:
             return []
-        return []
 
     @staticmethod
     def _unique(values: Iterable[str]) -> list[str]:

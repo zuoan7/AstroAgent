@@ -24,7 +24,6 @@ from typing import Any
 
 import httpx
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -94,8 +93,7 @@ class StageRecorder:
     def snapshot(self) -> dict[str, Any]:
         return {
             "stages_ms": {
-                key: round(value, 2)
-                for key, value in sorted(self._stages_ms.items())
+                key: round(value, 2) for key, value in sorted(self._stages_ms.items())
             },
             "calls": list(self._calls),
         }
@@ -156,6 +154,7 @@ class RuntimeInstrumentation:
         self._patches: list[tuple[Any, str, Any]] = []
 
     def install(self) -> None:
+        from src.agent.capability_kit import CapabilityKit
         from src.agent.execution.direct_executor import DirectExecutor
         from src.agent.execution.engine import ExecutionEngine
         from src.agent.execution.planned_executor import PlannedExecutor
@@ -166,7 +165,6 @@ class RuntimeInstrumentation:
         from src.agent.skill_param_builder import SkillParamBuilder
         from src.agent.streaming_service import BaseStreamingGenerator
         from src.rag.online_retriever import OnlineRetriever
-        from src.skills.router import AstronomySkillRouter
 
         self._wrap_sync(
             BaseStreamingGenerator,
@@ -258,21 +256,16 @@ class RuntimeInstrumentation:
             meta_fn=_meta_query,
         )
         self._wrap_sync(
-            AstronomySkillRouter,
-            "call",
-            "skill_router_call_ms",
+            CapabilityKit,
+            "call_skill",
+            "capability_call_skill_ms",
             meta_fn=_meta_skill,
         )
         self._wrap_sync(
-            AstronomySkillRouter,
-            "call_mcp_tool",
-            "skill_router_mcp_tool_ms",
+            CapabilityKit,
+            "call_tool",
+            "capability_call_tool_ms",
             meta_fn=_meta_tool,
-        )
-        self._wrap_sync(
-            AstronomySkillRouter,
-            "call_mcp_tools_parallel",
-            "skill_router_mcp_parallel_ms",
         )
         self._wrap_async_generator(
             ReactExecutor,
@@ -620,10 +613,16 @@ def summarize_turn(
     audit = audit if isinstance(audit, dict) else {}
     tools = extract_tools(turn_result)
     instrumentation = turn_result.get("instrumentation") or {}
-    detailed_stages = instrumentation.get("stages_ms") if isinstance(instrumentation, dict) else {}
+    detailed_stages = (
+        instrumentation.get("stages_ms") if isinstance(instrumentation, dict) else {}
+    )
     detailed_stages = detailed_stages if isinstance(detailed_stages, dict) else {}
-    instrumentation_calls = instrumentation.get("calls") if isinstance(instrumentation, dict) else []
-    instrumentation_calls = instrumentation_calls if isinstance(instrumentation_calls, list) else []
+    instrumentation_calls = (
+        instrumentation.get("calls") if isinstance(instrumentation, dict) else []
+    )
+    instrumentation_calls = (
+        instrumentation_calls if isinstance(instrumentation_calls, list) else []
+    )
 
     agent_total = float(stages.get("agent_total_ms") or 0.0)
     tool_exec = float(stages.get("tool_exec_ms") or 0.0)
@@ -670,9 +669,11 @@ def summarize_turn(
         "event_count": len(turn_result.get("events") or []),
         "execution_path": meta.get("execution_path"),
         "exec_mode": meta.get("exec_mode"),
-        "route_reason": (meta.get("execution_decision") or {}).get("reason")
-        if isinstance(meta.get("execution_decision"), dict)
-        else None,
+        "route_reason": (
+            (meta.get("execution_decision") or {}).get("reason")
+            if isinstance(meta.get("execution_decision"), dict)
+            else None
+        ),
         "router_source": audit.get("router_source"),
         "planner_source": audit.get("planner_source"),
         "tool_necessity_action": audit.get("tool_necessity_action"),
@@ -682,7 +683,9 @@ def summarize_turn(
         "stages_ms": stages,
         "detailed_stages_ms": detailed_stages,
         "derived_non_tool_agent_ms": round(non_tool_agent, 2),
-        "derived_unattributed_agent_ms": round(max(agent_total - known_detailed, 0.0), 2),
+        "derived_unattributed_agent_ms": round(
+            max(agent_total - known_detailed, 0.0), 2
+        ),
         "instrumentation_calls": instrumentation_calls,
         "tools": tools,
         "events_path": str(events_path),
@@ -696,7 +699,9 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
             handle.write("\n")
 
 
-def write_report(report_dir: Path, summary: dict[str, Any], turns: list[dict[str, Any]]) -> None:
+def write_report(
+    report_dir: Path, summary: dict[str, Any], turns: list[dict[str, Any]]
+) -> None:
     with (report_dir / "latency_report.md").open("w", encoding="utf-8") as handle:
         handle.write("# AstroAgent E2E Latency Probe\n\n")
         handle.write(f"- report_dir: `{report_dir}`\n")
@@ -742,7 +747,7 @@ def write_report(report_dir: Path, summary: dict[str, Any], turns: list[dict[str
         handle.write("\n## Fine-grained timings\n\n")
         handle.write(
             "| case | turn | path | planner_ms | plan_preview_ms | workflow_ms | "
-            "param_builder_ms | skill_router_ms | synth_total_ms | synth_llm_ms | "
+            "param_builder_ms | capability_skill_ms | synth_total_ms | synth_llm_ms | "
             "direct_llm_ms | react_stream_ms | unattributed_agent_ms |\n"
         )
         handle.write(
@@ -770,7 +775,7 @@ def write_report(report_dir: Path, summary: dict[str, Any], turns: list[dict[str
                     preview=float(detail.get("planned_preview_plan_ms") or 0.0),
                     workflow=float(detail.get("workflow_execute_ms") or 0.0),
                     params=float(detail.get("param_builder_ms") or 0.0),
-                    skills=float(detail.get("skill_router_call_ms") or 0.0),
+                    skills=float(detail.get("capability_call_skill_ms") or 0.0),
                     synth_total=float(detail.get("synthesis_total_ms") or 0.0),
                     synth_llm=float(detail.get("synthesis_llm_ms") or 0.0),
                     direct_llm=float(detail.get("direct_llm_invoke_ms") or 0.0),
@@ -780,7 +785,9 @@ def write_report(report_dir: Path, summary: dict[str, Any], turns: list[dict[str
             )
 
         handle.write("\n## Slowest turns\n\n")
-        for row in sorted(turns, key=lambda item: float(item.get("e2e_ms") or 0), reverse=True)[:8]:
+        for row in sorted(
+            turns, key=lambda item: float(item.get("e2e_ms") or 0), reverse=True
+        )[:8]:
             stages = row.get("stages_ms") or {}
             detail = row.get("detailed_stages_ms") or {}
             handle.write(
@@ -840,8 +847,8 @@ async def run_inprocess_probe(
     instrumentation.install()
     try:
         base_agent = AstroAgent(user_id=f"{args.user_id_prefix}_{run_id}")
-        if getattr(base_agent, "skill_manager", None) is not None:
-            base_agent.skill_manager.prewarm()
+        if getattr(base_agent, "capability_kit", None) is not None:
+            base_agent.capability_kit.prewarm()
 
         for case in cases:
             case_id = str(case.get("case_id"))
@@ -904,9 +911,7 @@ async def run_inprocess_probe(
 
     finished_at = datetime.now().isoformat(timespec="seconds")
     e2e_values = [
-        float(row["e2e_ms"])
-        for row in turns
-        if row.get("e2e_ms") is not None
+        float(row["e2e_ms"]) for row in turns if row.get("e2e_ms") is not None
     ]
     summary = {
         "dataset_id": dataset.get("dataset_id"),
@@ -931,7 +936,9 @@ async def run_inprocess_probe(
     return summary, turns
 
 
-async def run_probe(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+async def run_probe(
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if args.mode == "inprocess":
         return await run_inprocess_probe(args)
 
@@ -953,7 +960,10 @@ async def run_probe(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict
             case_id = str(case.get("case_id"))
             user_id = f"{args.user_id_prefix}_{run_id}"
             session_id = f"{case_id}_{uuid.uuid4().hex[:8]}"
-            prompts = [(idx, "setup", prompt) for idx, prompt in enumerate(setup_user_turns(case), 1)]
+            prompts = [
+                (idx, "setup", prompt)
+                for idx, prompt in enumerate(setup_user_turns(case), 1)
+            ]
             prompts.append((len(prompts) + 1, "final", final_user_turn(case)))
 
             for turn_index, turn_kind, prompt in prompts:
@@ -968,7 +978,12 @@ async def run_probe(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict
                 events_name = f"{case_id}__{turn_index:02d}_{turn_kind}.json"
                 events_path = report_dir / "events" / events_name
                 with events_path.open("w", encoding="utf-8") as handle:
-                    json.dump(turn_result.get("events") or [], handle, ensure_ascii=False, indent=2)
+                    json.dump(
+                        turn_result.get("events") or [],
+                        handle,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
                     handle.write("\n")
                 row = summarize_turn(
                     case=case,
@@ -988,7 +1003,9 @@ async def run_probe(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict
                 )
 
     finished_at = datetime.now().isoformat(timespec="seconds")
-    e2e_values = [float(row["e2e_ms"]) for row in turns if row.get("e2e_ms") is not None]
+    e2e_values = [
+        float(row["e2e_ms"]) for row in turns if row.get("e2e_ms") is not None
+    ]
     summary = {
         "dataset_id": dataset.get("dataset_id"),
         "dataset_path": str(args.dataset),
@@ -1026,7 +1043,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_ROOT)
-    parser.add_argument("--case-id", action="append", help="Case id to run. Defaults to latency probe set.")
+    parser.add_argument(
+        "--case-id",
+        action="append",
+        help="Case id to run. Defaults to latency probe set.",
+    )
     parser.add_argument("--request-timeout-sec", type=float, default=180.0)
     parser.add_argument("--connect-timeout-sec", type=float, default=10.0)
     parser.add_argument("--user-id-prefix", default="astro_latency")

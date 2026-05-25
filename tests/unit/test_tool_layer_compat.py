@@ -7,53 +7,56 @@ import pytest
 from src.agent.execution.direct_executor import DirectExecutor
 from src.agent.execution.planned_executor import PlannedExecutor
 from src.agent.governance import AgentExecutionPolicy
-from src.agent.models.capability_decision import CapabilityDecision
-from src.agent.models.execution_decision import ExecutionDecision
+from src.capabilities.decision import CapabilityDecision
 from src.agent.models.execution_context import ExecutionContext
+from src.agent.models.execution_decision import ExecutionDecision
 from src.agent.models.execution_plan import ExecutionPlan, PlanStep
 from src.agent.models.final_response import FinalResponse
 from src.agent.models.request_context import RequestContext
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.task_profile import TaskProfile
 from src.agent.request_router import RouteDecision
 from src.agent.streaming_service import StreamingService
-from src.capabilities.registry import CapabilityRegistry
 from src.capabilities.selector import CapabilitySelector
-from src.core.mcp_protocol import is_tool_error, parse_tool_response
-from src.tools.runtime import ToolRuntime
+from src.skills.registry import get_default_skill_registry
+from src.tools.registry import get_default_tool_registry
+from src.tools.kit import ToolKit
 
 
 class _FakeBackend:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
-    def call_tool(self, tool_name: str, **kwargs):
+    def invoke(self, tool_name: str, **kwargs):
         self.calls.append((tool_name, kwargs))
-        return '{"ok": true, "data": {"status": "ok"}, "meta": {"tool_name": "%s", "schema_version": "1.0"}}' % tool_name
+        return (
+            '{"ok": true, "data": {"status": "ok"}, "meta": {"tool_name": "%s", "schema_version": "1.0"}}'
+            % tool_name
+        )
 
 
-def test_capability_registry_projects_skill_allowed_tools():
-    registry = CapabilityRegistry()
+def test_skill_and_tool_registries_project_capability_boundaries():
+    skill_registry = get_default_skill_registry()
+    tool_registry = get_default_tool_registry()
 
-    observation = registry.get_skill("observation-planner")
-    position = registry.get_skill("celestial-position-calculator")
+    observation = skill_registry.get("observation-planner")
+    position = skill_registry.get("celestial-position-calculator")
 
-    assert observation.allowed_tools == [
+    assert list(observation.allowed_tools) == [
         "get_weather",
         "get_weekly_events",
         "get_tonight_best",
     ]
     assert "get_altaz" in position.allowed_tools
-    assert "rise_set" in position.operations
-    assert registry.has_skill("web_search") is False
-    assert registry.has_skill("get_nasa_apod") is False
-    assert registry.has_tool("web_search") is True
-    assert registry.has_tool("get_nasa_apod") is True
+    assert "rise_set" in [operation.operation for operation in position.operations]
+    assert skill_registry.has_skill("web_search") is False
+    assert skill_registry.has_skill("get_nasa_apod") is False
+    assert tool_registry.has_tool("web_search") is True
+    assert tool_registry.has_tool("get_nasa_apod") is True
 
 
 def test_capability_selector_uses_task_profile_hints():
-    registry = CapabilityRegistry()
-    selector = CapabilitySelector(registry)
+    selector = CapabilitySelector()
     profile = TaskProfile.from_legacy_route(
         route="direct_task",
         task_type="single_tool_lookup",
@@ -103,24 +106,23 @@ def test_streaming_service_resolution_attaches_capability_decision():
     assert context.capability_decision.name == "weather-lookup"
 
 
-def test_tool_runtime_rejects_tools_outside_skill_policy():
+def test_toolkit_rejects_tools_outside_skill_policy():
     backend = _FakeBackend()
-    runtime = ToolRuntime(backend).with_context(
+    runtime = ToolKit(backend).with_policy(
         logical_skill="weather-lookup",
         allowed_tools=["get_weather"],
         enforce_allowed_tools=True,
     )
 
-    blocked = runtime.call_tool("web_search", query="JWST")
+    blocked = runtime.invoke("web_search", query="JWST")
 
-    assert is_tool_error(blocked)
-    envelope = parse_tool_response(blocked)
-    assert envelope is not None
-    assert envelope.error.code == "TOOL_GUARD_REJECTED"
+    assert blocked.ok is False
+    assert blocked.error is not None
+    assert blocked.error.code == "TOOL_GUARD_REJECTED"
     assert backend.calls == []
 
 
-class _DirectSkillManager:
+class _DirectCapabilityKit:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
@@ -146,9 +148,9 @@ class _DirectSynthesizer:
 
 @pytest.mark.asyncio
 async def test_direct_executor_prefers_capability_decision_over_matched_skills():
-    manager = _DirectSkillManager()
+    manager = _DirectCapabilityKit()
     executor = DirectExecutor(
-        skill_manager=manager,
+        capability_kit=manager,
         rag_retriever=SimpleNamespace(),
         llm=SimpleNamespace(),
         synthesizer=_DirectSynthesizer(),
@@ -178,7 +180,7 @@ async def test_direct_executor_prefers_capability_decision_over_matched_skills()
 
 def test_planned_observability_metadata_contains_capability_fields():
     executor = PlannedExecutor(
-        skill_manager=SimpleNamespace(),
+        capability_kit=SimpleNamespace(),
         llm=SimpleNamespace(),
         synthesizer=SimpleNamespace(),
     )

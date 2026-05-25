@@ -1,9 +1,4 @@
-"""
-Compatibility facade for MCP tool response protocol helpers.
-
-The canonical tool schemas now live in ``src.tools.registry``. This module keeps
-the historical import path stable for MCP server code and tests.
-"""
+"""Tool schema and MCP envelope protocol helpers."""
 
 from __future__ import annotations
 
@@ -12,96 +7,34 @@ from typing import Any, Dict
 
 from pydantic import BaseModel, ValidationError
 
-from src.tools.registry import (
-    TOOL_INPUT_MODELS,
-    TOOL_OUTPUT_MODELS,
-    AltAzData,
-    AltAzInput,
-    AstrophysicalObjectInfoInput,
-    CoordinateTransformationData,
-    CoordinateTransformationInput,
-    CurrentSkyObjectsInput,
-    GalaxyDataInput,
-    JsonObjectData,
-    MonthlyEventsInput,
-    NASAApodInput,
-    NeoDataInput,
-    PlanetPositionData,
-    PlanetPositionInput,
-    RiseSetTimesData,
-    RiseSetTimesInput,
-    TonightBestInput,
-    WeatherInput,
-    WebSearchInput,
-    WeeklyEventsInput,
-)
+from src.tools.registry import get_default_tool_registry
 from src.tools.results import validate_tool_data
 from src.transport.mcp.envelope import (
-    SCHEMA_VERSION,
-    MCPToolError,
     MCPToolErrorEnvelope,
-    MCPToolMeta,
     MCPToolSuccessEnvelope,
     build_meta,
     error_envelope,
-    extract_tool_data,
-    is_tool_error,
     parse_tool_response,
     serialize_envelope,
 )
 
-__all__ = [
-    "SCHEMA_VERSION",
-    "MCPToolMeta",
-    "MCPToolError",
-    "MCPToolSuccessEnvelope",
-    "MCPToolErrorEnvelope",
-    "PlanetPositionInput",
-    "AltAzInput",
-    "CoordinateTransformationInput",
-    "RiseSetTimesInput",
-    "CurrentSkyObjectsInput",
-    "AstrophysicalObjectInfoInput",
-    "GalaxyDataInput",
-    "NASAApodInput",
-    "NeoDataInput",
-    "WeatherInput",
-    "WebSearchInput",
-    "TonightBestInput",
-    "WeeklyEventsInput",
-    "MonthlyEventsInput",
-    "PlanetPositionData",
-    "AltAzData",
-    "CoordinateTransformationData",
-    "RiseSetTimesData",
-    "JsonObjectData",
-    "TOOL_INPUT_MODELS",
-    "TOOL_OUTPUT_MODELS",
-    "build_meta",
-    "validate_tool_input",
-    "success_envelope",
-    "error_envelope",
-    "serialize_envelope",
-    "wrap_tool_result",
-    "parse_tool_response",
-    "is_tool_error",
-    "extract_tool_data",
-]
-
 
 def validate_tool_input(tool_name: str, payload: Dict[str, Any]) -> BaseModel:
-    model_cls = TOOL_INPUT_MODELS.get(tool_name)
-    if model_cls is None:
-        raise KeyError(f"Unknown tool input model: {tool_name}")
-    return model_cls.model_validate(payload)
+    """Validate one atomic tool input payload."""
+    definition = get_default_tool_registry().get_tool(tool_name)
+    return definition.input_model.model_validate(payload)
 
 
 def _validate_tool_output(tool_name: str, data: Any) -> Any:
-    model_cls = TOOL_OUTPUT_MODELS.get(tool_name)
-    return validate_tool_data(model_cls, data)
+    try:
+        definition = get_default_tool_registry().get_tool(tool_name)
+    except KeyError:
+        return data
+    return validate_tool_data(definition.output_model, data)
 
 
 def success_envelope(tool_name: str, data: Any, **meta: Any) -> MCPToolSuccessEnvelope:
+    """Build a successful MCP tool envelope with output validation."""
     return MCPToolSuccessEnvelope(
         ok=True,
         data=_validate_tool_output(tool_name, data),
@@ -122,6 +55,7 @@ def _legacy_error_to_envelope(
 
 
 def wrap_tool_result(result: Any, tool_name: str) -> str:
+    """Normalize backend tool values into a serialized MCP envelope."""
     from src.core.errors import ErrorCode
 
     def _is_agent_error_like(value: Any) -> bool:

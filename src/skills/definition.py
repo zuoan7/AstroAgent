@@ -7,7 +7,7 @@ from typing import Any, Protocol, Type
 
 from pydantic import BaseModel
 
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 
 
 class SkillHandler(Protocol):
@@ -35,6 +35,6 @@ class SkillDefinition:
     required_scopes: tuple[str, ...] = field(default_factory=tuple)
 
     @property
-    def param_names(self) -> list[str]:
-        """Return input field names for legacy callers."""
+    def input_field_names(self) -> list[str]:
+        """Return the input model field names."""
         return list(self.input_model.model_fields.keys())

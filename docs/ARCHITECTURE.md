@@ -42,6 +42,42 @@ FrontendExecutionEventAdapter → 旧前端事件序列
 
 ---
 
+## Skill / Tool 分层
+
+Skill 和 Tool 已拆成两个独立边界：Skill 表示高层领域编排，Tool 表示一次原子 MCP 调用。生产主路径不保留旧兼容门面。
+
+```
+Agent / Execution
+  ↓
+CapabilityKit
+  ├─ call_skill() → SkillKit → SkillContext → skills.handlers.*
+  │                                      ↓
+  │                                  ToolKit.with_policy()
+  └─ call_tool()  → ToolKit
+                         ↓
+                  transport.mcp.MCPClient
+                         ↓
+                    FastMCP Server
+```
+
+| 组件 | 职责 | 文件 |
+|------|------|------|
+| `CapabilityKit` | Agent 层唯一 Skill / Tool facade | `src/agent/capability_kit.py` |
+| `LangChain Adapter` | 根据 SkillDefinition / ToolDefinition 生成 ReAct tools | `src/agent/adapters/langchain_adapter.py` |
+| `SkillRegistry` / `SkillKit` | 注册并执行高层技能 | `src/skills/registry.py`, `src/skills/kit.py` |
+| `ToolRegistry` / `ToolKit` | 注册并执行原子 MCP 工具 | `src/tools/registry.py`, `src/tools/runtime.py` |
+| `MCP envelope` | 传输层 envelope 解析与序列化 | `src/transport/mcp/envelope.py` |
+| `Tool protocol` | 工具 schema 校验与 envelope 包装 helper | `src/tools/protocol.py` |
+
+架构守护位于 `tests/architecture/test_layering.py`，约束：
+
+- `src.tools.*` 不依赖 `src.skills.*` / `src.agent.*`
+- `src.transport.*` 不依赖 `src.skills.*` / `src.tools.*` / `src.agent.*`
+- `src.skills.handlers.*` 不依赖 `src.transport.*`
+- 已删除的旧 import path 不再出现在 `src/` 与 `tests/`
+
+---
+
 ## 工作流图
 
 `WorkflowGraph` 是执行计划的 DAG 表示：

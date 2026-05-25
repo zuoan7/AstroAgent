@@ -1,9 +1,9 @@
-"""Skill registry and legacy compatibility facade."""
+"""Canonical registry for high-level skill definitions."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 from src.skills.definition import SkillDefinition
 from src.skills.inputs import (
@@ -15,25 +15,6 @@ from src.skills.inputs import (
     ObservationPlannerInput,
     WeatherLookupInput,
 )
-
-RouteType = Literal["simple", "handler"]
-
-
-@dataclass(frozen=True)
-class SkillSpec:
-    """Legacy static definition projected from SkillDefinition."""
-
-    skill_name: str
-    langchain_tool_name: str
-    summary: str
-    description: str
-    route_type: RouteType
-    mcp_tool_name: Optional[str] = None
-    param_names: List[str] = field(default_factory=list)
-    defaults: Dict[str, Any] = field(default_factory=dict)
-    type_conversions: Dict[str, type] = field(default_factory=dict)
-    param_mapping: Dict[str, str] = field(default_factory=dict)
-    special_handling: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
 
 
 @dataclass(frozen=True)
@@ -47,16 +28,6 @@ class OperationSpec:
     required_params: List[str] = field(default_factory=list)
     allowed_child_tools: List[str] = field(default_factory=list)
     forbidden_child_tools: List[str] = field(default_factory=list)
-
-
-def normalize_weather_params(kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge city and location for legacy weather callers."""
-    normalized = dict(kwargs)
-    target = normalized.get("city") or normalized.get("location")
-    if target:
-        normalized["city"] = target
-        normalized.pop("location", None)
-    return normalized
 
 
 _OPERATION_SPECS: tuple[OperationSpec, ...] = (
@@ -156,14 +127,6 @@ _SKILL_METADATA: tuple[dict[str, Any], ...] = (
         "input_model": WeatherLookupInput,
         "allowed_tools": ("get_weather",),
         "required_params": (),
-        "defaults": {"extensions": "all"},
-        "mcp_tool_name": "get_weather",
-        "param_mapping": {
-            "city": "city",
-            "location": "city",
-            "extensions": "extensions",
-        },
-        "special_handling": normalize_weather_params,
     },
     {
         "name": "observation-planner",
@@ -220,11 +183,6 @@ _SKILL_METADATA: tuple[dict[str, Any], ...] = (
         "input_model": NeoTrackerInput,
         "allowed_tools": ("get_neo_data",),
         "required_params": (),
-        "type_conversions": {
-            "min_size": float,
-            "max_distance": float,
-            "observable_only": bool,
-        },
     },
     {
         "name": "astrophotography-calculator",
@@ -363,22 +321,6 @@ def get_skill_definition(skill_name: str) -> SkillDefinition:
     return get_default_skill_registry().get(skill_name)
 
 
-def get_skill_specs() -> List[SkillSpec]:
-    """Return legacy SkillSpec projections for all skills."""
-    definitions = {
-        definition.name: definition for definition in get_skill_definitions()
-    }
-    return [_legacy_spec(meta, definitions[meta["name"]]) for meta in _SKILL_METADATA]
-
-
-def get_skill_spec(skill_name: str) -> SkillSpec:
-    """Return one legacy SkillSpec projection."""
-    for spec in get_skill_specs():
-        if spec.skill_name == skill_name:
-            return spec
-    raise KeyError(f"未知技能：{skill_name}")
-
-
 def get_operation_specs() -> List[OperationSpec]:
     """Return all operation policy specs."""
     return list(_OPERATION_SPECS)
@@ -412,45 +354,40 @@ def list_langchain_tool_names() -> List[str]:
 
 
 def validate_skill_registry(
-    specs: Optional[Sequence[SkillSpec]] = None,
+    definitions: Optional[Iterable[SkillDefinition]] = None,
     handler_names: Optional[Set[str]] = None,
 ) -> None:
     """Validate skill registry uniqueness and optional handler names."""
-    specs = list(specs or get_skill_specs())
+    definitions = list(definitions or get_skill_definitions())
     seen_skill_names: Set[str] = set()
     seen_tool_names: Set[str] = set()
-    handler_skill_names: Set[str] = set()
 
-    for spec in specs:
-        if not spec.skill_name:
+    for definition in definitions:
+        if not definition.name:
             raise ValueError("Skill registry 校验失败：存在空 skill_name")
-        if not spec.langchain_tool_name:
+        if not definition.display_name:
             raise ValueError(
-                f"Skill registry 校验失败：{spec.skill_name} 缺少 langchain_tool_name"
+                f"Skill registry 校验失败：{definition.name} 缺少 display_name"
             )
-        if not spec.summary or not spec.description:
-            raise ValueError(f"Skill registry 校验失败：{spec.skill_name} 缺少说明文案")
-        if spec.skill_name in seen_skill_names:
+        if not definition.summary or not definition.description:
+            raise ValueError(f"Skill registry 校验失败：{definition.name} 缺少说明文案")
+        if definition.name in seen_skill_names:
             raise ValueError(
-                f"Skill registry 校验失败：重复的 skill_name: {spec.skill_name}"
+                f"Skill registry 校验失败：重复的 skill_name: {definition.name}"
             )
-        if spec.langchain_tool_name in seen_tool_names:
+        if definition.display_name in seen_tool_names:
             raise ValueError(
-                f"Skill registry 校验失败：重复的 LangChain Tool 名称: {spec.langchain_tool_name}"
+                "Skill registry 校验失败：重复的 LangChain Tool 名称: "
+                f"{definition.display_name}"
             )
-        seen_skill_names.add(spec.skill_name)
-        seen_tool_names.add(spec.langchain_tool_name)
-        if spec.route_type == "handler":
-            handler_skill_names.add(spec.skill_name)
-        elif spec.route_type == "simple" and not spec.mcp_tool_name:
-            raise ValueError(
-                f"Skill registry 校验失败：simple skill {spec.skill_name} 缺少 mcp_tool_name"
-            )
+        seen_skill_names.add(definition.name)
+        seen_tool_names.add(definition.display_name)
 
     if handler_names is None:
         return
-    missing_handlers = handler_skill_names - handler_names
-    extra_handlers = handler_names - handler_skill_names
+    definition_names = {definition.name for definition in definitions}
+    missing_handlers = definition_names - handler_names
+    extra_handlers = handler_names - definition_names
     if missing_handlers:
         raise ValueError(
             "Skill registry 校验失败：以下 handler skill 未在 SKILL_HANDLERS 中注册："
@@ -461,19 +398,3 @@ def validate_skill_registry(
             "Skill registry 校验失败：以下 SKILL_HANDLERS 未在 registry 中声明："
             + ", ".join(sorted(extra_handlers))
         )
-
-
-def _legacy_spec(meta: dict[str, Any], definition: SkillDefinition) -> SkillSpec:
-    return SkillSpec(
-        skill_name=definition.name,
-        langchain_tool_name=definition.display_name,
-        summary=definition.summary,
-        description=definition.description,
-        route_type="handler",
-        mcp_tool_name=meta.get("mcp_tool_name"),
-        param_names=definition.param_names,
-        defaults=dict(meta.get("defaults", {})),
-        type_conversions=dict(meta.get("type_conversions", {})),
-        param_mapping=dict(meta.get("param_mapping", {})),
-        special_handling=meta.get("special_handling"),
-    )

@@ -7,7 +7,7 @@ from src.agent.models.execution_context import ExecutionContext
 from src.agent.request_router import RouteDecision
 
 
-class _FailingSkillManager:
+class _FailingCapabilityKit:
     def call_skill(self, name, **params):
         raise AssertionError("skill should not be called")
 
@@ -28,7 +28,7 @@ class _FakeSynthesizer:
 
 def _executor() -> DirectExecutor:
     return DirectExecutor(
-        skill_manager=_FailingSkillManager(),
+        capability_kit=_FailingCapabilityKit(),
         rag_retriever=_FailingRAG(),
         llm=_FakeLLM(),
         synthesizer=_FakeSynthesizer(),

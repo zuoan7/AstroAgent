@@ -31,7 +31,6 @@ class ToolResult:
     tool_name: str
     data: Any = None
     error: ToolError | None = None
-    raw_envelope: str | None = None
     latency_ms: float = 0.0
 
     @classmethod
@@ -54,7 +53,6 @@ class ToolResult:
                     message=envelope.error.message,
                     details=dict(envelope.error.details or {}),
                 ),
-                raw_envelope=str(raw),
                 latency_ms=latency_ms,
             )
 
@@ -70,14 +68,12 @@ class ToolResult:
                         message=str(exc),
                         details={"tool_name": tool_name},
                     ),
-                    raw_envelope=str(raw),
                     latency_ms=latency_ms,
                 )
             return cls(
                 ok=True,
                 tool_name=tool_name,
                 data=data,
-                raw_envelope=str(raw),
                 latency_ms=latency_ms,
             )
 
@@ -85,7 +81,6 @@ class ToolResult:
             ok=True,
             tool_name=tool_name,
             data=raw,
-            raw_envelope=str(raw) if raw is not None else None,
             latency_ms=latency_ms,
         )
 
@@ -97,7 +92,6 @@ class ToolResult:
         code: str,
         message: str,
         details: dict[str, Any] | None = None,
-        raw_envelope: str | None = None,
         latency_ms: float = 0.0,
     ) -> "ToolResult":
         """Build a failed ToolResult."""
@@ -105,7 +99,6 @@ class ToolResult:
             ok=False,
             tool_name=tool_name,
             error=ToolError(code=code, message=message, details=details or {}),
-            raw_envelope=raw_envelope,
             latency_ms=latency_ms,
         )
 
@@ -122,4 +115,3 @@ def validate_tool_data(output_model: Any, data: Any) -> Any:
         validated = output_model.model_validate(data)
         return validated.model_dump(mode="json")
     return data
-

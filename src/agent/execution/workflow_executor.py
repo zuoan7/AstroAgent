@@ -1,34 +1,32 @@
-"""WorkflowGraph DAG 执行器，按依赖关系并发执行节点，并处理重试、跳过、失败策略和证据聚合。
-"""
+"""WorkflowGraph DAG 执行器，按依赖关系并发执行节点，并处理重试、跳过、失败策略和证据聚合。"""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from src.core.mcp_protocol import is_tool_error, parse_tool_response
 from src.agent.executor import (
-    EvidenceAggregator,
     EventCallback,
+    EvidenceAggregator,
     ExecutionOutcome,
     ParamBuilder,
     StepExecutionResult,
     _extract_mcp_tools_from_sources,
 )
 from src.agent.models.execution_plan import ExecutionPlan
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.workflow_graph import WorkflowGraph, WorkflowNode
 from src.agent.policies.budget_policy import RequestBudgetTracker
+from src.agent.tool_result_adapter import tool_result_to_skill_result
 
 
 class WorkflowExecutor:
     """按依赖关系执行 WorkflowGraph 节点的 DAG 执行器。"""
 
-    def __init__(self, skill_manager: Any) -> None:
+    def __init__(self, capability_kit: Any = None) -> None:
         """初始化 WorkflowExecutor 的依赖、配置和内部状态。"""
-        self._skill_manager = skill_manager
+        self._capability_kit = capability_kit
 
     async def execute(
         self,
@@ -447,9 +445,7 @@ class WorkflowExecutor:
             skill=node.skill,
             capability_kind=capability_kind,
             capability_name=capability_name,
-            capability_reason=(
-                "workflow_node_capability" if capability_name else ""
-            ),
+            capability_reason=("workflow_node_capability" if capability_name else ""),
             input_params=params,
             param_builder_source=param_builder_source,
             mcp_tools_used=_extract_mcp_tools_from_sources(
@@ -658,7 +654,7 @@ class WorkflowExecutor:
                 params,
             )
         if executable.get("skill"):
-            return self._skill_manager.call_skill(
+            return self._capability_kit.call_skill(
                 str(executable["skill"]),
                 **params,
             )
@@ -670,54 +666,10 @@ class WorkflowExecutor:
         params: Dict[str, Any],
     ) -> SkillResult:
         """调用原子 MCP 工具并包装为 SkillResult。"""
-        if not hasattr(self._skill_manager, "call_mcp_tool"):
-            raise ValueError(
-                f"skill manager does not support atomic tool calls: {tool_name}"
-            )
+        if not hasattr(self._capability_kit, "call_tool"):
+            raise ValueError(f"capability kit does not support tool calls: {tool_name}")
 
-        raw = self._skill_manager.call_mcp_tool(tool_name, **params)
-        if is_tool_error(raw):
-            envelope = parse_tool_response(raw)
-            error_msg = ""
-            if envelope is not None and hasattr(envelope, "error"):
-                error_msg = getattr(envelope.error, "message", "")
-            result = SkillResult.from_error(
-                skill_name=tool_name,
-                error_code="TOOL_CALL_FAILED",
-                error_message=error_msg or str(raw)[:500],
-            )
-            result.logical_skill = tool_name
-            result.expected_mcp_tools = [tool_name]
-            result.allowed_child_tools = [tool_name]
-            result.sources = [
-                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
-            ]
-            return result
-
-        envelope = parse_tool_response(raw)
-        if envelope is not None and hasattr(envelope, "data"):
-            payload = envelope.data
-        else:
-            try:
-                payload = json.loads(raw)
-            except Exception:
-                payload = raw
-
-        data = payload if isinstance(payload, dict) else {"raw": payload}
-        summary = (
-            payload
-            if isinstance(payload, str)
-            else json.dumps(payload, ensure_ascii=False)
-        )
-        return SkillResult(
+        return tool_result_to_skill_result(
+            self._capability_kit.call_tool(tool_name, **params),
             skill_name=tool_name,
-            success=True,
-            data=data,
-            summary=summary,
-            sources=[
-                {"kind": "mcp_tool", "tool": tool_name, "snippet": str(raw)[:240]}
-            ],
-            logical_skill=tool_name,
-            expected_mcp_tools=[tool_name],
-            allowed_child_tools=[tool_name],
         )

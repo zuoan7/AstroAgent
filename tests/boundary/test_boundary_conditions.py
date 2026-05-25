@@ -82,7 +82,7 @@ class TestExtremeAstronomicalValues:
         calc = PlanetaryCalculator(ephemeris=mock_eph)
 
         with patch(
-            "src.agent.param_parser.ParamParser.parse_mixed_input", return_value={}
+            "src.utils.param_parser.ParamParser.parse_mixed_input", return_value={}
         ):
             with patch("src.astronomy.planetary.load.timescale") as mock_ts:
                 mock_t = MagicMock()
@@ -132,7 +132,7 @@ class TestInputDataBoundary:
     """测试输入数据边界条件"""
 
     def test_empty_string_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse("")
         assert isinstance(result, dict)
@@ -141,13 +141,13 @@ class TestInputDataBoundary:
         assert isinstance(result2, dict)
 
     def test_none_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse(None)
         assert isinstance(result, dict)
 
     def test_malformed_json_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse('{"city": "北京"')
         assert isinstance(result, dict)
@@ -159,7 +159,7 @@ class TestInputDataBoundary:
         assert isinstance(result3, dict)
 
     def test_numeric_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse(42)
         assert isinstance(result, dict)
@@ -168,13 +168,13 @@ class TestInputDataBoundary:
         assert isinstance(result2, dict)
 
     def test_list_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse([1, 2, 3])
         assert isinstance(result, dict)
 
     def test_boolean_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse(True)
         assert isinstance(result, dict)
@@ -183,21 +183,21 @@ class TestInputDataBoundary:
         assert isinstance(result2, dict)
 
     def test_unicode_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         result = ParamParser.parse("🌟✨🔭🪐")
         assert isinstance(result, dict)
         assert "query" in result
 
     def test_very_long_string_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         long_str = "a" * 100000
         result = ParamParser.parse(long_str)
         assert isinstance(result, dict)
 
     def test_special_characters_in_input(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         special = '<script>alert("xss")</script>'
         result = ParamParser.parse(special)
@@ -402,7 +402,7 @@ class TestResourceBoundary:
         assert error.code.value in ("VALIDATION_ERROR", "UNKNOWN_ERROR")
 
     def test_param_parser_with_deeply_nested_json(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         nested = json.dumps(
             {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
@@ -525,7 +525,7 @@ class TestTimeBoundary:
                     assert (end_dt - start_dt).days <= 7
 
     def test_normalize_date_various_formats(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         assert ParamParser.normalize_date("2026-01-01") == "2026-01-01"
         assert ParamParser.normalize_date("2026/01/01") == "2026-01-01"
@@ -535,7 +535,7 @@ class TestTimeBoundary:
         assert ParamParser.normalize_date("invalid") is None
 
     def test_month_boundary_values(self):
-        from src.agent.param_parser import ParamParser
+        from src.utils.param_parser import ParamParser
 
         assert ParamParser.safe_int("1") == 1
         assert ParamParser.safe_int("12") == 12
@@ -562,16 +562,16 @@ class TestTimeBoundary:
         assert past.year == 1900
 
     def test_time_range_parsing_boundary(self):
-        from src.skills.skill_handlers import _parse_time_range
+        from src.skills.services.lookup import parse_time_range
 
-        start, end = _parse_time_range(None)
+        start, end = parse_time_range(None)
         assert start is not None
         assert end is not None
 
-        start2, end2 = _parse_time_range("未来30天")
+        start2, end2 = parse_time_range("未来30天")
         assert start2 is not None
         assert end2 is not None
 
-        start3, end3 = _parse_time_range("本月")
+        start3, end3 = parse_time_range("本月")
         assert start3 is not None
         assert end3 is not None

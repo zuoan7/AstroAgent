@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
-from src.agent.models.skill_result import SkillResult
-from src.agent.param_parser import ParamParser
+from src.skills.result import SkillResult
+from src.utils.param_parser import ParamParser
 from src.skills.context import SkillContext
 from src.skills.inputs import AstrophotographyCalculatorInput
 

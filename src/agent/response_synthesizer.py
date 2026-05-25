@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from src.agent.models.skill_result import SkillResult
+from src.skills.result import SkillResult
 from src.agent.models.final_response import FinalResponse
 from src.agent.policies.budget_policy import RequestBudgetTracker
 from src.agent.policies.tool_evidence_budget import ToolEvidenceCompactor

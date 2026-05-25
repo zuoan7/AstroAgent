@@ -1,5 +1,4 @@
-"""工具调用防护层，在请求离开 Agent 进程前校验工具名、策略和必填参数。
-"""
+"""工具调用防护层，在请求离开 Agent 进程前校验工具名、策略和必填参数。"""
 
 from __future__ import annotations
 
@@ -48,7 +47,9 @@ class ToolGuardContext:
     ) -> "ToolGuardContext":
         """基于当前上下文派生一个带局部策略的新上下文。"""
         return ToolGuardContext(
-            logical_skill=self.logical_skill if logical_skill is None else logical_skill,
+            logical_skill=(
+                self.logical_skill if logical_skill is None else logical_skill
+            ),
             operation=self.operation if operation is None else operation,
             allowed_tools=(
                 list(self.allowed_tools)
@@ -79,20 +80,13 @@ class ToolGuard:
     def __init__(
         self,
         registry: Optional[ToolRegistry] = None,
-        *,
-        catalog: Optional[Any] = None,
     ) -> None:
         """初始化工具防护器和可用工具注册表。"""
-        self._registry = registry or catalog or get_default_tool_registry()
+        self._registry = registry or get_default_tool_registry()
 
     @property
     def registry(self) -> ToolRegistry:
         """返回当前工具防护器使用的工具注册表。"""
-        return self._registry
-
-    @property
-    def catalog(self) -> ToolRegistry:
-        """兼容旧属性名，返回当前工具注册表。"""
         return self._registry
 
     def validate_tool_call(
