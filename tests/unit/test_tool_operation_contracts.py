@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pydantic import BaseModel
+
 from src.agent.executor import _extract_mcp_tools_from_sources
 from src.agent.tool_result_adapter import tool_result_to_skill_result
 from src.skills import registry
+from src.skills.definition import SkillDefinition
 from src.skills.kit import SkillKit
+from src.skills.registry import SkillRegistry
 from src.tools.protocol import serialize_envelope, success_envelope
 from src.tools.kit import ToolKit
 
@@ -93,3 +97,34 @@ def test_weather_lookup_uses_explicit_skill_handler():
     assert result.expected_mcp_tools == ["get_weather"]
     assert result.allowed_child_tools == ["get_weather"]
     assert result.sources[0]["tool"] == "get_weather"
+
+
+class _EmptySkillInput(BaseModel):
+    pass
+
+
+def test_skill_kit_rejects_handler_output_that_does_not_match_contract():
+    def bad_handler(ctx, payload):
+        return {"summary": "not a SkillResult"}
+
+    skill_kit = SkillKit(
+        tool_kit=ToolKit(_Backend()),
+        registry=SkillRegistry(
+            [
+                SkillDefinition(
+                    name="bad-skill",
+                    display_name="BadSkill",
+                    summary="bad",
+                    description="bad",
+                    input_model=_EmptySkillInput,
+                    handler=bad_handler,
+                )
+            ]
+        ),
+    )
+
+    result = skill_kit.invoke("bad-skill", {})
+
+    assert result.success is False
+    assert result.error_code == "HANDLER_ERROR"
+    assert "expected SkillResult" in (result.error_message or "")

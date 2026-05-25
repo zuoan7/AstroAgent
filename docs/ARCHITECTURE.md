@@ -65,7 +65,7 @@ CapabilityKit
 | `CapabilityKit` | Agent 层唯一 Skill / Tool facade | `src/agent/capability_kit.py` |
 | `LangChain Adapter` | 根据 SkillDefinition / ToolDefinition 生成 ReAct tools | `src/agent/adapters/langchain_adapter.py` |
 | `SkillRegistry` / `SkillKit` | 注册并执行高层技能 | `src/skills/registry.py`, `src/skills/kit.py` |
-| `ToolRegistry` / `ToolKit` | 注册并执行原子 MCP 工具 | `src/tools/registry.py`, `src/tools/runtime.py` |
+| `ToolRegistry` / `ToolKit` | 注册并执行原子 MCP 工具 | `src/tools/registry.py`, `src/tools/kit.py` |
 | `MCP envelope` | 传输层 envelope 解析与序列化 | `src/transport/mcp/envelope.py` |
 | `Tool protocol` | 工具 schema 校验与 envelope 包装 helper | `src/tools/protocol.py` |
 

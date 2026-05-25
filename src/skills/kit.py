@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from src.skills.context import SkillContext
 from src.skills.definition import SkillDefinition
-from src.skills.errors import SkillError, validation_error_result
+from src.skills.errors import (
+    SkillError,
+    SkillErrorCode,
+    skill_error_result,
+    validation_error_result,
+)
 from src.skills.policies.skill_policy import SkillPolicy
 from src.skills.registry import SkillRegistry, get_default_skill_registry
 from src.skills.result import SkillResult
@@ -57,6 +62,50 @@ class SkillKit:
             result = definition.handler(ctx, typed_payload)
         except SkillError as exc:
             return exc.to_result()
+        result = self._validate_output(definition, result)
         if result.logical_skill is None:
             result.logical_skill = definition.name
         return result
+
+    def _validate_output(self, definition: SkillDefinition, result: Any) -> SkillResult:
+        output_model = definition.output_model
+        if output_model is None:
+            if isinstance(result, SkillResult):
+                return result
+            return _invalid_output_result(definition, result, "SkillResult")
+
+        if isinstance(output_model, type) and issubclass(output_model, SkillResult):
+            if isinstance(result, output_model):
+                return result
+            return _invalid_output_result(definition, result, output_model.__name__)
+
+        if isinstance(output_model, type) and issubclass(output_model, BaseModel):
+            try:
+                output_model.model_validate(result)
+            except ValidationError as exc:
+                return skill_error_result(
+                    skill_name=definition.name,
+                    code=SkillErrorCode.HANDLER_ERROR,
+                    message=f"Skill handler returned invalid output: {exc}",
+                )
+            if isinstance(result, SkillResult):
+                return result
+            return _invalid_output_result(definition, result, "SkillResult")
+
+        if isinstance(result, SkillResult):
+            return result
+        return _invalid_output_result(definition, result, "SkillResult")
+
+
+def _invalid_output_result(
+    definition: SkillDefinition,
+    result: Any,
+    expected: str,
+) -> SkillResult:
+    return skill_error_result(
+        skill_name=definition.name,
+        code=SkillErrorCode.HANDLER_ERROR,
+        message=(
+            f"Skill handler returned {type(result).__name__}, expected {expected}"
+        ),
+    )

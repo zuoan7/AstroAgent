@@ -87,6 +87,9 @@ def test_capability_selector_prefers_capability_hints_over_legacy_matched_skills
 
     assert selected.kind == "tool"
     assert selected.name == "web_search"
+    assert selected.metadata["cost_class"] == "expensive"
+    assert selected.metadata["side_effect"] is True
+    assert selected.metadata["tags"] == ["react-exposed"]
 
 
 def test_tool_selector_does_not_read_legacy_matched_skills_as_hints():
@@ -107,6 +110,9 @@ def test_capability_selector_falls_back_to_atomic_tool_rules():
     assert selected.kind == "tool"
     assert selected.name == "get_weather"
     assert selected.metadata["params"] == {"city": "北京", "extensions": "all"}
+    assert selected.metadata["cost_class"] == "normal"
+    assert selected.metadata["side_effect"] is False
+    assert selected.metadata["tags"] == ["react-exposed"]
 
 
 def test_capability_selector_keeps_none_fallback_without_tool_match():

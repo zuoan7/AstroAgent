@@ -204,7 +204,7 @@ AstroAgent/
 | `src/skills/kit.py` | Skill 执行入口，构造 SkillContext 并调用 handler |
 | `src/skills/handlers/` | 观测计划、天象预报、深空观测等技能实现 |
 | `src/tools/registry.py` | 原子 MCP 工具定义与输入/输出 schema |
-| `src/tools/runtime.py` | ToolKit / ToolRuntime，负责工具校验、防护和调用 |
+| `src/tools/kit.py` | ToolKit，负责工具校验、防护和调用 |
 | `src/transport/mcp/client.py` | Streamable HTTP MCP 客户端，负责会话与工具调用 |
 | `src/services/mcp_server.py` | FastMCP 服务入口，注册天文工具并暴露 MCP 服务 |
 | `src/api/main.py` | FastAPI 服务入口，暴露问答与记忆管理接口 |

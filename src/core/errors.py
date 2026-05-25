@@ -107,19 +107,21 @@ class AgentError(Exception):
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
     def to_envelope_dict(self, tool_name: str = "unknown") -> Dict[str, Any]:
-        from src.transport.mcp.envelope import error_envelope
-
-        return error_envelope(
-            tool_name=tool_name,
-            code=self.code.value,
-            message=self.message,
-            details=self.details,
-        ).model_dump(mode="json")
+        return {
+            "ok": False,
+            "error": {
+                "code": self.code.value,
+                "message": self.message,
+                "details": self.details or {},
+            },
+            "meta": {
+                "tool_name": tool_name,
+                "schema_version": "1.0",
+            },
+        }
 
     def to_envelope_json(self, tool_name: str = "unknown") -> str:
-        from src.transport.mcp.envelope import serialize_envelope
-
-        return serialize_envelope(self.to_envelope_dict(tool_name))
+        return json.dumps(self.to_envelope_dict(tool_name), ensure_ascii=False)
 
     def __str__(self) -> str:
         return f"[{self.code.value}] {self.message}"

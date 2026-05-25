@@ -62,7 +62,11 @@ class CapabilitySelector:
                     confidence=float(getattr(profile, "confidence", 0.0) or 0.0),
                     reason="matched_task_profile_tool_hint",
                     required_params=_input_field_names(definition),
-                    metadata={"query": query, "params": params},
+                    metadata={
+                        "query": query,
+                        "params": params,
+                        **_tool_metadata(definition),
+                    },
                 )
 
         if getattr(profile, "tool_need", "none") == "none":
@@ -92,6 +96,7 @@ class CapabilitySelector:
                     "query": query,
                     "params": dict(tool_decision.params),
                     "tool_selection": tool_decision.to_dict(),
+                    **_tool_metadata(definition),
                 },
             )
 
@@ -103,3 +108,11 @@ class CapabilitySelector:
 
 def _input_field_names(definition: Any) -> list[str]:
     return list(definition.input_model.model_fields.keys())
+
+
+def _tool_metadata(definition: Any) -> dict[str, Any]:
+    return {
+        "cost_class": str(definition.cost_class.value),
+        "side_effect": bool(definition.side_effect),
+        "tags": list(definition.tags or ()),
+    }

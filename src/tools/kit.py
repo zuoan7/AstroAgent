@@ -11,7 +11,6 @@ from pydantic import ValidationError
 from src.tools.guard import ToolGuard, ToolGuardContext, ToolGuardViolation
 from src.tools.registry import ToolRegistry
 from src.tools.results import ToolResult
-from src.transport.mcp.envelope import error_envelope, serialize_envelope
 
 
 class ToolKit:
@@ -81,11 +80,9 @@ class ToolKit:
         started = time.perf_counter()
         violation = self._validate(tool_name, kwargs)
         if violation is not None:
-            raw = self._guard_error(tool_name, violation)
-            return ToolResult.from_raw(
+            return self._guard_error_result(
                 tool_name,
-                raw,
-                output_model=self._output_model(tool_name),
+                violation,
                 latency_ms=self._elapsed_ms(started),
             )
 
@@ -102,11 +99,9 @@ class ToolKit:
         started = time.perf_counter()
         violation = self._validate(tool_name, kwargs)
         if violation is not None:
-            raw = self._guard_error(tool_name, violation)
-            return ToolResult.from_raw(
+            return self._guard_error_result(
                 tool_name,
-                raw,
-                output_model=self._output_model(tool_name),
+                violation,
                 latency_ms=self._elapsed_ms(started),
             )
 
@@ -154,11 +149,9 @@ class ToolKit:
 
         for index, violation in violations.items():
             tool_name = str(calls[index].get("tool_name", "unknown_tool"))
-            raw = self._guard_error(tool_name, violation)
-            results[index] = ToolResult.from_raw(
+            results[index] = self._guard_error_result(
                 tool_name,
-                raw,
-                output_model=self._output_model(tool_name),
+                violation,
                 latency_ms=self._elapsed_ms(started_by_index[index]),
             )
 
@@ -205,11 +198,9 @@ class ToolKit:
 
         for index, violation in violations.items():
             tool_name = str(calls[index].get("tool_name", "unknown_tool"))
-            raw = self._guard_error(tool_name, violation)
-            results[index] = ToolResult.from_raw(
+            results[index] = self._guard_error_result(
                 tool_name,
-                raw,
-                output_model=self._output_model(tool_name),
+                violation,
                 latency_ms=self._elapsed_ms(started_by_index[index]),
             )
 
@@ -314,8 +305,14 @@ class ToolKit:
         except KeyError:
             return None
 
-    def _guard_error(self, tool_name: str, violation: ToolGuardViolation) -> str:
-        """Convert a guard rejection to a standard MCP error envelope."""
+    def _guard_error_result(
+        self,
+        tool_name: str,
+        violation: ToolGuardViolation,
+        *,
+        latency_ms: float,
+    ) -> ToolResult:
+        """Convert a guard rejection to a structured tool failure."""
         details = {
             "logical_skill": self._context.logical_skill,
             "operation": self._context.operation,
@@ -325,13 +322,12 @@ class ToolKit:
             "enforce_allowed_tools": self._context.enforce_allowed_tools,
         }
         details.update(getattr(violation, "details", {}) or {})
-        return serialize_envelope(
-            error_envelope(
-                tool_name=tool_name,
-                code=getattr(violation, "code", "TOOL_GUARD_REJECTED"),
-                message=str(violation),
-                details=details,
-            )
+        return ToolResult.from_error(
+            tool_name,
+            code=getattr(violation, "code", "TOOL_GUARD_REJECTED"),
+            message=str(violation),
+            details=details,
+            latency_ms=latency_ms,
         )
 
     @staticmethod

@@ -126,6 +126,41 @@ def test_upper_layers_and_tests_do_not_reference_raw_tool_envelope_storage():
         _assert_token_absent_under(root, forbidden_token)
 
 
+def test_mcp_envelope_imports_stay_in_low_level_modules():
+    envelope_module = "src.transport.mcp." + "envelope"
+    allowed_paths = {
+        Path("src/transport/mcp/client.py"),
+        Path("src/transport/mcp/envelope.py"),
+        Path("src/tools/protocol.py"),
+        Path("src/tools/results.py"),
+    }
+    violations: list[str] = []
+
+    for path in _python_files(REPO_ROOT / "src"):
+        relative_path = path.relative_to(REPO_ROOT)
+        if relative_path in allowed_paths:
+            continue
+        if envelope_module in _imports(path):
+            violations.append(f"{relative_path} imports {envelope_module}")
+
+    assert violations == []
+
+
+def test_current_docs_do_not_reference_removed_tool_layer_names():
+    removed_patterns = (
+        "src/tools/" + "runtime.py",
+        "Tool" + "Runtime",
+        "Tool" + "Catalog",
+        "skills/" + "mcp_client.py",
+    )
+    for path in (
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "docs" / "ARCHITECTURE.md",
+        REPO_ROOT / "docs" / "agent_compatibility_matrix.md",
+    ):
+        _assert_text_absent(path, removed_patterns)
+
+
 def test_phase_l_handlers_only_expose_entrypoint_functions():
     handler_root = REPO_ROOT / "src" / "skills" / "handlers"
     expected_functions = {

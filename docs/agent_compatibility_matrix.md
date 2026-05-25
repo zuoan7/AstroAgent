@@ -1,6 +1,6 @@
 # Agent Compatibility Matrix
 
-更新时间：2026-05-22
+更新时间：2026-05-25
 
 本文档基于当前源码与测试引用情况整理，目标是明确 DAG Agent 重构过程中仍保留的兼容层、它们的替代方案、保留原因与删除条件。本文档不表示“已批准删除”，只有在源码引用、外部依赖和测试基线都收口后，兼容层才可进入删除阶段。
 
@@ -29,9 +29,9 @@
 | `TaskProfile.capability_hints` | `primary semantics` | 无 | 内部路由、planner、capability selector 的主能力提示字段 | 固定保留 |
 | `TaskProfile.matched_skills` | `legacy alias` | `capability_hints` | 旧 API、旧测试和前端元信息仍读取该字段；现在可能镜像 atomic tool hint | 外部调用方迁移到 `capability_hints` 后再删除或仅保留输出 DTO |
 | `RouteDecision.capability_hints` | `compat bridge` | `TaskProfile.capability_hints` | legacy `RouteDecision` 仍需携带主能力语义，用于外部兼容 adapter 与旧元信息输出 | `RouteDecision` 退场时同步删除 |
-| `get_nasa_apod` / `web_search` 的 `SkillSpec` 身份 | `removed` | `ToolCatalog` atomic tool specs | 两者不再是 logical skill；旧 `call_skill()/router.call()` 通过 atomic adapter 兼容 | 保持不回归到 skill registry |
+| `get_nasa_apod` / `web_search` 的 `SkillSpec` 身份 | `removed` | `ToolRegistry` / `ToolDefinition` atomic tool specs | 两者不再是 logical skill；通过 `CapabilityKit.call_tool()` 或 ReAct atomic adapter 调用 | 保持不回归到 skill registry |
 | `weather-lookup` | `high-level skill` | 底层 allowed tool 为 `get_weather` | 仍承载“观测天气”领域语义，不等同于裸 MCP tool | 若未来产品决定只保留 atomic weather，再单独迁移 |
-| `SkillManager.get_langchain_tools()` atomic 暴露 | `compat adapter` | high-level skills + selected atomic tools from `ToolCatalog` | ReAct 仍需要 LangChain Tool 入口；trace adapter 会映射回 `capability_kind` | ReAct 选择层重构完成后再评估 |
+| `CapabilityKit.to_langchain_tools()` atomic 暴露 | `compat adapter` | high-level skills + selected atomic tools from `ToolRegistry` | ReAct 仍需要 LangChain Tool 入口；trace adapter 会映射回 `capability_kind` | ReAct 选择层重构完成后再评估 |
 
 ## Compatibility Matrix
 
