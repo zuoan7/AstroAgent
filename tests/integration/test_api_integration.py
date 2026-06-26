@@ -38,12 +38,22 @@ class TestAPIEndpointsIntegration:
             }
             mock_agent.long_term_memory.get_profile.return_value = mock_profile
             mock_agent.long_term_memory.delete_profile.return_value = True
+            mock_agent.long_term_memory.query_memories.return_value = []
+            mock_agent.long_term_memory.list_candidates.return_value = []
+            mock_agent.long_term_memory.list_pending_confirmations.return_value = []
+            mock_agent.long_term_memory.get_stats.return_value = {}
+            mock_agent.long_term_memory.get_event_logs.return_value = []
 
             MockAgent.return_value = mock_agent
 
-            from src.api.main import app
+            from src.api import main
 
-            client = TestClient(app)
+            main._agent_holder._agent = mock_agent
+            main._agent_holder._initialized = True
+            main._agent_holder._init_error = None
+            main.session_manager._sessions.clear()
+
+            client = TestClient(main.app)
             yield client, mock_agent
 
     def test_root_endpoint(self, test_client):
@@ -154,6 +164,30 @@ class TestAPIEndpointsIntegration:
         assert data["status"] == "success"
         assert data["model_provider"] == "dashscope"
         assert data["model_name"] == "qwen3.6-plus"
+
+    def test_memory_overview_endpoint_includes_task_state(self, test_client):
+        client, _ = test_client
+
+        response = client.get("/memory/overview?user_id=test_user&session_id=session-a")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["session_id"] == "session-a"
+        assert data["session_memory"]["task_state"]["session_id"] == (
+            "mem_test_user::session-a"
+        )
+
+    def test_session_context_endpoint_includes_task_state(self, test_client):
+        client, _ = test_client
+
+        response = client.get("/session/context?user_id=test_user&session_id=session-a")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["session_id"] == "session-a"
+        assert data["task_state"]["session_id"] == "mem_test_user::session-a"
 
 
 class TestCapabilityKitIntegration:

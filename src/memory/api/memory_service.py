@@ -162,12 +162,13 @@ class MemoryService:
         )
 
     def get_task_state(
-        self, session_id: str, tenant_id: Optional[str] = None
+        self, session_id: Optional[str] = None, tenant_id: Optional[str] = None
     ) -> TaskState:
         """读取指定会话的结构化任务状态；不存在时由读服务创建默认状态。"""
 
+        effective_session_id = session_id or self._require_session_id()
         return self.read_service.get_task_state(
-            session_id=session_id,
+            session_id=effective_session_id,
             tenant_id=tenant_id or self.tenant_id,
         )
 

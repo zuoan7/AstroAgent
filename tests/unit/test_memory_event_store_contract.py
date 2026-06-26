@@ -185,6 +185,29 @@ def test_task_state_patch_uses_optimistic_lock(memory_db):
         )
 
 
+def test_memory_service_get_task_state_uses_current_session(memory_db):
+    """测试 memory service get task state uses current session 场景。"""
+
+    service = MemoryService(
+        db_path=memory_db, tenant_id="tenant", session_id="session", user_id="user"
+    )
+
+    implicit_state = service.get_task_state()
+    explicit_state = service.get_task_state("session")
+
+    assert implicit_state.session_id == "session"
+    assert explicit_state.task_state_id == implicit_state.task_state_id
+
+
+def test_memory_service_get_task_state_requires_session_when_implicit(memory_db):
+    """测试 memory service get task state requires session when implicit 场景。"""
+
+    service = MemoryService(db_path=memory_db, tenant_id="tenant")
+
+    with pytest.raises(ValueError, match="requires a session_id"):
+        service.get_task_state()
+
+
 def test_memory_service_append_message_updates_event_view(memory_db):
     """测试 memory service append message updates event view 场景。"""
 
@@ -376,7 +399,9 @@ def test_compression_creates_summary_snapshot_from_events(memory_db):
     assert latest and latest.snapshot_id == snapshot.snapshot_id
 
 
-def test_compression_falls_back_when_structured_summarizer_returns_invalid_json(memory_db):
+def test_compression_falls_back_when_structured_summarizer_returns_invalid_json(
+    memory_db,
+):
     """测试 compression falls back when structured summarizer returns invalid json 场景。"""
 
     service = MemoryService(db_path=memory_db, tenant_id="tenant")
